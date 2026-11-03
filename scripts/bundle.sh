@@ -26,6 +26,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp src-tauri/target/release/ppclash "$APP/Contents/MacOS/ppclash"
 
 cp src-tauri/icons/icon.icns "$APP/Contents/Resources/icon.icns"
+mkdir -p "$APP/Contents/Resources/resources"
+cp src-tauri/resources/kernel.zip "$APP/Contents/Resources/resources/kernel.zip"
 
 echo "▸ 写 Info.plist"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -36,8 +38,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
   <key>CFBundleExecutable</key><string>ppclash</string>
   <key>CFBundleIdentifier</key><string>com.ppclash.app</string>
-  <key>CFBundleName</key><string>PPClash</string>
-  <key>CFBundleDisplayName</key><string>PPClash</string>
+  <key>CFBundleName</key><string>PP Clash</string>
+  <key>CFBundleDisplayName</key><string>PP Clash</string>
   <key>CFBundleIconFile</key><string>icon.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
