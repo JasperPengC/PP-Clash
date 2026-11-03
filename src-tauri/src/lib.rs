@@ -44,6 +44,7 @@ pub fn focus_main(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(KernelState::default())
         .manage(AppFlags::default())
         .invoke_handler(tauri::generate_handler![
@@ -60,6 +61,7 @@ pub fn run() {
             kernel::cleanup_stale_kernel,
             icons::resolve_process_icon,
             subscription::fetch_subscription,
+            subscription::read_subscription_file,
             subscription::save_config,
             subscription::save_app_state,
             subscription::load_app_state,

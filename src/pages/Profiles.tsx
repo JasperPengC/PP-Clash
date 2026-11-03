@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { EmptyState, MiniSwitch, Pill, Select, Spinner } from '../components/ui';
-import { IconAlert, IconImport, IconProfiles, IconRefresh, IconTrash } from '../components/icons';
+import { IconAlert, IconFolder, IconImport, IconProfiles, IconRefresh, IconTrash } from '../components/icons';
 import { useApp, type Profile } from '../store/app';
 import { isTauri, previewMode } from '../core/api';
+import { open } from '@tauri-apps/plugin-dialog';
 import { countRealNodes, type TrafficInfo } from '../core/subscription';
 import { daysUntil, formatBytes, formatExpire, formatTime } from '../core/format';
 
@@ -128,6 +129,7 @@ function ProfileRow({
             <span className="sub-name" title={profile.name}>
               {profile.name}
             </span>
+            {profile.sourceType === 'file' && <Pill>本地</Pill>}
             {active && <Pill tone="ok">当前</Pill>}
           </div>
           <div className="sub-meta">
@@ -149,12 +151,16 @@ function ProfileRow({
             })
           }
         />
-        <span className="sub-proxy-label" title="更新订阅时使用本机代理">使用代理</span>
-        <MiniSwitch
-          on={Boolean(profile.useProxy)}
-          onChange={(v) => onUpdate({ useProxy: v })}
-          label="经代理更新"
-        />
+        {profile.sourceType !== 'file' && (
+          <>
+            <span className="sub-proxy-label" title="更新订阅时使用本机代理">使用代理</span>
+            <MiniSwitch
+              on={Boolean(profile.useProxy)}
+              onChange={(v) => onUpdate({ useProxy: v })}
+              label="经代理更新"
+            />
+          </>
+        )}
       </div>
 
       <div className="sub-actions" onClick={(e) => e.stopPropagation()}>
@@ -207,6 +213,7 @@ export function ProfilesPage() {
   const profiles = useApp((s) => s.profiles);
   const activeId = useApp((s) => s.activeId);
   const importProfile = useApp((s) => s.importProfile);
+  const importProfileFile = useApp((s) => s.importProfileFile);
   const activate = useApp((s) => s.activate);
   const removeProfile = useApp((s) => s.removeProfile);
   const refreshProfile = useApp((s) => s.refreshProfile);
@@ -264,6 +271,20 @@ export function ProfilesPage() {
     for (const p of profiles) out[p.id] = countRealNodes(p.raw);
     return out;
   }, [profiles]);
+
+  const pickFile = async () => {
+    if (!isTauri || importing) return;
+    try {
+      const path = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Clash / mihomo 配置', extensions: ['yaml', 'yml', 'json'] }],
+      });
+      if (typeof path === 'string' && path) await importProfileFile(path);
+    } catch (e) {
+      useApp.getState().notify('error', `选择文件失败：${String(e)}`);
+    }
+  };
 
   const submit = async () => {
     const v = url.trim();
@@ -335,7 +356,7 @@ export function ProfilesPage() {
           <section className="card import-card">
             <div className="import-head">
               <span className="section-title">添加订阅</span>
-              <span className="card-hint">Clash / mihomo 链接</span>
+              <span className="card-hint">Clash / mihomo 链接或本地文件</span>
             </div>
             <form
               className="row import-row"
@@ -381,6 +402,18 @@ export function ProfilesPage() {
                 )}
               </button>
             </form>
+            <div className="import-file-row">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={importing}
+                onClick={() => void pickFile()}
+              >
+                <IconFolder size={13} />
+                从文件导入
+              </button>
+              <span className="card-hint">.yaml / .yml / .json，最大 10MB</span>
+            </div>
           </section>
 
           {profiles.length > 0 ? (

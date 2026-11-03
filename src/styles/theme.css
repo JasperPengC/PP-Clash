@@ -4542,3 +4542,20 @@ body.tray-panel-window #root {
 .proc-child .conn-host {
   font-weight: 450;
 }
+
+/* 订阅：从文件导入 */
+.import-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 15px 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.import-file-row .btn-ghost {
+  color: var(--text-2);
+}
+
+.import-file-row .btn-ghost:hover {
+  color: var(--accent);
+}

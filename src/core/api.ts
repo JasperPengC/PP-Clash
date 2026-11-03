@@ -284,6 +284,9 @@ export const api = {
   fetchSubscription: (url: string, proxyPort?: number) =>
     call<SubscriptionPayload>('fetch_subscription', { url, proxyPort }),
 
+  /** 读取本地 Clash/mihomo 配置文件（10MB 上限，仅 yaml/yml/json）。 */
+  readSubscriptionFile: (path: string) => call<string>('read_subscription_file', { path }),
+
   saveConfig: (content: string, dataDir: string) =>
     call<string>('save_config', { content, dataDir }),
 

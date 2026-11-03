@@ -38,6 +38,37 @@ pub fn load_app_state(data_dir: String) -> Result<Option<String>, String> {
     Ok(Some(s))
 }
 
+/// 本地订阅文件大小上限：10 MB。
+const MAX_SUBSCRIPTION_FILE: u64 = 10 * 1024 * 1024;
+
+/// 读取本地 Clash/mihomo 配置文件。
+///
+/// 只接受普通文件（不接受目录/FIFO），限制 10MB，避免误选大文件把进程拖死。
+#[tauri::command]
+pub fn read_subscription_file(path: String) -> Result<String, String> {
+    let p = std::path::PathBuf::from(&path);
+    let meta = std::fs::metadata(&p).map_err(|e| format!("读取文件失败：{e}"))?;
+    if !meta.is_file() {
+        return Err("只能导入普通文件".to_string());
+    }
+    if meta.len() > MAX_SUBSCRIPTION_FILE {
+        return Err("订阅文件超过 10 MB".to_string());
+    }
+    let ext = p
+        .extension()
+        .and_then(|x| x.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !matches!(ext.as_str(), "yaml" | "yml" | "json") {
+        return Err("仅支持 .yaml / .yml / .json 文件".to_string());
+    }
+    let text = std::fs::read_to_string(&p).map_err(|e| format!("读取文件失败：{e}"))?;
+    if text.trim().is_empty() {
+        return Err("文件是空的".to_string());
+    }
+    Ok(text)
+}
+
 /// 拉取订阅的结果：原文 + 订阅响应头里的元信息。
 ///
 /// 机场通常用响应头下发三样东西，客户端如果能读出来，体验会好很多：
@@ -223,4 +254,50 @@ pub fn restore_backup(data_dir: String, name: String) -> Result<(), String> {
     }
     std::fs::copy(&src, dir.join("state.json")).map_err(|e| format!("恢复失败：{e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod local_file_tests {
+    use super::read_subscription_file;
+
+    fn temp_path(ext: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "ppclash-read-test-{}-{}.{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            ext
+        ));
+        p
+    }
+
+    #[test]
+    fn reads_yaml_file() {
+        let p = temp_path("yaml");
+        std::fs::write(&p, "proxies: []\n").unwrap();
+        let out = read_subscription_file(p.to_string_lossy().to_string()).unwrap();
+        assert!(out.contains("proxies"));
+        let _ = std::fs::remove_file(p);
+    }
+
+    #[test]
+    fn rejects_wrong_extension() {
+        let p = temp_path("txt");
+        std::fs::write(&p, "proxies: []\n").unwrap();
+        let err = read_subscription_file(p.to_string_lossy().to_string()).unwrap_err();
+        assert!(err.contains("仅支持"));
+        let _ = std::fs::remove_file(p);
+    }
+
+    #[test]
+    fn rejects_empty_file() {
+        let p = temp_path("yml");
+        std::fs::write(&p, "  \n").unwrap();
+        let err = read_subscription_file(p.to_string_lossy().to_string()).unwrap_err();
+        assert!(err.contains("空"));
+        let _ = std::fs::remove_file(p);
+    }
 }

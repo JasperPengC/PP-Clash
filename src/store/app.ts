@@ -21,6 +21,8 @@ export interface Profile {
   autoUpdateHours?: number | null;
   /** 更新订阅时走本机代理（需要内核运行）。 */
   useProxy?: boolean;
+  /** 来源：远程订阅链接或本地文件；旧数据没有该字段时按 url 处理。 */
+  sourceType?: 'url' | 'file';
 }
 
 export interface CustomRule {
@@ -175,6 +177,8 @@ interface AppStore {
   /** 启动时从磁盘水合。 */
   hydrate: () => Promise<void>;
   importProfile: (url: string, useProxy?: boolean) => Promise<void>;
+  /** 导入本地 YAML/JSON 文件；url 字段保存文件路径，便于后续重新读取。 */
+  importProfileFile: (path: string) => Promise<void>;
   activate: (id: string) => Promise<void>;
   removeProfile: (id: string) => Promise<void>;
   refreshProfile: (id: string, quiet?: boolean) => Promise<boolean>;
@@ -204,6 +208,11 @@ interface AppStore {
   updateSettings: (patch: Partial<AppSettings>) => void;
   notify: (kind: ToastKind, text: string) => void;
   clearToast: () => void;
+}
+
+function nameFromPath(path: string): string {
+  const base = path.split('/').pop() || path;
+  return base.replace(/\.(ya?ml|json)$/i, '') || '本地订阅';
 }
 
 function nameFromUrl(url: string): string {
@@ -541,6 +550,7 @@ export const useApp = create<AppStore>((set, get) => ({
         updateIntervalHours: meta.updateIntervalHours,
         autoUpdateHours: null,
         useProxy,
+        sourceType: 'url',
       };
       const { audit, stats } = generateConfig(
         payload.raw,
@@ -563,6 +573,49 @@ export const useApp = create<AppStore>((set, get) => ({
       get().notify(
         'success',
         `订阅已导入${meta.name ? ` · ${meta.name}` : ''}${realNodes ? ` · ${realNodes} 个节点` : ''}`
+      );
+    } catch (e) {
+      set({ busy: false, importing: false });
+      get().notify('error', `导入失败：${errorText(e)}`);
+    }
+  },
+
+  importProfileFile: async (path) => {
+    if (!isTauri) {
+      set({ toast: { id: ++toastSeq, kind: 'error', text: '浏览器预览模式无法读取本地文件' } });
+      return;
+    }
+    set({ busy: true, importing: true });
+    try {
+      const raw = await api.readSubscriptionFile(path);
+      const id = crypto.randomUUID();
+      const profile: Profile = {
+        id,
+        name: nameFromPath(path),
+        url: path,
+        raw,
+        updatedAt: Date.now(),
+        userinfo: null,
+        updateIntervalHours: null,
+        autoUpdateHours: 0,
+        useProxy: false,
+        sourceType: 'file',
+      };
+      const { audit, stats } = generateConfig(raw, get().policy, runtimeOf(get()), overrideOf(get()));
+      set((s) => ({
+        profiles: [...s.profiles, profile],
+        activeId: s.activeId ?? id,
+        audit,
+        stats,
+        busy: false,
+        importing: false,
+      }));
+      await get().applyConfig();
+      void persist(get());
+      const realNodes = countRealNodes(raw);
+      get().notify(
+        'success',
+        `本地订阅已导入${realNodes ? ` · ${realNodes} 个节点` : ''}`
       );
     } catch (e) {
       set({ busy: false, importing: false });
@@ -645,7 +698,16 @@ export const useApp = create<AppStore>((set, get) => ({
       }
       const proxyPort =
         useProxy && get().kernelPhase === 'running' ? get().settings.mixedPort : undefined;
-      const payload = await api.fetchSubscription(p.url, proxyPort);
+      const payload =
+        p.sourceType === 'file'
+          ? {
+              raw: await api.readSubscriptionFile(p.url),
+              profileTitle: null,
+              contentDisposition: null,
+              subscriptionUserinfo: null,
+              profileUpdateInterval: null,
+            }
+          : await api.fetchSubscription(p.url, proxyPort);
       const meta = parseSubscriptionMeta(payload);
       set((s) => ({
         profiles: s.profiles.map((x) =>
