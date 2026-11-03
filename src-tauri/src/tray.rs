@@ -719,11 +719,19 @@ pub fn hide_panel(app: &AppHandle) {
 pub fn on_tray_click(app: &AppHandle, event: TrayIconEvent) {
     if let TrayIconEvent::Click {
         rect,
-        button: tauri::tray::MouseButton::Left,
+        button,
         button_state: tauri::tray::MouseButtonState::Up,
         ..
     } = event
     {
+        #[cfg(target_os = "windows")]
+        if button != tauri::tray::MouseButton::Left && button != tauri::tray::MouseButton::Right {
+            return;
+        }
+        #[cfg(not(target_os = "windows"))]
+        if button != tauri::tray::MouseButton::Left {
+            return;
+        }
         toggle_panel(app, rect);
     }
 }

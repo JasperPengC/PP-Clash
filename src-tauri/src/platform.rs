@@ -98,6 +98,29 @@ pub fn async_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::C
     cmd
 }
 
+/// Windows：用原生样式去掉标题栏，避免 Tauri set_decorations 未生效。
+#[cfg(target_os = "windows")]
+pub fn remove_native_caption(hwnd: isize) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
+    };
+    let hwnd = hwnd as *mut core::ffi::c_void;
+    unsafe {
+        let style = GetWindowLongW(hwnd, GWL_STYLE);
+        SetWindowLongW(hwnd, GWL_STYLE, style & !(WS_CAPTION as i32));
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
 /// 当前进程是否以管理员权限运行（Windows）；其它平台视为 true。
 pub fn is_elevated() -> bool {
     #[cfg(target_os = "windows")]

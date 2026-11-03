@@ -113,6 +113,10 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 let _ = w.set_decorations(false);
                 let _ = w.show();
+                #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = w.hwnd() {
+                    platform::remove_native_caption(hwnd.0 as isize);
+                }
                 let _ = w.set_focus();
             }
 
