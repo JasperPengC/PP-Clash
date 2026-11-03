@@ -1,0 +1,73 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    PPClash 应用图标矢量母版（1024 画布）。
+    设计参考 Clash Verge / Clash Party / FlClash 的极简吉祥物做法：
+    白色猫头剪影 + 单一渐变底，五官极少。
+    底色刻意避开高饱和"AI 味"渐变：低饱和墨蓝→墨紫对角过渡，深色安静、白猫为主角。
+    区分点：macOS 圆角方形（Verge 是圆形）、墨色低饱和（Verge 是粉紫亮色）。
+    圆角方形放大到 952×952（四周留 36px 光学边距），与 Dock 里其它图标视觉尺寸对齐。
+    渲染脚本 scripts/make-icon.mjs 逐尺寸栅格化。
+  -->
+  <defs>
+    <!-- 底板渐变：蓝墨色，向 UI 的 #2f6bf7 收一点，但不做高饱和渐变 -->
+    <linearGradient id="brand" x1="36" y1="36" x2="988" y2="988" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a416e"/>
+      <stop offset="1" stop-color="#10162a"/>
+    </linearGradient>
+    <!-- 猫头后方极淡的柔光，给深底一点进深（裁剪进底板，避免溢出圆角方形） -->
+    <radialGradient id="halo" cx="512" cy="470" r="410" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8fb5ff" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#8fb5ff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="plate"><rect x="36" y="36" width="952" height="952" rx="215"/></clipPath>
+  </defs>
+
+  <!-- macOS 大图案底板 -->
+  <rect x="36" y="36" width="952" height="952" rx="215" fill="url(#brand)"/>
+  <rect x="37.5" y="37.5" width="949" height="949" rx="213.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
+  <circle cx="512" cy="480" r="400" fill="url(#halo)" clip-path="url(#plate)"/>
+
+  <g transform="matrix(1.1553 0 0 1.1553 -79.51 -79.51)">
+  <!-- 猫头剪影：单条连续路径，耳朵与脸一体成型（右半定义，左半镜像） -->
+  <path
+    d="M512 376
+       C540 376 566 380 588 390
+       C616 362 640 306 676 252
+       C688 246 700 252 704 268
+       C712 296 728 368 746 428
+       C758 472 772 516 772 572
+       C772 648 676 756 512 756
+       C348 756 252 648 252 572
+       C252 516 266 472 278 428
+       C296 368 312 296 320 268
+       C324 252 336 246 348 252
+       C384 306 408 362 436 390
+       C458 380 484 376 512 376
+       Z"
+    fill="#ffffff"/>
+
+  <!-- 五官：引用背景渐变的"负形" -->
+  <circle cx="413" cy="545" r="34" fill="url(#brand)"/>
+  <circle cx="611" cy="545" r="34" fill="url(#brand)"/>
+  <!-- 眼内高光 -->
+  <circle cx="424" cy="534" r="11" fill="#ffffff"/>
+  <circle cx="622" cy="534" r="11" fill="#ffffff"/>
+  <!-- 鼻子：圆角三角（描边加粗出圆角） -->
+  <path d="M488 606 L536 606 L512 638 Z" fill="url(#brand)" stroke="url(#brand)" stroke-width="16" stroke-linejoin="round"/>
+  <!-- 嘴：鼻下短线接 ω 双弧 -->
+  <g fill="none" stroke="url(#brand)" stroke-width="12" stroke-linecap="round">
+    <path d="M512 648 L512 660"/>
+    <path d="M482 660 A15 15 0 0 0 512 660"/>
+    <path d="M512 660 A15 15 0 0 0 542 660"/>
+  </g>
+  <!-- 胡须：左右各三根细弧线，微下垂更自然，中缝侧收窄呈扇形 -->
+  <g fill="none" stroke="url(#brand)" stroke-width="10" stroke-linecap="round">
+    <path d="M298 588 Q338 598 374 595"/>
+    <path d="M288 628 Q332 638 370 633"/>
+    <path d="M297 667 Q337 676 371 669"/>
+    <path d="M726 588 Q686 598 650 595"/>
+    <path d="M736 628 Q692 638 654 633"/>
+    <path d="M727 667 Q687 676 653 669"/>
+  </g>
+  </g>
+</svg>
