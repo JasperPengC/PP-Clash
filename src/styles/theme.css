@@ -4496,3 +4496,49 @@ body.tray-panel-window #root {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 连接页：按进程聚合 */
+.proc-group + .proc-group {
+  border-top: 1px solid var(--border-soft);
+}
+
+.proc-row {
+  border-top: none;
+}
+
+.proc-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.proc-expand:hover {
+  color: var(--text-1);
+  background: var(--surface-3);
+}
+
+.proc-children {
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-soft);
+}
+
+.proc-child {
+  padding-left: 47px;
+  background: transparent;
+}
+
+.proc-child:hover {
+  background: var(--surface-3);
+}
+
+.proc-child .conn-host {
+  font-weight: 450;
+}
