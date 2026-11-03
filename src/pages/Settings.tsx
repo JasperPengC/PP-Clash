@@ -118,7 +118,7 @@ export function SettingsPage() {
     const notify = useApp.getState().notify;
     try {
       const path = await api.backupAppState(DATA_DIR);
-      notify('success', `已备份到 ${path.split('/').pop()}`);
+      notify('success', `已备份到 ${path.split(/[\\/]/).pop()}`);
       await loadBackups();
     } catch (e) {
       notify('error', `备份失败：${String(e)}`);

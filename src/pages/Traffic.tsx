@@ -76,7 +76,7 @@ export function TrafficPage() {
       const path = c.metadata?.processPath;
       if (!path) continue;
       const name =
-        c.metadata?.process || path.split('/').filter(Boolean).pop() || path;
+        c.metadata?.process || path.split(/[\\/]/).filter(Boolean).pop() || path;
       if (!map[name]) map[name] = path;
     }
     return map;
@@ -87,7 +87,7 @@ export function TrafficPage() {
       aggregate(conns, (c) => {
         if (c.metadata?.process) return c.metadata.process;
         const path = c.metadata?.processPath;
-        if (path) return path.split('/').filter(Boolean).pop() || path;
+        if (path) return path.split(/[\\/]/).filter(Boolean).pop() || path;
         return '未知';
       }),
     [conns]

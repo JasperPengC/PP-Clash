@@ -17,7 +17,7 @@ mkdir -p "$OUT"
 cp src-tauri/target/x86_64-pc-windows-gnu/release/ppclash.exe "$OUT/"
 LOADER="$(find "$HOME/.cargo/registry/src" -path '*webview2-com-sys*/x64/WebView2Loader.dll' 2>/dev/null | head -1)"
 [ -n "$LOADER" ] && cp "$LOADER" "$OUT/" || echo "警告：未找到 WebView2Loader.dll"
-if [ "${1:-}" ]; then
+if [ -n "${1:-}" ] && [ -f "${1:-}" ]; then
   cp "$1" "$OUT/kernel.zip"
 else
   echo "提示：正式运行前把 Windows 版 kernel.zip 放到 $OUT/kernel.zip"

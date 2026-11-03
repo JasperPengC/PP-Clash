@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-/// 解析数据目录：相对名落到 ~/Library/Application Support/ 下，绝对路径原样使用。
+/// 解析数据目录：相对名落到平台应用数据目录下，绝对路径原样使用。
 pub fn resolve_data_dir(data_dir: &str) -> Result<std::path::PathBuf, String> {
     let dir = std::path::PathBuf::from(data_dir);
     let dir = if dir.is_absolute() {
@@ -172,21 +172,11 @@ pub async fn fetch_subscription(
 
 /// 把配置写到磁盘，返回路径。
 ///
-/// `data_dir` 允许传相对名（如 "PPClash"），会落到 `~/Library/Application Support/` 下；
+/// `data_dir` 允许传相对名（如 "PPClash"），会落到平台应用数据目录下；
 /// 传绝对路径则原样使用。
 #[tauri::command]
 pub fn save_config(content: String, data_dir: String) -> Result<String, String> {
-    let dir = std::path::PathBuf::from(&data_dir);
-    let dir = if dir.is_absolute() {
-        dir
-    } else {
-        let home = std::env::var("HOME").map_err(|_| "读不到 HOME".to_string())?;
-        std::path::PathBuf::from(home)
-            .join("Library/Application Support")
-            .join(dir)
-    };
-
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建工作目录失败：{e}"))?;
+    let dir = resolve_data_dir(&data_dir)?;
     let path = dir.join("config.yaml");
     std::fs::write(&path, content).map_err(|e| format!("写配置失败：{e}"))?;
     Ok(path.to_string_lossy().to_string())

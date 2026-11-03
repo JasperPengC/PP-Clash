@@ -228,7 +228,7 @@ interface AppStore {
 }
 
 function nameFromPath(path: string): string {
-  const base = path.split('/').pop() || path;
+  const base = path.split(/[\\/]/).pop() || path;
   return base.replace(/\.(ya?ml|json)$/i, '') || '本地订阅';
 }
 
@@ -853,7 +853,8 @@ export const useApp = create<AppStore>((set, get) => ({
       );
       // save_config 返回绝对路径，直接拿来给内核用，避免相对路径错乱
       const absConfig = await api.saveConfig(config, DATA_DIR);
-      const absDir = absConfig.slice(0, absConfig.lastIndexOf('/'));
+      const sep = absConfig.includes('\\') ? '\\' : '/';
+      const absDir = absConfig.slice(0, absConfig.lastIndexOf(sep));
       configRevision += 1;
       set({ audit, stats, configPath: absConfig, dataDir: absDir, busy: false });
     } catch (e) {
