@@ -186,6 +186,7 @@ pub fn is_elevated() -> bool {
 pub async fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        crate::watchdog::stop_for_restart();
         let exe = std::env::current_exe().map_err(|e| format!("读自身路径失败：{e}"))?;
         let ps = format!(
             "Start-Process -FilePath '{}' -Verb RunAs",

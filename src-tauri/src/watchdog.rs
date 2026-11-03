@@ -107,6 +107,14 @@ pub fn clear_port() {
     }
 }
 
+/// 以管理员身份重启前解除旧看门狗，避免它在新进程启动后误杀新内核。
+pub fn stop_for_restart() {
+    if let Ok(data) = resources::data_dir() {
+        stop_previous(&data);
+        let _ = std::fs::remove_file(data.join("watchdog.port"));
+    }
+}
+
 /// 启动（或替换）当前进程的看门狗。失败只记录，不影响主流程。
 pub fn start(app: &AppHandle) {
     let Ok(data) = resources::data_dir() else {
