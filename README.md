@@ -105,4 +105,6 @@ legacy/        旧 Flutter 版，仅作参考
 
 ## 许可证
 
-GPL-3.0
+本项目以 **GNU Affero General Public License v3.0（AGPL-3.0-only）** 发布，全文见 [LICENSE](LICENSE)。
+
+分发修改版，或通过网络向用户提供修改版功能时，请遵守 AGPL-3.0 第 13 条，向这些用户提供对应的完整源码。

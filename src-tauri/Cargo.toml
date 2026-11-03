@@ -2,6 +2,7 @@
 name = "ppclash"
 version = "0.1.0"
 description = "防泄漏开箱即用的 Clash 客户端"
+license = "AGPL-3.0-only"
 edition = "2021"
 rust-version = "1.77"
 
