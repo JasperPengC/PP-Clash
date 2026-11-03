@@ -69,6 +69,27 @@ pub fn read_subscription_file(path: String) -> Result<String, String> {
     Ok(text)
 }
 
+/// 日志导出上限：20 MB。
+const MAX_LOG_EXPORT: usize = 20 * 1024 * 1024;
+
+/// 把当前过滤后的日志写到用户选择的路径。
+#[tauri::command]
+pub fn export_log_file(path: String, content: String) -> Result<(), String> {
+    if content.len() > MAX_LOG_EXPORT {
+        return Err("日志超过 20 MB，无法导出".to_string());
+    }
+    let p = std::path::PathBuf::from(&path);
+    if p.exists() && p.is_dir() {
+        return Err("导出路径不能是目录".to_string());
+    }
+    if let Some(parent) = p.parent() {
+        if !parent.is_dir() {
+            return Err("导出目录不存在".to_string());
+        }
+    }
+    std::fs::write(&p, content).map_err(|e| format!("写日志失败：{e}"))
+}
+
 /// 拉取订阅的结果：原文 + 订阅响应头里的元信息。
 ///
 /// 机场通常用响应头下发三样东西，客户端如果能读出来，体验会好很多：
@@ -298,6 +319,27 @@ mod local_file_tests {
         std::fs::write(&p, "  \n").unwrap();
         let err = read_subscription_file(p.to_string_lossy().to_string()).unwrap_err();
         assert!(err.contains("空"));
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+#[cfg(test)]
+mod log_export_tests {
+    use super::export_log_file;
+
+    #[test]
+    fn writes_log_file() {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "ppclash-log-test-{}-{}.log",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        export_log_file(p.to_string_lossy().to_string(), "hello\n".to_string()).unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "hello\n");
         let _ = std::fs::remove_file(p);
     }
 }

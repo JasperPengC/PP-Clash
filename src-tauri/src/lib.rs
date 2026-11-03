@@ -62,6 +62,7 @@ pub fn run() {
             icons::resolve_process_icon,
             subscription::fetch_subscription,
             subscription::read_subscription_file,
+            subscription::export_log_file,
             subscription::save_config,
             subscription::save_app_state,
             subscription::load_app_state,

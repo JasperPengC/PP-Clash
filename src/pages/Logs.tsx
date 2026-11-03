@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { EmptyState } from '../components/ui';
-import { IconSearch, IconX } from '../components/icons';
+import { IconDownload, IconSearch, IconX } from '../components/icons';
 import { IconLog } from '../components/icons';
 import { useApp } from '../store/app';
-import { api } from '../core/api';
+import { api, isTauri } from '../core/api';
+import { save } from '@tauri-apps/plugin-dialog';
 
 function levelClass(line: string): string {
   if (/level=(fatal|error)/i.test(line)) return 'log-line err';
@@ -20,6 +21,7 @@ export function LogsPage() {
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState<'all' | 'info' | 'warn' | 'error'>('all');
   const [query, setQuery] = useState('');
+  const [exporting, setExporting] = useState(false);
   const viewRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
@@ -57,6 +59,27 @@ export function LogsPage() {
     return /level=info/i.test(line);
   });
 
+  const exportLogs = async () => {
+    if (!isTauri || exporting || shown.length === 0) return;
+    setExporting(true);
+    try {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const path = await save({
+        defaultPath: `ppclash-logs-${stamp}.log`,
+        filters: [{ name: '日志', extensions: ['log', 'txt'] }],
+      });
+      if (!path) return;
+      await api.exportLogFile(path, shown.join('\n') + '\n');
+      useApp.getState().notify('success', '日志已导出');
+    } catch (e) {
+      useApp.getState().notify('error', `导出失败：${String(e)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <>
       <header className="page-head">
@@ -67,6 +90,17 @@ export function LogsPage() {
           </div>
         </div>
         <div className="page-actions">
+          {isTauri && (
+            <button
+              type="button"
+              className="btn"
+              disabled={exporting || shown.length === 0}
+              onClick={() => void exportLogs()}
+            >
+              <IconDownload size={13} />
+              {exporting ? '导出中' : '导出'}
+            </button>
+          )}
           <button type="button" className="btn" onClick={() => setPaused((v) => !v)}>
             {paused ? '继续刷新' : '暂停'}
           </button>

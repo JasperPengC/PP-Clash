@@ -287,6 +287,10 @@ export const api = {
   /** 读取本地 Clash/mihomo 配置文件（10MB 上限，仅 yaml/yml/json）。 */
   readSubscriptionFile: (path: string) => call<string>('read_subscription_file', { path }),
 
+  /** 导出过滤后的日志到用户选择的路径。 */
+  exportLogFile: (path: string, content: string) =>
+    call<void>('export_log_file', { path, content }),
+
   saveConfig: (content: string, dataDir: string) =>
     call<string>('save_config', { content, dataDir }),
 
