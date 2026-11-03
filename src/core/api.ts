@@ -46,10 +46,18 @@ export interface TraySnapshot {
   activeProfile: string | null;
 }
 
+export interface HelperInfo {
+  installed: boolean;
+  version: string | null;
+  needsUpdate: boolean;
+  path: string;
+}
+
 export interface AppUpdateInfo {
   version: string;
   notes: string | null;
   url: string;
+  sha256: string | null;
 }
 
 export interface KernelVersionInfo {
@@ -303,6 +311,23 @@ export const api = {
 
   /** 用系统浏览器打开 http(s) 链接。 */
   openExternalUrl: (url: string) => call<void>('open_external_url', { url }),
+
+  /** 下载更新包到临时目录（可选 sha256 校验）。 */
+  downloadAppUpdate: (url: string, sha256: string | null) =>
+    call<string>('download_app_update', { url, sha256 }),
+
+  /** 打开下载好的更新包。 */
+  openDownloadedUpdate: (path: string) =>
+    call<void>('open_downloaded_update', { path }),
+
+  /** TUN 提权内核状态。 */
+  systemHelperInfo: () => call<HelperInfo>('system_helper_info'),
+
+  /** 安装/更新 TUN 提权内核（会弹一次管理员授权）。 */
+  installSystemHelper: () => call<HelperInfo>('install_system_helper'),
+
+  /** 卸载系统提权内核。 */
+  uninstallSystemHelper: () => call<HelperInfo>('uninstall_system_helper'),
 
   saveConfig: (content: string, dataDir: string) =>
     call<string>('save_config', { content, dataDir }),

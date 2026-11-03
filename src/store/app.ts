@@ -162,6 +162,7 @@ interface AppStore {
   activeId: string | null;
   updateInfo: AppUpdateInfo | null;
   checkingUpdate: boolean;
+  downloadingUpdate: boolean;
   policy: SecurityPolicy;
   settings: AppSettings;
   tunEnabled: boolean;
@@ -222,6 +223,7 @@ interface AppStore {
   notify: (kind: ToastKind, text: string) => void;
   clearToast: () => void;
   checkUpdate: (silent?: boolean) => Promise<void>;
+  downloadUpdate: () => Promise<void>;
   dismissUpdate: () => void;
 }
 
@@ -377,6 +379,7 @@ export const useApp = create<AppStore>((set, get) => ({
   activeId: null,
   updateInfo: null,
   checkingUpdate: false,
+  downloadingUpdate: false,
   policy: DEFAULT_POLICY,
   settings: DEFAULT_SETTINGS,
   tunEnabled: false,
@@ -408,6 +411,21 @@ export const useApp = create<AppStore>((set, get) => ({
     } catch (e) {
       set({ checkingUpdate: false });
       if (!silent) get().notify('error', `检查更新失败：${errorText(e)}`);
+    }
+  },
+
+  downloadUpdate: async () => {
+    const info = get().updateInfo;
+    if (!info || get().downloadingUpdate) return;
+    set({ downloadingUpdate: true });
+    try {
+      const path = await api.downloadAppUpdate(info.url, info.sha256);
+      await api.openDownloadedUpdate(path);
+      get().notify('success', `更新包已下载：${info.version}`);
+      set({ downloadingUpdate: false });
+    } catch (e) {
+      set({ downloadingUpdate: false });
+      get().notify('error', `下载更新失败：${errorText(e)}`);
     }
   },
 

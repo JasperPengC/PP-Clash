@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Segmented, Select, Spinner, Toggle } from '../components/ui';
-import { IconChip, IconFolder, IconGlobe, IconRefresh } from '../components/icons';
-import { api, DATA_DIR, type KernelInfo, type KernelVersionInfo } from '../core/api';
+import { IconChip, IconFolder, IconGlobe, IconRefresh, IconTun } from '../components/icons';
+import { api, DATA_DIR, type HelperInfo, type KernelInfo, type KernelVersionInfo } from '../core/api';
 import { useApp, type OutboundMode } from '../store/app';
 
 function Section({
@@ -116,6 +116,9 @@ export function KernelPage() {
   const [versions, setVersions] = useState<KernelVersionInfo[]>([]);
   const [reinstalling, setReinstalling] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [helper, setHelper] = useState<HelperInfo | null>(null);
+  const [helperBusy, setHelperBusy] = useState(false);
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
 
   const running = kernelPhase === 'running';
 
@@ -140,6 +143,7 @@ export function KernelPage() {
     };
     void load();
     void loadVersions();
+    void api.systemHelperInfo().then(setHelper).catch(() => {});
     const timer = window.setInterval(load, 5000);
     return () => {
       alive = false;
@@ -215,6 +219,36 @@ export function KernelPage() {
       notify('error', `解压失败：${String(e)}`);
     } finally {
       setReinstalling(false);
+    }
+  };
+
+  const installHelper = async () => {
+    setHelperBusy(true);
+    try {
+      setHelper(await api.installSystemHelper());
+      notify('success', 'TUN 提权内核已安装');
+    } catch (e) {
+      notify('error', `安装失败：${String(e)}`);
+    } finally {
+      setHelperBusy(false);
+    }
+  };
+
+  const uninstallHelper = async () => {
+    if (!confirmUninstall) {
+      setConfirmUninstall(true);
+      window.setTimeout(() => setConfirmUninstall(false), 3000);
+      return;
+    }
+    setConfirmUninstall(false);
+    setHelperBusy(true);
+    try {
+      setHelper(await api.uninstallSystemHelper());
+      notify('success', '提权内核已卸载，TUN 将回退到系统授权启动');
+    } catch (e) {
+      notify('error', `卸载失败：${String(e)}`);
+    } finally {
+      setHelperBusy(false);
     }
   };
 
@@ -326,6 +360,60 @@ export function KernelPage() {
                   在 Finder 打开
                 </button>
               }
+            />
+          </Section>
+
+          <Section
+            title="TUN 提权内核"
+            desc="首次启用 TUN 时安装的系统内核副本"
+            icon={<IconTun size={15} />}
+          >
+            <Row
+              label="状态"
+              hint={
+                helper?.installed
+                  ? `已安装${helper.version ? ` · ${helper.version}` : ''}${helper.needsUpdate ? ' · 需要更新' : ''}`
+                  : '未安装；TUN 将使用系统授权启动'
+              }
+              control={
+                <span className={`pill ${helper?.installed ? (helper.needsUpdate ? 'warn' : 'ok') : ''}`}>
+                  {helper?.installed ? (helper.needsUpdate ? '需要更新' : '已安装') : '未安装'}
+                </span>
+              }
+            />
+            <Row
+              label="安装 / 更新"
+              hint="会弹一次管理员授权"
+              control={
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={helperBusy}
+                  onClick={() => void installHelper()}
+                >
+                  {helperBusy ? <Spinner small /> : null}
+                  {helperBusy ? '处理中…' : helper?.needsUpdate ? '更新' : '安装'}
+                </button>
+              }
+            />
+            <Row
+              label="卸载"
+              hint="删除系统副本，之后 TUN 会重新弹授权"
+              control={
+                <button
+                  type="button"
+                  className={`btn btn-ghost${confirmUninstall ? ' danger' : ''}`}
+                  disabled={helperBusy || !helper?.installed}
+                  onClick={() => void uninstallHelper()}
+                >
+                  {confirmUninstall ? '确认卸载' : '卸载'}
+                </button>
+              }
+            />
+            <Row
+              label="系统路径"
+              hint="仅 root 可写"
+              control={<span className="card-hint input-mono" style={{ fontSize: 10 }}>{helper?.path ?? '—'}</span>}
             />
           </Section>
 

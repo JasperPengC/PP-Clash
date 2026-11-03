@@ -11,6 +11,7 @@ pub struct UpdateInfo {
     pub version: String,
     pub notes: Option<String>,
     pub url: String,
+    pub sha256: Option<String>,
 }
 
 fn numeric_version(v: &str) -> Vec<u64> {
@@ -81,6 +82,11 @@ pub async fn check_app_update(
         .get("notes")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let sha256 = body
+        .get("sha256")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty());
     if !is_newer(version, &current_version) {
         return Ok(None);
     }
@@ -88,6 +94,7 @@ pub async fn check_app_update(
         version: version.trim_start_matches(['v', 'V']).to_string(),
         notes,
         url: url.to_string(),
+        sha256,
     }))
 }
 
@@ -102,5 +109,98 @@ mod tests {
         assert!(!is_newer("0.1.0", "0.1.0"));
         assert!(!is_newer("0.1.0", "0.2.0"));
         assert!(is_newer("1.0.1", "1.0"));
+    }
+}
+
+/// 下载更新包到临时目录；有 sha256 时做校验。返回本地路径。
+#[tauri::command]
+pub async fn download_app_update(
+    url: String,
+    sha256: Option<String>,
+) -> Result<String, String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("更新地址必须是 http(s) 链接".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .user_agent("PP-Clash")
+        .build()
+        .map_err(|e| format!("创建下载客户端失败：{e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("下载更新失败：{e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("下载更新返回 HTTP {}", resp.status()));
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取更新包失败：{e}"))?;
+    if bytes.len() > 300 * 1024 * 1024 {
+        return Err("更新包超过 300MB".to_string());
+    }
+    if let Some(expected) = sha256 {
+        use sha2::{Digest, Sha256};
+        let actual = format!("{:x}", Sha256::digest(&bytes));
+        if actual != expected.trim().to_ascii_lowercase() {
+            return Err("更新包校验失败（sha256 不匹配）".to_string());
+        }
+    }
+
+    let name = url
+        .split('?')
+        .next()
+        .unwrap_or(url.as_str())
+        .rsplit('/')
+        .next()
+        .unwrap_or("PP-Clash-update");
+    let safe = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || ".-_".contains(c) { c } else { '_' })
+        .collect::<String>();
+    let ext = std::path::Path::new(&safe)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if !matches!(ext, "dmg" | "exe" | "msi" | "zip") {
+        return Err("更新包格式不受支持".to_string());
+    }
+    let dest = std::env::temp_dir().join(format!("PP-Clash-update-{safe}"));
+    std::fs::write(&dest, &bytes).map_err(|e| format!("写入更新包失败：{e}"))?;
+    Ok(dest.display().to_string())
+}
+
+/// 打开刚下载的更新包；限制在临时目录且扩展名受支持。
+#[tauri::command]
+pub fn open_downloaded_update(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !matches!(ext.as_str(), "dmg" | "exe" | "msi" | "zip") {
+        return Err("不支持的更新包格式".to_string());
+    }
+    if !p.is_file() {
+        return Err("更新包不存在".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .status()
+            .map_err(|e| format!("打开更新包失败：{e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .status()
+            .map_err(|e| format!("打开更新包失败：{e}"))?;
+        Ok(())
     }
 }

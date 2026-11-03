@@ -57,6 +57,9 @@ pub fn run() {
             resources::list_kernel_versions,
             resources::list_resource_files,
             resources::download_kernel_version,
+            resources::system_helper_info,
+            resources::install_system_helper,
+            resources::uninstall_system_helper,
             kernel::kernel_status,
             kernel::kernel_info,
             kernel::validate_config,
@@ -88,6 +91,8 @@ pub fn run() {
             leakcheck::leak_check_ip,
             leakcheck::leak_check_dns,
             update::check_app_update,
+            update::download_app_update,
+            update::open_downloaded_update,
         ])
         .setup(|app| {
             disable_automatic_termination();

@@ -177,6 +177,80 @@ pub fn ensure_system_kernel(user_bin: &Path, version: &str) -> Result<PathBuf, S
     Ok(dest)
 }
 
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HelperInfo {
+    pub installed: bool,
+    pub version: Option<String>,
+    pub needs_update: bool,
+    pub path: String,
+}
+
+fn helper_version() -> Option<String> {
+    std::fs::read_to_string(system_bin_dir().join(".version"))
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+fn user_kernel_version() -> Option<String> {
+    data_dir()
+        .ok()
+        .and_then(|d| std::fs::read_to_string(d.join("bin/.version")).ok())
+        .map(|s| s.trim().to_string())
+}
+
+fn helper_info() -> HelperInfo {
+    let installed = system_bin().is_file();
+    let version = helper_version();
+    let user = user_kernel_version();
+    HelperInfo {
+        installed,
+        needs_update: installed && user.is_some() && version != user,
+        version,
+        path: system_bin().display().to_string(),
+    }
+}
+
+#[tauri::command]
+pub fn system_helper_info() -> Result<HelperInfo, String> {
+    Ok(helper_info())
+}
+
+#[tauri::command]
+pub async fn install_system_helper(app: AppHandle) -> Result<HelperInfo, String> {
+    let (user_bin, version) = ensure_kernel(&app)?;
+    ensure_system_kernel(&user_bin, &version)?;
+    Ok(helper_info())
+}
+
+#[tauri::command]
+pub fn uninstall_system_helper() -> Result<HelperInfo, String> {
+    if !system_bin().is_file() {
+        return Ok(helper_info());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let dir = system_bin_dir();
+        let script = format!("rm -rf '{}'", dir.display());
+        let inner = script.replace('\\', "\\\\").replace('"', "\\\"");
+        let osa = format!("do shell script \"{}\" with administrator privileges", inner);
+        let status = Command::new("osascript")
+            .arg("-e")
+            .arg(&osa)
+            .status()
+            .map_err(|e| format!("调用系统授权失败：{e}"))?;
+        if !status.success() {
+            return Err("管理员授权被取消".to_string());
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        return Err("当前平台暂未实现提权内核卸载".to_string());
+    }
+    Ok(helper_info())
+}
+
 /// 读取内核日志尾部（日志页轮询）。
 pub fn read_log_tail(lines: usize) -> Result<String, String> {
     let path = log_path()?;

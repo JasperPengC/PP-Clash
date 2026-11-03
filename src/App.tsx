@@ -58,6 +58,8 @@ export default function App() {
   const clearToast = useApp((s) => s.clearToast);
   const updateInfo = useApp((s) => s.updateInfo);
   const dismissUpdate = useApp((s) => s.dismissUpdate);
+  const downloadUpdate = useApp((s) => s.downloadUpdate);
+  const downloadingUpdate = useApp((s) => s.downloadingUpdate);
 
   // 托盘事件 → 前端状态。托盘在窗口隐藏时也可操作，这里是唯一的回传通道。
   useEffect(() => {
@@ -261,6 +263,14 @@ export default function App() {
               onClick={() => void api.openExternalUrl(updateInfo.url)}
             >
               查看更新
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={downloadingUpdate}
+              onClick={() => void downloadUpdate()}
+            >
+              {downloadingUpdate ? '下载中…' : '下载更新'}
             </button>
             <button
               type="button"
