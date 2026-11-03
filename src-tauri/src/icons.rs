@@ -97,6 +97,10 @@ fn base64(bytes: &[u8]) -> String {
 /// 根据进程可执行路径找到 .app，提取图标并返回 data URL；找不到时返回 None。
 #[tauri::command]
 pub async fn resolve_process_icon(process_path: String) -> Result<Option<String>, String> {
+    if !cfg!(target_os = "macos") {
+        let _ = process_path;
+        return Ok(None);
+    }
     let exec = PathBuf::from(process_path);
     let Some(app) = find_bundle(&exec) else {
         return Ok(None);

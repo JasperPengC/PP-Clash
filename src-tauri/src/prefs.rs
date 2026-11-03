@@ -43,12 +43,44 @@ pub fn set_close_to_tray(enabled: bool, app: tauri::AppHandle) {
     *app.state::<AppFlags>().close_to_tray.lock().unwrap() = enabled;
 }
 
+#[cfg(target_os = "windows")]
+fn set_launch_login_windows(enable: bool) -> Result<(), String> {
+    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+    if !enable {
+        let _ = std::process::Command::new("reg")
+            .args(["delete", key, "/v", "PPClash", "/f"])
+            .status();
+        return Ok(());
+    }
+    let exe = std::env::current_exe().map_err(|e| format!("读自身路径失败：{e}"))?;
+    let value = format!("\"{}\"", exe.display());
+    let out = std::process::Command::new("reg")
+        .args(["add", key, "/v", "PPClash", "/t", "REG_SZ", "/d", &value, "/f"])
+        .output()
+        .map_err(|e| format!("写自启项失败：{e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
 /// 开机自启（macOS LaunchAgent）。
 ///
 /// 用当前可执行文件路径反推 .app 包位置，避免把绝对路径写死——
 /// 用户拖到 /Applications 还是留在 Downloads，自启都能指对 app。
 #[tauri::command]
 pub fn set_launch_login(enable: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return set_launch_login_windows(enable);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = enable;
+        return Err("当前平台暂未实现开机自启".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
     let home = std::env::var("HOME").map_err(|_| "读不到 HOME".to_string())?;
     let plist = PathBuf::from(&home).join("Library/LaunchAgents/com.ppclash.plist");
 
@@ -94,6 +126,7 @@ pub fn set_launch_login(enable: bool) -> Result<(), String> {
     }
     std::fs::write(&plist, xml).map_err(|e| format!("写入自启项失败：{e}"))?;
     Ok(())
+    }
 }
 
 /// 用系统默认浏览器打开外部链接；只允许 http(s)。
@@ -102,20 +135,42 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("只支持 http(s) 链接".to_string());
     }
-    std::process::Command::new("open")
-        .arg(&url)
-        .status()
-        .map_err(|e| format!("打开链接失败：{e}"))?;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
+            .status()
+            .map_err(|e| format!("打开链接失败：{e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .status()
+            .map_err(|e| format!("打开链接失败：{e}"))?;
+        Ok(())
+    }
 }
 
 /// 在 Finder 里打开数据目录，方便用户查看 config.yaml / 日志。
 #[tauri::command]
 pub fn open_data_dir(data_dir: String) -> Result<(), String> {
     let dir = resolve_data_dir(&data_dir)?;
-    std::process::Command::new("open")
-        .arg(&dir)
-        .status()
-        .map_err(|e| format!("打开目录失败：{e}"))?;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .status()
+            .map_err(|e| format!("打开目录失败：{e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("open")
+            .arg(&dir)
+            .status()
+            .map_err(|e| format!("打开目录失败：{e}"))?;
+        Ok(())
+    }
 }

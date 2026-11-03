@@ -16,7 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::tray::TrayIconBuilder;
-use tauri::{ActivationPolicy, Manager, WindowEvent};
+use tauri::{Manager, WindowEvent};
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 
 static HIDDEN_TO_TRAY: AtomicBool = AtomicBool::new(false);
 
@@ -35,6 +37,7 @@ fn disable_automatic_termination() {}
 pub fn focus_main(app: &tauri::AppHandle) {
     // 从托盘/面板唤回主窗口时恢复 Dock 图标
     HIDDEN_TO_TRAY.store(false, Ordering::Relaxed);
+    #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(ActivationPolicy::Regular);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -124,6 +127,7 @@ pub fn run() {
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let WindowEvent::Focused(true) = event {
+                    #[cfg(target_os = "macos")]
                     let _ = window
                         .app_handle()
                         .set_activation_policy(ActivationPolicy::Regular);
@@ -156,6 +160,7 @@ pub fn run() {
                         .lock()
                         .unwrap();
                     if hide_dock {
+                        #[cfg(target_os = "macos")]
                         let _ = window
                             .app_handle()
                             .set_activation_policy(ActivationPolicy::Accessory);

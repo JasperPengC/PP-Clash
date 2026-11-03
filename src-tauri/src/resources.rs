@@ -59,11 +59,12 @@ fn zip_path(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn zip_entry(zip: &Path, entry: &str) -> Option<String> {
-    let out = Command::new("unzip").arg("-p").arg(zip).arg(entry).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let file = std::fs::File::open(zip).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+    let mut entry = archive.by_name(entry).ok()?;
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut entry, &mut text).ok()?;
+    let text = text.trim().to_string();
     if text.is_empty() {
         None
     } else {
@@ -85,20 +86,12 @@ fn geo_ok(dir: &Path) -> bool {
 
 fn extract(zip: &Path, dest: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dest).map_err(|e| format!("创建数据目录失败：{e}"))?;
-    let out = Command::new("unzip")
-        .arg("-o")
-        .arg("-q")
-        .arg(zip)
-        .arg("-d")
-        .arg(dest)
-        .output()
+    let file = std::fs::File::open(zip).map_err(|e| format!("打开内置资源失败：{e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("读取内置资源失败：{e}"))?;
+    archive
+        .extract(dest)
         .map_err(|e| format!("解压内置内核失败：{e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "解压内置内核失败：{}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
     Ok(())
 }
 
