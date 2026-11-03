@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend deps
+        run: npm ci
+      - name: Fetch bundled kernel
+        env:
+          KERNEL_ZIP_URL: ${{ vars.KERNEL_ZIP_URL }}
+        run: |
+          if [ -z "$KERNEL_ZIP_URL" ]; then
+            echo "::error::未配置仓库变量 KERNEL_ZIP_URL（kernel.zip 下载地址）"
+            exit 1
+          fi
+          mkdir -p src-tauri/resources
+          curl -fL "$KERNEL_ZIP_URL" -o src-tauri/resources/kernel.zip
+      - name: Build app
+        run: ./scripts/bundle.sh
+      - name: Sign and notarize
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: ./scripts/sign-notarize.sh
+      - name: Build DMG
+        run: ./scripts/build-dmg.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PP-Clash-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            src-tauri/target/release/bundle/dmg/*.dmg \
+            --title "PP Clash $GITHUB_REF_NAME" \
+            --notes "自动构建产物" || \
+          gh release upload "$GITHUB_REF_NAME" \
+            src-tauri/target/release/bundle/dmg/*.dmg --clobber

@@ -8,12 +8,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:$PATH"
 
-# 关键：图标生成必须放在 cargo build 之前！
-# tauri::generate_context!() 在编译期读取 src-tauri/icons/icon.png，
-# 且该 PNG 必须是 RGBA（否则 Rust 宏 panic）。如果 icon 在 cargo 之后生成，
-# cargo 会用到上一次残留的（可能是 RGB 的）icon.png 而失败。
-echo "▸ 生成图标（icon.svg 矢量母版 → 多尺寸 icns / RGBA icon.png）"
-node scripts/make-icon.mjs
+# 图标产物（icon.icns / icon.png / tray 状态图）已提交在 src-tauri/icons 与
+# src-tauri/resources/tray；不要在这里重新生成，避免旧 SVG 覆盖新猫头。
+[ -f src-tauri/icons/icon.png ] || { echo "缺少 src-tauri/icons/icon.png" >&2; exit 1; }
+[ -f src-tauri/icons/icon.icns ] || { echo "缺少 src-tauri/icons/icon.icns" >&2; exit 1; }
 
 echo "▸ 构建前端"
 npm run build
