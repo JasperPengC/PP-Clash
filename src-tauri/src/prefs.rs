@@ -188,18 +188,21 @@ pub async fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
     {
         crate::watchdog::stop_for_restart();
         let exe = std::env::current_exe().map_err(|e| format!("读自身路径失败：{e}"))?;
+        // 旧进程持有单实例互斥量；必须等它退出后再启动新进程，否则新进程会
+        // 认为已有实例而直接退出，表现为「提权后没反应」。
         let ps = format!(
-            "Start-Process -FilePath '{}' -Verb RunAs",
+            "Wait-Process -Id {} -Timeout 10 -ErrorAction SilentlyContinue; try {{ Start-Process -FilePath '{}' -Verb RunAs -ErrorAction Stop }} catch {{ Start-Process -FilePath '{}' }}",
+            std::process::id(),
+            exe.display(),
             exe.display()
         );
-        let status = crate::platform::async_command("powershell")
+        crate::platform::command("powershell")
             .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &ps])
-            .status()
-            .await
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
             .map_err(|e| format!("请求管理员权限失败：{e}"))?;
-        if !status.success() {
-            return Err("管理员授权被取消".to_string());
-        }
         app.exit(0);
         return Ok(());
     }
