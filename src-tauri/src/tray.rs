@@ -432,6 +432,40 @@ pub async fn update_indicator(app: &AppHandle) -> Result<(), String> {
         (0.0, 0.0)
     };
 
+    #[cfg(target_os = "windows")]
+    {
+        // Windows 通知区域只有 16/32px，不适合把两行速率画进图标；
+        // 状态用图标表示，速率放 tooltip，交互走原生右键菜单。
+        let bytes = match state {
+            2 => ICON_TUN_DARK,
+            1 => ICON_PROXY_DARK,
+            _ => ICON_OFF_DARK,
+        };
+        let image = Image::from_bytes(bytes).map_err(|e| e.to_string())?;
+        if let Some(tray) = app.tray_by_id("main") {
+            tray.set_icon_with_as_template(Some(image), false)
+                .map_err(|e| e.to_string())?;
+            let label = if tun {
+                "TUN"
+            } else if sys_proxy {
+                "系统代理"
+            } else {
+                "未接管"
+            };
+            let tip = if show_speed && running {
+                format!(
+                    "PP Clash · {label} · ↑{}/s ↓{}/s",
+                    speed_body(rates.0),
+                    speed_body(rates.1)
+                )
+            } else {
+                format!("PP Clash · {label}")
+            };
+            let _ = tray.set_tooltip(Some(tip));
+        }
+        return Ok(());
+    }
+
     let label = format!(
         "{}|{}|{}|{}|{}",
         state,
@@ -492,6 +526,11 @@ pub async fn set_tray_flags(
     show_speed: bool,
     hide_dock: bool,
 ) -> Result<(), String> {
+    if sys_proxy_enabled {
+        crate::watchdog::set_port(mixed_port);
+    } else {
+        crate::watchdog::clear_port();
+    }
     {
         let flags = app.state::<AppFlags>();
         *flags.tun_enabled.lock().unwrap() = tun_enabled;
@@ -585,7 +624,18 @@ pub async fn tray_action(
                 let _ = panel.hide();
             }
         }
-        "quit" => app.exit(0),
+        "quit" => {
+            // 退出前先恢复网络：否则系统代理/TUN 会指向已退出的内核。
+            let flags = app.state::<AppFlags>();
+            let sys = *flags.sys_proxy_enabled.lock().unwrap();
+            let port = *flags.mixed_port.lock().unwrap();
+            drop(flags);
+            if sys {
+                let _ = crate::sysproxy::set_system_proxy(false, "127.0.0.1".to_string(), port);
+            }
+            let _ = crate::kernel::stop_kernel(app.clone()).await;
+            app.exit(0);
+        }
         "sysproxy" => {
             let enable = value.as_deref() == Some("true");
             let _ = app.emit("tray://panel-sysproxy", enable);
@@ -651,7 +701,15 @@ pub fn on_tray_click(app: &AppHandle, event: TrayIconEvent) {
         ..
     } = event
     {
-        toggle_panel(app, rect);
+        #[cfg(target_os = "windows")]
+        {
+            let _ = rect;
+            crate::focus_main(app);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            toggle_panel(app, rect);
+        }
     }
 }
 

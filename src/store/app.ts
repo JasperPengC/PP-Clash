@@ -245,6 +245,16 @@ function errorText(e: unknown): string {
   return typeof e === 'string' ? e : JSON.stringify(e);
 }
 
+/** 内核启动失败/校验失败时撤掉系统代理，避免全网断线。 */
+async function disableProxyOnFailure(port: number) {
+  if (!isTauri) return;
+  try {
+    await api.setSystemProxy(false, '127.0.0.1', port);
+  } catch {
+    /* 尽力而为 */
+  }
+}
+
 let restartChain: Promise<void> = Promise.resolve();
 let recoveryToken = 0;
 let recoveryRunning = false;
@@ -891,6 +901,11 @@ export const useApp = create<AppStore>((set, get) => ({
       } catch (e) {
         const msg = `配置校验失败：${errorText(e)}`;
         set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
+        if (get().sysProxyEnabled) {
+          await disableProxyOnFailure(get().settings.mixedPort);
+          set({ sysProxyEnabled: false });
+          void persist(get());
+        }
         get().notify('error', msg);
         return;
       }
@@ -937,6 +952,11 @@ export const useApp = create<AppStore>((set, get) => ({
     } catch (e) {
       const msg = errorText(e);
       set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
+      if (get().sysProxyEnabled) {
+        await disableProxyOnFailure(get().settings.mixedPort);
+        set({ sysProxyEnabled: false });
+        void persist(get());
+      }
       if (!quiet) get().notify('error', `启动内核失败：${msg}`);
     }
     await pushTray(get());
@@ -1047,8 +1067,15 @@ export const useApp = create<AppStore>((set, get) => ({
 
     try {
       await api.stopKernel();
-    } catch {
-      /* 已经停了 */
+    } catch (e) {
+      set({
+        kernelPhase: 'failed',
+        connectedAt: null,
+        kernelError: `停止内核失败：${errorText(e)}`,
+      });
+      if (!quiet) get().notify('error', `停止内核失败：${errorText(e)}`);
+      await pushTray(get());
+      return;
     }
     set({ kernelPhase: 'stopped', connectedAt: null, groups: [], kernelError: null });
     if (!quiet) get().notify('info', '已断开连接');
@@ -1106,10 +1133,20 @@ export const useApp = create<AppStore>((set, get) => ({
       return;
     }
 
+    if (on && get().tunEnabled) {
+      get().notify('info', 'TUN 已开启，先关闭 TUN 再开系统代理');
+      return;
+    }
+
     // 联动：开启系统代理即视为接管流量，内核没跑就先拉起
     if (on && get().kernelPhase !== 'running') {
       await get().startKernel();
       if (get().kernelPhase !== 'running') return;
+      // startKernel 成功时已经开过一次系统代理，避免重复 spawn networksetup/reg
+      if (get().sysProxyEnabled) {
+        await pushTray(get());
+        return;
+      }
     }
 
     try {
@@ -1177,6 +1214,13 @@ export const useApp = create<AppStore>((set, get) => ({
         await get().restartKernel(true);
       } else {
         await get().stopKernel(true);
+        if (get().kernelPhase !== 'stopped') {
+          set({ tunEnabled: true });
+          void persist(get());
+          await pushTray(get());
+          get().notify('error', 'TUN 关闭失败，内核仍在运行，请重试');
+          return;
+        }
         get().notify('info', 'TUN 已关闭，内核已停止');
       }
     } else {

@@ -78,6 +78,14 @@ export default function App() {
       listen<string>('tray://error', (e) => {
         useApp.getState().notify('error', e.payload);
       }),
+      listen('tray://toggle-sysproxy', () => {
+        const s = useApp.getState();
+        void s.toggleSystemProxy(!s.sysProxyEnabled);
+      }),
+      listen('tray://toggle-tun', () => {
+        const s = useApp.getState();
+        void s.setTun(!s.tunEnabled);
+      }),
       listen('tray://toggle-kernel', () => {
         const s = useApp.getState();
         if (s.kernelPhase === 'running') void s.stopKernel();

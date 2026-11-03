@@ -28,6 +28,7 @@ export function TrayPanel() {
   const [delays, setDelays] = useState<Record<string, number | null>>({});
   const [testing, setTesting] = useState(false);
   const [profilesOpen, setProfilesOpen] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -56,6 +57,10 @@ export function TrayPanel() {
   }, []);
 
   const act = (action: string, value?: string) => {
+    if (action === 'sysproxy' || action === 'tun') {
+      setPending(action);
+      window.setTimeout(() => setPending(null), 5000);
+    }
     void api.trayAction(action, value).catch(() => undefined);
   };
 
@@ -125,6 +130,8 @@ export function TrayPanel() {
             <span className="tp-row-label">系统代理</span>
             <Toggle
               on={Boolean(snap?.sysProxy)}
+              busy={pending === 'sysproxy'}
+              disabled={pending !== null}
               onChange={(v) => act('sysproxy', String(v))}
               label="系统代理"
             />
@@ -134,7 +141,13 @@ export function TrayPanel() {
               <IconTun size={14} />
             </span>
             <span className="tp-row-label">TUN 模式</span>
-            <Toggle on={Boolean(snap?.tun)} onChange={() => act('tun')} label="TUN 模式" />
+            <Toggle
+              on={Boolean(snap?.tun)}
+              busy={pending === 'tun'}
+              disabled={pending !== null}
+              onChange={() => act('tun')}
+              label="TUN 模式"
+            />
           </div>
         </div>
 

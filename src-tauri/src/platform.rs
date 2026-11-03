@@ -71,3 +71,29 @@ pub fn system_bin() -> PathBuf {
 pub fn user_kernel_bin() -> Result<PathBuf, String> {
     Ok(data_dir()?.join("bin").join(kernel_binary_name()))
 }
+
+/// 创建子进程命令；Windows 下隐藏控制台窗口，避免 reg/powershell/tasklist
+/// 这类控制台程序每调用一次就弹一个黑框。
+pub fn command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+/// 异步子进程命令；Windows 下同样隐藏控制台窗口。
+pub fn async_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = tokio::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}

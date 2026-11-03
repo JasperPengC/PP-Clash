@@ -189,7 +189,7 @@ pub fn open_downloaded_update(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
+        crate::platform::command("cmd")
             .args(["/C", "start", "", &path])
             .status()
             .map_err(|e| format!("打开更新包失败：{e}"))?;
@@ -197,7 +197,7 @@ pub fn open_downloaded_update(path: String) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        std::process::Command::new("open")
+        crate::platform::command("open")
             .arg(&path)
             .status()
             .map_err(|e| format!("打开更新包失败：{e}"))?;

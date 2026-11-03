@@ -3,6 +3,7 @@ mod kernel;
 mod leakcheck;
 mod platform;
 mod update;
+mod watchdog;
 mod mihomo;
 mod prefs;
 mod resources;
@@ -17,6 +18,10 @@ use std::time::Duration;
 
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
+#[cfg(target_os = "windows")]
+use tauri::Emitter;
+#[cfg(target_os = "windows")]
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 
@@ -44,6 +49,16 @@ pub fn focus_main(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let open = MenuItem::with_id(app, "open", "打开 PP Clash", true, None::<&str>)?;
+    let proxy = MenuItem::with_id(app, "toggle-proxy", "开关系统代理", true, None::<&str>)?;
+    let tun = MenuItem::with_id(app, "toggle-tun", "开关 TUN", true, None::<&str>)?;
+    let sep = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    Menu::with_items(app, &[&open, &proxy, &tun, &sep, &quit])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -96,19 +111,48 @@ pub fn run() {
         ])
         .setup(|app| {
             disable_automatic_termination();
+            watchdog::start(app.handle());
             // 兜底：无论窗口配置怎么变，启动后都把主窗口显示出来并置前
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
             }
 
-            // 托盘用单色模板图：icon_as_template 让 macOS 自适应明暗菜单栏
-            TrayIconBuilder::with_id("main")
-                .icon(tauri::include_image!("icons/tray_icon.png"))
-                .icon_as_template(true)
+            // macOS：单色模板图自适应菜单栏；Windows：彩色状态图标 + 原生右键菜单。
+            #[cfg(target_os = "macos")]
+            let tray_icon = tauri::include_image!("icons/tray_icon.png");
+            #[cfg(target_os = "windows")]
+            let tray_icon = tauri::include_image!("resources/tray/off-dark.png");
+
+            let mut tray_builder = TrayIconBuilder::with_id("main")
+                .icon(tray_icon)
                 .show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray, event| tray::on_tray_click(tray.app_handle(), event))
-                .build(app)?;
+                .on_tray_icon_event(|tray, event| tray::on_tray_click(tray.app_handle(), event));
+
+            #[cfg(target_os = "macos")]
+            {
+                tray_builder = tray_builder.icon_as_template(true);
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                let menu = build_windows_tray_menu(app.handle())?;
+                tray_builder = tray_builder.menu(&menu).on_menu_event(
+                    |app, event| match event.id().as_ref() {
+                        "open" => focus_main(app),
+                        "toggle-proxy" => {
+                            let _ = app.emit("tray://toggle-sysproxy", ());
+                        }
+                        "toggle-tun" => {
+                            let _ = app.emit("tray://toggle-tun", ());
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    },
+                );
+            }
+
+            tray_builder.build(app)?;
 
             // 菜单内容按当前状态异步重建（内核状态 / 分组节点 / 代理开关）
             let handle = app.handle().clone();

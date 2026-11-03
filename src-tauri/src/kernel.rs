@@ -21,6 +21,8 @@ pub struct KernelState {
     config_path: Mutex<Option<String>>,
     /// 当前内核二进制路径（内核信息展示）。
     binary_path: Mutex<Option<String>>,
+    /// 防止并发 start 互相踩踏（前端状态更新前的竞态）。
+    start_lock: tokio::sync::Mutex<()>,
 }
 
 impl Default for KernelState {
@@ -31,6 +33,7 @@ impl Default for KernelState {
             controller_port: Mutex::new(9090),
             config_path: Mutex::new(None),
             binary_path: Mutex::new(None),
+            start_lock: tokio::sync::Mutex::new(()),
         }
     }
 }
@@ -117,13 +120,13 @@ fn tcp_port_open(port: u16) -> bool {
 /// 启动前检查端口。刚重启内核时端口可能还没释放，先等最多 3 秒。
 #[cfg(not(target_os = "windows"))]
 fn current_uid() -> Option<u32> {
-    let out = std::process::Command::new("id").arg("-u").output().ok()?;
+    let out = crate::platform::command("id").arg("-u").output().ok()?;
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
 #[cfg(not(target_os = "windows"))]
 fn pid_uid(pid: u32) -> Option<u32> {
-    let out = std::process::Command::new("ps")
+    let out = crate::platform::command("ps")
         .args(["-o", "uid=", "-p", &pid.to_string()])
         .output()
         .ok()?;
@@ -132,7 +135,7 @@ fn pid_uid(pid: u32) -> Option<u32> {
 
 #[cfg(not(target_os = "windows"))]
 fn pid_ppid(pid: u32) -> Option<u32> {
-    let out = std::process::Command::new("ps")
+    let out = crate::platform::command("ps")
         .args(["-o", "ppid=", "-p", &pid.to_string()])
         .output()
         .ok()?;
@@ -141,7 +144,7 @@ fn pid_ppid(pid: u32) -> Option<u32> {
 
 #[cfg(not(target_os = "windows"))]
 fn pid_alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
+    crate::platform::command("kill")
         .args(["-0", &pid.to_string()])
         .status()
         .map(|s| s.success())
@@ -150,7 +153,7 @@ fn pid_alive(pid: u32) -> bool {
 
 #[cfg(not(target_os = "windows"))]
 fn signal(pid: u32, sig: &str) {
-    let _ = std::process::Command::new("kill")
+    let _ = crate::platform::command("kill")
         .arg(format!("-{sig}"))
         .arg(pid.to_string())
         .status();
@@ -171,7 +174,7 @@ fn terminate(pid: u32) {
 /// 列出监听指定端口的进程 pid。
 #[cfg(not(target_os = "windows"))]
 fn listeners(port: u16, tcp: bool) -> Vec<u32> {
-    let mut cmd = std::process::Command::new("lsof");
+    let mut cmd = crate::platform::command("lsof");
     cmd.args(["-nP", "-t", &format!("-i{}:{}", if tcp { "TCP" } else { "UDP" }, port)]);
     if tcp {
         cmd.args(["-sTCP:LISTEN"]);
@@ -187,7 +190,7 @@ fn listeners(port: u16, tcp: bool) -> Vec<u32> {
 
 #[cfg(target_os = "windows")]
 fn tasklist_field(pid: u32) -> Option<String> {
-    let out = std::process::Command::new("tasklist")
+    let out = crate::platform::command("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
         .output()
         .ok()?;
@@ -204,7 +207,7 @@ fn pid_alive(pid: u32) -> bool {
 
 #[cfg(target_os = "windows")]
 fn signal(pid: u32, _sig: &str) {
-    let _ = std::process::Command::new("taskkill")
+    let _ = crate::platform::command("taskkill")
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .status();
 }
@@ -215,9 +218,22 @@ fn terminate(pid: u32) {
 }
 
 #[cfg(target_os = "windows")]
+fn terminate_elevated(pid: u32) {
+    // TUN 内核由 UAC 以管理员权限启动，普通 taskkill 会拒绝访问；
+    // 停止时再借一次管理员权限（UAC 确认）。
+    let ps = format!(
+        "$p = Start-Process -FilePath taskkill -ArgumentList @('/PID','{}','/T','/F') -Verb RunAs -WindowStyle Hidden -PassThru -Wait; exit $p.ExitCode",
+        pid
+    );
+    let _ = crate::platform::command("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &ps])
+        .status();
+}
+
+#[cfg(target_os = "windows")]
 fn listeners(port: u16, tcp: bool) -> Vec<u32> {
     let proto = if tcp { "TCP" } else { "UDP" };
-    let out = match std::process::Command::new("netstat")
+    let out = match crate::platform::command("netstat")
         .args(["-ano", "-p", proto])
         .output()
     {
@@ -254,7 +270,7 @@ fn pid_of_process(config_path: &str) -> Option<u32> {
         "$p = Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{}*' }} | Select-Object -First 1 -ExpandProperty ProcessId; $p",
         config_path.replace('\'', "''")
     );
-    let out = std::process::Command::new("powershell")
+    let out = crate::platform::command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output()
         .ok()?;
@@ -324,7 +340,7 @@ fn reclaim_ports(ports: &[(u16, bool)]) -> Vec<u32> {
             "/Applications/Clash Verge.app/Contents/MacOS/Clash Verge",
             "/Applications/FlClash.app/Contents/MacOS/FlClash",
         ] {
-            if let Ok(out) = std::process::Command::new("pgrep")
+            if let Ok(out) = crate::platform::command("pgrep")
                 .args(["-f", pattern])
                 .output()
             {
@@ -337,7 +353,7 @@ fn reclaim_ports(ports: &[(u16, bool)]) -> Vec<u32> {
                     }
                 }
             }
-            let _ = std::process::Command::new("pkill")
+            let _ = crate::platform::command("pkill")
                 .args(["-TERM", "-f", pattern])
                 .status();
         }
@@ -533,7 +549,7 @@ async fn wait_ready(
 
 #[cfg(not(target_os = "windows"))]
 fn pid_of_process(config_path: &str) -> Option<u32> {
-    let out = std::process::Command::new("pgrep")
+    let out = crate::platform::command("pgrep")
         .arg("-f")
         .arg(config_path)
         .output()
@@ -546,7 +562,7 @@ fn pid_of_process(config_path: &str) -> Option<u32> {
 
 #[cfg(not(target_os = "windows"))]
 fn rss_kb(pid: u32) -> Option<u64> {
-    let out = std::process::Command::new("ps")
+    let out = crate::platform::command("ps")
         .args(["-o", "rss=", "-p", &pid.to_string()])
         .output()
         .ok()?;
@@ -641,6 +657,11 @@ pub async fn start_kernel(
     privileged: bool,
     controller_port: u16,
 ) -> Result<KernelStatus, String> {
+    let state = app.state::<KernelState>();
+    let _start_guard = state
+        .start_lock
+        .try_lock()
+        .map_err(|_| "内核正在启动，请稍候".to_string())?;
     // 先清理残留（包括上次崩溃/强退留下的 TUN 内核）
     let _ = stop_kernel(app.clone()).await;
     #[cfg(target_os = "windows")]
@@ -651,7 +672,7 @@ pub async fn start_kernel(
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = std::process::Command::new("pkill")
+        let _ = crate::platform::command("pkill")
             .arg("-f")
             .arg(&config_path)
             .status();
@@ -702,6 +723,16 @@ pub async fn start_kernel(
     let data = PathBuf::from(&data_dir);
     std::fs::create_dir_all(&data).map_err(|e| format!("创建工作目录失败：{e}"))?;
 
+    // TUN 内核以 root 运行过时会把 cache.db 写成 root 属主；下次普通启动
+    // 无法写这个文件，mihomo 会反复报 cache permission denied。目录属于当前用户，
+    // 直接删掉缓存让内核重建。
+    for name in ["cache.db", "cache.db-wal", "cache.db-shm"] {
+        let p = data.join(name);
+        if p.exists() {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
     let log_path = data.join("kernel.log");
     let log_file = std::fs::File::create(&log_path).map_err(|e| format!("创建内核日志失败：{e}"))?;
 
@@ -729,7 +760,7 @@ pub async fn start_kernel(
                 data.display(),
                 config.display()
             );
-            let status = Command::new("powershell")
+            let status = crate::platform::async_command("powershell")
                 .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
                 .status()
                 .await
@@ -758,7 +789,7 @@ pub async fn start_kernel(
             config.display(),
             log_path.display()
         );
-        let status = Command::new("osascript")
+        let status = crate::platform::async_command("osascript")
             .arg("-e")
             .arg(&script)
             .stdout(Stdio::null())
@@ -784,7 +815,7 @@ pub async fn start_kernel(
         }
     }
 
-    let mut child = Command::new(&binary)
+    let mut child = crate::platform::async_command(&binary)
         .arg("-d")
         .arg(&data)
         .arg("-f")
@@ -833,6 +864,7 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
     let state = app.state::<KernelState>();
     let privileged = *state.privileged.lock().await;
     let config_path = state.config_path.lock().await.clone();
+    let had_child = state.child.lock().await.is_some();
 
     if let Some(mut child) = state.child.lock().await.take() {
         let _ = child.kill().await;
@@ -844,7 +876,7 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
         #[cfg(target_os = "windows")]
         if let Some(cfg) = &config_path {
             if let Some(pid) = pid_of_process(cfg) {
-                terminate(pid);
+                terminate_elevated(pid);
             }
         }
         #[cfg(not(target_os = "windows"))]
@@ -854,7 +886,7 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
                 "do shell script \"pkill -f '{}'\" with administrator privileges",
                 cfg
             );
-            let _ = Command::new("osascript")
+            let _ = crate::platform::async_command("osascript")
                 .arg("-e")
                 .arg(&script)
                 .stdout(Stdio::null())
@@ -871,7 +903,7 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
         #[cfg(not(target_os = "windows"))]
         {
         // 兜底：按配置路径清理孤儿进程（setuid 内核 real uid 仍是当前用户，可杀）
-        let _ = std::process::Command::new("pkill")
+        let _ = crate::platform::command("pkill")
             .arg("-f")
             .arg(cfg)
             .status();
@@ -887,6 +919,12 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+    }
+
+    // 端口还活着说明进程没有真正退出；不要向上层谎报 stopped，
+    // 更不要让前端在 TUN 仍生效时把开关画成关闭。
+    if (had_child || privileged) && tcp_port_open(*state.controller_port.lock().await) {
+        return Err("内核仍在运行，停止未完成".to_string());
     }
 
     Ok(KernelStatus {
@@ -908,7 +946,7 @@ pub async fn cleanup_stale_kernel() -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = Command::new("pkill")
+        let _ = crate::platform::async_command("pkill")
             .arg("-f")
             .arg("Application Support/PPClash/config.yaml")
             .status()
@@ -968,7 +1006,7 @@ pub async fn validate_config(
     }
     let (bin, _) = resources::ensure_kernel(&app)?;
     let out = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(&bin)
+        crate::platform::command(&bin)
             .args(["-t", "-d", &data_dir, "-f", &config_path])
             .output()
     })

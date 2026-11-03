@@ -52,6 +52,28 @@ export function OverviewPage() {
 
   const connected = kernelPhase === 'running';
   const failed = kernelPhase === 'failed';
+  const kernelBusy = kernelPhase === 'starting' || kernelPhase === 'stopping';
+  const [proxyPending, setProxyPending] = useState(false);
+  const [tunPending, setTunPending] = useState(false);
+  const switchesBusy = kernelBusy || proxyPending || tunPending;
+
+  const changeSystemProxy = async (on: boolean) => {
+    setProxyPending(true);
+    try {
+      await toggleSystemProxy(on);
+    } finally {
+      setProxyPending(false);
+    }
+  };
+
+  const changeTun = async (on: boolean) => {
+    setTunPending(true);
+    try {
+      await setTun(on);
+    } finally {
+      setTunPending(false);
+    }
+  };
   const activeProfile = profiles.find((p) => p.id === activeId);
   const primaryGroup = groups[0];
   const nodeName = resolveActiveNode(groups, primaryGroup?.now ?? '');
@@ -453,12 +475,18 @@ export function OverviewPage() {
               <div className="switch-main">
                 <div className="switch-title">系统代理</div>
                 <div className="switch-sub">
-                  {sysProxyEnabled ? '已开启' : '未开启'}
+                  {proxyPending || (kernelBusy && !sysProxyEnabled)
+                    ? '处理中…'
+                    : sysProxyEnabled
+                      ? '已开启'
+                      : '未开启'}
                 </div>
               </div>
               <Toggle
                 on={sysProxyEnabled}
-                onChange={toggleSystemProxy}
+                busy={proxyPending || (kernelBusy && !sysProxyEnabled)}
+                disabled={switchesBusy}
+                onChange={(v) => void changeSystemProxy(v)}
                 label="系统代理"
               />
             </div>
@@ -469,10 +497,20 @@ export function OverviewPage() {
               <div className="switch-main">
                 <div className="switch-title">TUN 模式</div>
                 <div className="switch-sub">
-                  {tunEnabled ? '已开启' : '未开启'}
+                  {tunPending || (kernelBusy && !tunEnabled)
+                    ? '处理中…'
+                    : tunEnabled
+                      ? '已开启'
+                      : '未开启'}
                 </div>
               </div>
-              <Toggle on={tunEnabled} onChange={setTun} label="TUN 模式" />
+              <Toggle
+                on={tunEnabled}
+                busy={tunPending || (kernelBusy && !tunEnabled)}
+                disabled={switchesBusy}
+                onChange={(v) => void changeTun(v)}
+                label="TUN 模式"
+              />
             </div>
           </section>
 

@@ -47,14 +47,14 @@ pub fn set_close_to_tray(enabled: bool, app: tauri::AppHandle) {
 fn set_launch_login_windows(enable: bool) -> Result<(), String> {
     let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
     if !enable {
-        let _ = std::process::Command::new("reg")
+        let _ = crate::platform::command("reg")
             .args(["delete", key, "/v", "PPClash", "/f"])
             .status();
         return Ok(());
     }
     let exe = std::env::current_exe().map_err(|e| format!("读自身路径失败：{e}"))?;
     let value = format!("\"{}\"", exe.display());
-    let out = std::process::Command::new("reg")
+    let out = crate::platform::command("reg")
         .args(["add", key, "/v", "PPClash", "/t", "REG_SZ", "/d", &value, "/f"])
         .output()
         .map_err(|e| format!("写自启项失败：{e}"))?;
@@ -137,7 +137,7 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("rundll32")
+        crate::platform::command("rundll32")
             .args(["url.dll,FileProtocolHandler", &url])
             .status()
             .map_err(|e| format!("打开链接失败：{e}"))?;
@@ -145,7 +145,7 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        std::process::Command::new("open")
+        crate::platform::command("open")
             .arg(&url)
             .status()
             .map_err(|e| format!("打开链接失败：{e}"))?;
@@ -159,7 +159,7 @@ pub fn open_data_dir(data_dir: String) -> Result<(), String> {
     let dir = resolve_data_dir(&data_dir)?;
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer")
+        crate::platform::command("explorer")
             .arg(&dir)
             .status()
             .map_err(|e| format!("打开目录失败：{e}"))?;
@@ -167,7 +167,7 @@ pub fn open_data_dir(data_dir: String) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        std::process::Command::new("open")
+        crate::platform::command("open")
             .arg(&dir)
             .status()
             .map_err(|e| format!("打开目录失败：{e}"))?;

@@ -162,7 +162,7 @@ pub fn ensure_system_kernel(user_bin: &Path, version: &str) -> Result<PathBuf, S
         inner
     );
 
-    let status = Command::new("osascript")
+    let status = crate::platform::command("osascript")
         .arg("-e")
         .arg(&osa)
         .status()
@@ -235,7 +235,7 @@ pub fn uninstall_system_helper() -> Result<HelperInfo, String> {
         let script = format!("rm -rf '{}'", dir.display());
         let inner = script.replace('\\', "\\\\").replace('"', "\\\"");
         let osa = format!("do shell script \"{}\" with administrator privileges", inner);
-        let status = Command::new("osascript")
+        let status = crate::platform::command("osascript")
             .arg("-e")
             .arg(&osa)
             .status()
@@ -449,7 +449,7 @@ pub async fn download_kernel_version(
     std::fs::write(&gz, &bytes).map_err(|e| format!("写入下载文件失败：{e}"))?;
 
     let out = std::fs::File::create(&bin).map_err(|e| format!("创建内核文件失败：{e}"))?;
-    let status = Command::new("gunzip")
+    let status = crate::platform::command("gunzip")
         .arg("-c")
         .arg(&gz)
         .stdout(Stdio::from(out))
@@ -488,7 +488,7 @@ mod tests {
             .expect("download latest kernel");
         assert!(Path::new(&version.path).is_file());
         assert!(!version.version.is_empty());
-        let out = Command::new(&version.path)
+        let out = crate::platform::command(&version.path)
             .arg("-v")
             .output()
             .expect("run downloaded kernel");

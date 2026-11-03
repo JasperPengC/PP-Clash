@@ -18,7 +18,7 @@ fn find_bundle(exec_path: &Path) -> Option<PathBuf> {
 
 fn icon_from_info_plist(app: &Path) -> Option<PathBuf> {
     let plist = app.join("Contents/Info.plist");
-    let out = Command::new("plutil")
+    let out = crate::platform::command("plutil")
         .args(["-extract", "CFBundleIconFile", "raw", "-o", "-"])
         .arg(&plist)
         .output()
@@ -55,7 +55,7 @@ fn extract_png(app: &Path, dest: &Path) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let status = Command::new("sips")
+    let status = crate::platform::command("sips")
         .args(["-s", "format", "png", "-Z", "64"])
         .arg(&icns)
         .arg("--out")

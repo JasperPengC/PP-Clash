@@ -10,24 +10,30 @@ export function Toggle({
   on,
   onChange,
   disabled,
+  busy = false,
   label,
 }: {
   on: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  /** 启动/停止中的过渡状态：禁用并显示转圈。 */
+  busy?: boolean;
   /** 屏幕阅读器用的描述；视觉上不显示。 */
   label?: string;
 }) {
   return (
     <button
       type="button"
-      className={`toggle${on ? ' on' : ''}`}
+      className={`toggle${on ? ' on' : ''}${busy ? ' busy' : ''}`}
       role="switch"
       aria-checked={on}
+      aria-busy={busy}
       aria-label={label}
-      disabled={disabled}
+      disabled={disabled || busy}
       onClick={() => onChange(!on)}
-    />
+    >
+      {busy && <span className="toggle-spinner" />}
+    </button>
   );
 }
 

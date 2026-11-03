@@ -9,7 +9,7 @@ pub struct SysProxyState {
 
 #[cfg(target_os = "windows")]
 fn reg(args: &[&str]) -> Result<String, String> {
-    let out = Command::new("reg")
+    let out = crate::platform::command("reg")
         .args(args)
         .output()
         .map_err(|e| format!("执行 reg 失败：{e}"))?;
@@ -23,7 +23,7 @@ fn reg(args: &[&str]) -> Result<String, String> {
 fn refresh_wininet() {
     // 通知 WinINet 设置已变化；失败不阻塞代理开关。
     let script = r#"Add-Type -Namespace PPClash -Name WinINet -MemberDefinition '[DllImport("wininet.dll", SetLastError=true)] public static extern bool InternetSetOption(IntPtr h, int o, IntPtr b, int l);'; [PPClash.WinINet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null"#;
-    let _ = Command::new("powershell")
+    let _ = crate::platform::command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .status();
 }
@@ -31,6 +31,12 @@ fn refresh_wininet() {
 #[cfg(target_os = "windows")]
 fn set_windows_proxy(enable: bool, host: &str, port: u16) -> Result<(), String> {
     let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+    if !enable {
+        let current = get_windows_proxy();
+        if !current.enabled || current.host != host || current.port != port {
+            return Ok(()); // 不是本应用设置的代理，不要动
+        }
+    }
     let enable_value = if enable { "1" } else { "0" };
     let server = format!("{host}:{port}");
     reg(&["add", key, "/v", "ProxyEnable", "/t", "REG_DWORD", "/d", enable_value, "/f"])?;
@@ -71,7 +77,7 @@ fn get_windows_proxy() -> SysProxyState {
 ///
 /// macOS 的系统代理是**按网络服务**设置的，只设 Wi-Fi 的话插网线就不生效。
 fn list_services() -> Vec<String> {
-    let out = match Command::new("networksetup").arg("-listallnetworkservices").output() {
+    let out = match crate::platform::command("networksetup").arg("-listallnetworkservices").output() {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -85,7 +91,7 @@ fn list_services() -> Vec<String> {
 }
 
 fn run(args: &[&str]) -> Result<(), String> {
-    let out = Command::new("networksetup")
+    let out = crate::platform::command("networksetup")
         .args(args)
         .output()
         .map_err(|e| format!("执行 networksetup 失败：{e}"))?;
@@ -95,6 +101,29 @@ fn run(args: &[&str]) -> Result<(), String> {
     } else {
         Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn proxy_is_ours(service: &str, host: &str, port: u16) -> bool {
+    let Ok(out) = crate::platform::command("networksetup")
+        .args(["-getwebproxy", service])
+        .output()
+    else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let enabled = text.lines().any(|l| l.trim() == "Enabled: Yes");
+    let server = text
+        .lines()
+        .find(|l| l.starts_with("Server:"))
+        .map(|l| l[7..].trim())
+        .unwrap_or("");
+    let p = text
+        .lines()
+        .find(|l| l.starts_with("Port:"))
+        .and_then(|l| l[5..].trim().parse::<u16>().ok())
+        .unwrap_or(0);
+    enabled && server == host && p == port
 }
 
 /// 开启 / 关闭系统代理。
@@ -127,9 +156,12 @@ pub fn set_system_proxy(enable: bool, host: String, port: u16) -> Result<SysProx
                 .and_then(|_| run(&["-setsecurewebproxy", svc, &host, &port_str]))
                 .and_then(|_| run(&["-setwebproxystate", svc, "on"]))
                 .and_then(|_| run(&["-setsecurewebproxystate", svc, "on"]))
-        } else {
+        } else if proxy_is_ours(svc, &host, port) {
+            // 只关闭仍指向本应用端口的代理，避免误伤其它客户端
             run(&["-setwebproxystate", svc, "off"])
                 .and_then(|_| run(&["-setsecurewebproxystate", svc, "off"]))
+        } else {
+            Ok(())
         };
 
         if let Err(e) = res {
@@ -140,6 +172,17 @@ pub fn set_system_proxy(enable: bool, host: String, port: u16) -> Result<SysProx
     // 全部失败才算失败；部分服务不可写（如已停用的接口）是正常的
     if errors.len() == services.len() {
         return Err(errors.join("; "));
+    }
+    if !enable {
+        // 关闭后仍指向本端口的服务：不要假装成功，上层会保留内核避免断网
+        let still = services
+            .iter()
+            .filter(|svc| proxy_is_ours(svc, &host, port))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !still.is_empty() {
+            return Err(format!("系统代理未完全关闭：{}", still.join(", ")));
+        }
     }
 
     Ok(SysProxyState {
@@ -170,7 +213,7 @@ pub fn get_system_proxy() -> Result<SysProxyState, String> {
 
     let services = list_services();
     for svc in &services {
-        if let Ok(out) = Command::new("networksetup")
+        if let Ok(out) = crate::platform::command("networksetup")
             .args(["-getwebproxy", svc])
             .output()
         {

@@ -4631,3 +4631,34 @@ body.tray-panel-window #root {
 .sub-rule-move .icon-btn {
   width: 22px;
 }
+
+/* 开关的启动/停止过渡态 */
+.toggle.busy {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+.toggle-spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: toggle-spin 0.7s linear infinite;
+}
+
+.toggle.on .toggle-spinner {
+  color: #fff;
+}
+
+.toggle:not(.on) .toggle-spinner {
+  color: var(--text-3);
+}
+
+@keyframes toggle-spin {
+  to { transform: rotate(360deg); }
+}
