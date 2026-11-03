@@ -16,14 +16,29 @@ export PATH="$HOME/.cargo/bin:$PATH"
 echo "▸ 构建前端"
 npm run build
 
-echo "▸ 编译 Rust (release)"
-cargo build --release --manifest-path src-tauri/Cargo.toml
-
 APP="src-tauri/target/release/bundle/macos/PPClash.app"
+BIN="src-tauri/target/release/ppclash"
+
+if [ "${UNIVERSAL:-0}" = "1" ]; then
+  echo "▸ 编译 Rust (release, x86_64 + arm64)"
+  rustup target add x86_64-apple-darwin aarch64-apple-darwin >/dev/null
+  cargo build --release --target x86_64-apple-darwin --manifest-path src-tauri/Cargo.toml
+  cargo build --release --target aarch64-apple-darwin --manifest-path src-tauri/Cargo.toml
+  BIN="/tmp/ppclash-universal"
+  lipo -create \
+    src-tauri/target/x86_64-apple-darwin/release/ppclash \
+    src-tauri/target/aarch64-apple-darwin/release/ppclash \
+    -output "$BIN"
+  echo "▸ Universal: $(file "$BIN")"
+else
+  echo "▸ 编译 Rust (release)"
+  cargo build --release --manifest-path src-tauri/Cargo.toml
+fi
+
 echo "▸ 组装 $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp src-tauri/target/release/ppclash "$APP/Contents/MacOS/ppclash"
+cp "$BIN" "$APP/Contents/MacOS/ppclash"
 
 cp src-tauri/icons/icon.icns "$APP/Contents/Resources/icon.icns"
 mkdir -p "$APP/Contents/Resources/resources"

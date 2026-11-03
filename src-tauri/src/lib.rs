@@ -1,6 +1,7 @@
 mod icons;
 mod kernel;
 mod leakcheck;
+mod platform;
 mod update;
 mod mihomo;
 mod prefs;

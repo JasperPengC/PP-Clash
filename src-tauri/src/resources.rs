@@ -21,15 +21,9 @@ const GEO_FILES: [(&str, u64); 5] = [
     ("ASN.mmdb", 1_000_000),
 ];
 
-fn home() -> Result<PathBuf, String> {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .map_err(|_| "读不到 HOME".to_string())
-}
-
 /// 应用数据目录（与旧版本一致，避免迁移订阅/设置）。
 pub fn data_dir() -> Result<PathBuf, String> {
-    Ok(home()?.join("Library/Application Support/PPClash"))
+    crate::platform::data_dir()
 }
 
 pub fn log_path() -> Result<PathBuf, String> {
@@ -37,11 +31,11 @@ pub fn log_path() -> Result<PathBuf, String> {
 }
 
 pub fn system_bin_dir() -> PathBuf {
-    PathBuf::from("/Library/Application Support/PPClash/bin")
+    crate::platform::system_bin_dir()
 }
 
 pub fn system_bin() -> PathBuf {
-    system_bin_dir().join("mihomo")
+    crate::platform::system_bin()
 }
 
 fn resource_candidates(app: &AppHandle) -> Vec<PathBuf> {
@@ -111,7 +105,7 @@ fn extract(zip: &Path, dest: &Path) -> Result<(), String> {
 /// 确保用户目录里有可用的内核 + Geo 数据，返回 (内核路径, 版本号)。
 pub fn ensure_kernel(app: &AppHandle) -> Result<(PathBuf, String), String> {
     let dir = data_dir()?;
-    let bin = dir.join("bin/mihomo");
+    let bin = dir.join("bin").join(crate::platform::kernel_binary_name());
     let version_file = dir.join("bin/.version");
 
     let zip = zip_path(app).ok_or_else(|| {

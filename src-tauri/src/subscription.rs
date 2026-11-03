@@ -6,10 +6,7 @@ pub fn resolve_data_dir(data_dir: &str) -> Result<std::path::PathBuf, String> {
     let dir = if dir.is_absolute() {
         dir
     } else {
-        let home = std::env::var("HOME").map_err(|_| "读不到 HOME".to_string())?;
-        std::path::PathBuf::from(home)
-            .join("Library/Application Support")
-            .join(data_dir)
+        crate::platform::base_data_dir()?.join(data_dir)
     };
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建工作目录失败：{e}"))?;
     Ok(dir)
