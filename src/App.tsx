@@ -16,7 +16,7 @@ import { ProfilesPage } from './pages/Profiles';
 import { SettingsPage } from './pages/Settings';
 import { useApp, type OutboundMode, type ToastKind } from './store/app';
 import { api, isTauri } from './core/api';
-import { IconAlert, IconCheck, IconInfo } from './components/icons';
+import { IconAlert, IconCheck, IconDownload, IconInfo, IconX } from './components/icons';
 
 const TOAST_TTL = 5000;
 
@@ -56,6 +56,8 @@ export default function App() {
   const [page, setPage] = useState<PageKey>(initialPage);
   const toast = useApp((s) => s.toast);
   const clearToast = useApp((s) => s.clearToast);
+  const updateInfo = useApp((s) => s.updateInfo);
+  const dismissUpdate = useApp((s) => s.dismissUpdate);
 
   // 托盘事件 → 前端状态。托盘在窗口隐藏时也可操作，这里是唯一的回传通道。
   useEffect(() => {
@@ -244,6 +246,32 @@ export default function App() {
     <div className="app">
       <Sidebar current={page} onChange={setPage} />
       <main className="content">
+        {updateInfo && (
+          <div className="update-banner" role="status">
+            <span className="update-banner-icon">
+              <IconDownload size={14} />
+            </span>
+            <span className="update-banner-text">
+              新版本 {updateInfo.version}
+              {updateInfo.notes ? ` · ${updateInfo.notes}` : ''}
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void api.openExternalUrl(updateInfo.url)}
+            >
+              查看更新
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="关闭更新提示"
+              onClick={dismissUpdate}
+            >
+              <IconX size={13} />
+            </button>
+          </div>
+        )}
         <div key={page} className="page-anim">
           {page === 'overview' && <OverviewPage />}
           {page === 'proxies' && <ProxiesPage />}

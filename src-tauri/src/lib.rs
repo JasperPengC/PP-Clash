@@ -1,6 +1,7 @@
 mod icons;
 mod kernel;
 mod leakcheck;
+mod update;
 mod mihomo;
 mod prefs;
 mod resources;
@@ -75,12 +76,14 @@ pub fn run() {
             prefs::set_close_to_tray,
             prefs::set_launch_login,
             prefs::open_data_dir,
+            prefs::open_external_url,
             tray::sync_tray,
             tray::set_tray_flags,
             tray::tray_snapshot,
             tray::tray_action,
             leakcheck::leak_check_ip,
             leakcheck::leak_check_dns,
+            update::check_app_update,
         ])
         .setup(|app| {
             disable_automatic_termination();

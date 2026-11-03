@@ -96,6 +96,19 @@ pub fn set_launch_login(enable: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// 用系统默认浏览器打开外部链接；只允许 http(s)。
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("只支持 http(s) 链接".to_string());
+    }
+    std::process::Command::new("open")
+        .arg(&url)
+        .status()
+        .map_err(|e| format!("打开链接失败：{e}"))?;
+    Ok(())
+}
+
 /// 在 Finder 里打开数据目录，方便用户查看 config.yaml / 日志。
 #[tauri::command]
 pub fn open_data_dir(data_dir: String) -> Result<(), String> {

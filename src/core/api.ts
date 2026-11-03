@@ -46,6 +46,12 @@ export interface TraySnapshot {
   activeProfile: string | null;
 }
 
+export interface AppUpdateInfo {
+  version: string;
+  notes: string | null;
+  url: string;
+}
+
 export interface KernelVersionInfo {
   name: string;
   version: string;
@@ -290,6 +296,13 @@ export const api = {
   /** 导出过滤后的日志到用户选择的路径。 */
   exportLogFile: (path: string, content: string) =>
     call<void>('export_log_file', { path, content }),
+
+  /** 检查应用更新；feed 返回 null 表示已是最新。 */
+  checkAppUpdate: (feedUrl: string, currentVersion: string) =>
+    call<AppUpdateInfo | null>('check_app_update', { feedUrl, currentVersion }),
+
+  /** 用系统浏览器打开 http(s) 链接。 */
+  openExternalUrl: (url: string) => call<void>('open_external_url', { url }),
 
   saveConfig: (content: string, dataDir: string) =>
     call<string>('save_config', { content, dataDir }),

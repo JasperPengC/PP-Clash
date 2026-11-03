@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, DATA_DIR, isTauri } from '../core/api';
 import { generateConfig, type ConfigStats } from '../core/generator';
+import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
 import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
 import { countRealNodes, isInfoNode, parseSubscriptionMeta, type TrafficInfo } from '../core/subscription';
@@ -103,6 +104,10 @@ export interface AppSettings {
   githubProxy: string;
   /** 自定义规则（插在防护规则之后、订阅规则之前）。 */
   customRules: CustomRule[];
+  /** 应用更新 feed；留空关闭检查。 */
+  updateFeedUrl: string;
+  /** 启动时自动检查应用更新。 */
+  updateCheckOnLaunch: boolean;
 }
 
 export type OutboundMode = 'rule' | 'global' | 'direct';
@@ -144,6 +149,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overrides: [],
   githubProxy: '',
   customRules: [],
+  updateFeedUrl: '',
+  updateCheckOnLaunch: true,
 };
 
 export type KernelPhase = 'stopped' | 'starting' | 'running' | 'stopping' | 'failed';
@@ -151,6 +158,8 @@ export type KernelPhase = 'stopped' | 'starting' | 'running' | 'stopping' | 'fai
 interface AppStore {
   profiles: Profile[];
   activeId: string | null;
+  updateInfo: AppUpdateInfo | null;
+  checkingUpdate: boolean;
   policy: SecurityPolicy;
   settings: AppSettings;
   tunEnabled: boolean;
@@ -208,6 +217,8 @@ interface AppStore {
   updateSettings: (patch: Partial<AppSettings>) => void;
   notify: (kind: ToastKind, text: string) => void;
   clearToast: () => void;
+  checkUpdate: (silent?: boolean) => Promise<void>;
+  dismissUpdate: () => void;
 }
 
 function nameFromPath(path: string): string {
@@ -360,6 +371,8 @@ let toastSeq = 0;
 export const useApp = create<AppStore>((set, get) => ({
   profiles: [],
   activeId: null,
+  updateInfo: null,
+  checkingUpdate: false,
   policy: DEFAULT_POLICY,
   settings: DEFAULT_SETTINGS,
   tunEnabled: false,
@@ -376,6 +389,25 @@ export const useApp = create<AppStore>((set, get) => ({
   refreshingIds: [],
   configPath: '',
   dataDir: '',
+
+  checkUpdate: async (silent = false) => {
+    const url = get().settings.updateFeedUrl.trim();
+    if (!isTauri || !url || get().checkingUpdate) return;
+    set({ checkingUpdate: true });
+    try {
+      const info = await api.checkAppUpdate(url, '0.1.0');
+      set({ updateInfo: info, checkingUpdate: false });
+      if (!silent) {
+        if (info) get().notify('info', `发现新版本 ${info.version}`);
+        else get().notify('success', '已是最新版本');
+      }
+    } catch (e) {
+      set({ checkingUpdate: false });
+      if (!silent) get().notify('error', `检查更新失败：${errorText(e)}`);
+    }
+  },
+
+  dismissUpdate: () => set({ updateInfo: null }),
 
   notify: (kind, text) => {
     const cur = get().toast;
@@ -518,6 +550,9 @@ export const useApp = create<AppStore>((set, get) => ({
       }
 
       await pushTray(get());
+      if (settings.updateCheckOnLaunch && settings.updateFeedUrl.trim()) {
+        window.setTimeout(() => void get().checkUpdate(true), 1200);
+      }
     } catch (e) {
       console.error('[PPClash] 水合失败', e);
       get().notify('error', `读取本地状态失败：${errorText(e)}`);

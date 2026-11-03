@@ -4559,3 +4559,29 @@ body.tray-panel-window #root {
 .import-file-row .btn-ghost:hover {
   color: var(--accent);
 }
+
+/* 应用更新提示 */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-1);
+  font-size: 12.5px;
+  flex: none;
+}
+
+.update-banner-icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.update-banner-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

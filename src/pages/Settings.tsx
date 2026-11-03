@@ -70,6 +70,9 @@ const THEMES: Array<{ value: ThemeMode; label: string }> = [
 export function SettingsPage() {
   const settings = useApp((s) => s.settings);
   const updateSettings = useApp((s) => s.updateSettings);
+  const checkingUpdate = useApp((s) => s.checkingUpdate);
+  const checkUpdate = useApp((s) => s.checkUpdate);
+  const updateInfo = useApp((s) => s.updateInfo);
 
   const [restoreConfirm, setRestoreConfirm] = useState<string | null>(null);
   const [backups, setBackups] = useState<
@@ -78,10 +81,15 @@ export function SettingsPage() {
 
   const [proxyCustomOpen, setProxyCustomOpen] = useState(false);
   const [ghDraft, setGhDraft] = useState(settings.githubProxy);
+  const [feedDraft, setFeedDraft] = useState(settings.updateFeedUrl);
 
   useEffect(() => {
     setGhDraft(settings.githubProxy);
   }, [settings.githubProxy]);
+
+  useEffect(() => {
+    setFeedDraft(settings.updateFeedUrl);
+  }, [settings.updateFeedUrl]);
 
   const isCustomProxy =
     settings.githubProxy !== '' &&
@@ -281,6 +289,63 @@ export function SettingsPage() {
               {backups.length === 0 && (
                 <Row label="暂无备份" control={null} />
               )}
+            </Section>
+
+            <Section
+              title="应用更新"
+              desc="只检查并提示，不自动下载"
+              icon={<IconDownload size={15} />}
+            >
+              <Row
+                label="更新源"
+                hint="返回 { version, url, notes } 的 JSON；留空关闭"
+                control={
+                  <input
+                    className="input input-mono"
+                    style={{ width: 220 }}
+                    value={feedDraft}
+                    onChange={(e) => setFeedDraft(e.target.value)}
+                    onBlur={() => {
+                      const v = feedDraft.trim();
+                      if (v !== settings.updateFeedUrl) updateSettings({ updateFeedUrl: v });
+                    }}
+                    placeholder="https://example.com/ppclash.json"
+                    spellCheck={false}
+                    aria-label="应用更新源"
+                  />
+                }
+              />
+              <Row
+                label="启动时检查"
+                hint="只在配置了更新源时生效"
+                control={
+                  <Toggle
+                    on={settings.updateCheckOnLaunch}
+                    onChange={(v) => updateSettings({ updateCheckOnLaunch: v })}
+                    label="启动时检查更新"
+                  />
+                }
+              />
+              <Row
+                label="检查更新"
+                hint={
+                  updateInfo
+                    ? `发现新版本 ${updateInfo.version}`
+                    : settings.updateFeedUrl.trim()
+                      ? '手动检查一次'
+                      : '先填写更新源'
+                }
+                control={
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={checkingUpdate || !settings.updateFeedUrl.trim()}
+                    onClick={() => void checkUpdate(false)}
+                  >
+                    {checkingUpdate ? '检查中…' : '检查'}
+                  </button>
+                }
+              />
             </Section>
 
             <Section title="进阶" desc="默认隐藏" icon={<IconSliders size={15} />}>
