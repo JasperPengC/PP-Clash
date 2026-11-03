@@ -115,11 +115,13 @@ fn tcp_port_open(port: u16) -> bool {
 }
 
 /// 启动前检查端口。刚重启内核时端口可能还没释放，先等最多 3 秒。
+#[cfg(not(target_os = "windows"))]
 fn current_uid() -> Option<u32> {
     let out = std::process::Command::new("id").arg("-u").output().ok()?;
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
+#[cfg(not(target_os = "windows"))]
 fn pid_uid(pid: u32) -> Option<u32> {
     let out = std::process::Command::new("ps")
         .args(["-o", "uid=", "-p", &pid.to_string()])
@@ -128,6 +130,7 @@ fn pid_uid(pid: u32) -> Option<u32> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
+#[cfg(not(target_os = "windows"))]
 fn pid_ppid(pid: u32) -> Option<u32> {
     let out = std::process::Command::new("ps")
         .args(["-o", "ppid=", "-p", &pid.to_string()])
@@ -136,6 +139,7 @@ fn pid_ppid(pid: u32) -> Option<u32> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
+#[cfg(not(target_os = "windows"))]
 fn pid_alive(pid: u32) -> bool {
     std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
@@ -144,6 +148,7 @@ fn pid_alive(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(not(target_os = "windows"))]
 fn signal(pid: u32, sig: &str) {
     let _ = std::process::Command::new("kill")
         .arg(format!("-{sig}"))
@@ -151,6 +156,7 @@ fn signal(pid: u32, sig: &str) {
         .status();
 }
 
+#[cfg(not(target_os = "windows"))]
 fn terminate(pid: u32) {
     signal(pid, "TERM");
     for _ in 0..10 {
@@ -163,6 +169,7 @@ fn terminate(pid: u32) {
 }
 
 /// 列出监听指定端口的进程 pid。
+#[cfg(not(target_os = "windows"))]
 fn listeners(port: u16, tcp: bool) -> Vec<u32> {
     let mut cmd = std::process::Command::new("lsof");
     cmd.args(["-nP", "-t", &format!("-i{}:{}", if tcp { "TCP" } else { "UDP" }, port)]);
@@ -176,6 +183,91 @@ fn listeners(port: u16, tcp: bool) -> Vec<u32> {
         .lines()
         .filter_map(|line| line.trim().parse().ok())
         .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn tasklist_field(pid: u32) -> Option<String> {
+    let out = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    text.lines().next().map(|s| s.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn pid_alive(pid: u32) -> bool {
+    tasklist_field(pid)
+        .map(|line| line.contains(&pid.to_string()) && !line.contains("No tasks"))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn signal(pid: u32, _sig: &str) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .status();
+}
+
+#[cfg(target_os = "windows")]
+fn terminate(pid: u32) {
+    signal(pid, "KILL");
+}
+
+#[cfg(target_os = "windows")]
+fn listeners(port: u16, tcp: bool) -> Vec<u32> {
+    let proto = if tcp { "TCP" } else { "UDP" };
+    let out = match std::process::Command::new("netstat")
+        .args(["-ano", "-p", proto])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    let needle = format!(":{port}");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|line| line.contains(&needle))
+        .filter(|line| !tcp || line.to_ascii_uppercase().contains("LISTENING"))
+        .filter_map(|line| line.split_whitespace().last()?.parse().ok())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn current_uid() -> Option<u32> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn pid_uid(_pid: u32) -> Option<u32> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn pid_ppid(_pid: u32) -> Option<u32> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn pid_of_process(config_path: &str) -> Option<u32> {
+    let script = format!(
+        "$p = Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{}*' }} | Select-Object -First 1 -ExpandProperty ProcessId; $p",
+        config_path.replace('\'', "''")
+    );
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+#[cfg(target_os = "windows")]
+fn rss_kb(pid: u32) -> Option<u64> {
+    let line = tasklist_field(pid)?;
+    let cols: Vec<&str> = line.split(',').collect();
+    let mem = cols.get(4)?.trim_matches('"').replace(" K", "").replace("K", "");
+    let kb: f64 = mem.replace(',', "").parse().ok()?;
+    Some(kb as u64)
 }
 
 /// 端口被占时自动关闭占用进程：先杀当前用户的监听进程；
@@ -439,6 +531,7 @@ async fn wait_ready(
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn pid_of_process(config_path: &str) -> Option<u32> {
     let out = std::process::Command::new("pgrep")
         .arg("-f")
@@ -451,6 +544,7 @@ fn pid_of_process(config_path: &str) -> Option<u32> {
         .and_then(|s| s.trim().parse().ok())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn rss_kb(pid: u32) -> Option<u64> {
     let out = std::process::Command::new("ps")
         .args(["-o", "rss=", "-p", &pid.to_string()])
@@ -549,10 +643,19 @@ pub async fn start_kernel(
 ) -> Result<KernelStatus, String> {
     // 先清理残留（包括上次崩溃/强退留下的 TUN 内核）
     let _ = stop_kernel(app.clone()).await;
-    let _ = std::process::Command::new("pkill")
-        .arg("-f")
-        .arg(&config_path)
-        .status();
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(pid) = pid_of_process(&config_path) {
+            terminate(pid);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("pkill")
+            .arg("-f")
+            .arg(&config_path)
+            .status();
+    }
 
     // 确保内置内核与 Geo 数据已释放到用户目录
     let (user_bin, bundled_version) = resources::ensure_kernel(&app)?;
@@ -572,9 +675,21 @@ pub async fn start_kernel(
                 use_osascript = !is_setuid(path);
             }
             None => {
-                // 内置内核：安装一份 setuid root 的系统副本，TUN 不弹密码
-                binary = resources::ensure_system_kernel(&user_bin, &bundled_version)
-                    .map_err(|e| format!("TUN 需要安装一次提权内核：{e}"))?;
+                #[cfg(target_os = "macos")]
+                {
+                    // 内置内核：安装一份 setuid root 的系统副本，TUN 不弹密码
+                    binary = resources::ensure_system_kernel(&user_bin, &bundled_version)
+                        .map_err(|e| format!("TUN 需要安装一次提权内核：{e}"))?;
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    // Windows 没有 setuid：用 UAC 提权启动用户目录内核
+                    use_osascript = true;
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    return Err("当前平台暂未实现 TUN".to_string());
+                }
             }
         }
     }
@@ -606,6 +721,35 @@ pub async fn start_kernel(
     *state.binary_path.lock().await = Some(binary.display().to_string());
 
     if use_osascript {
+        #[cfg(target_os = "windows")]
+        {
+            let ps = format!(
+                "$p = Start-Process -FilePath '{}' -ArgumentList @('-d','{}','-f','{}') -Verb RunAs -WindowStyle Hidden -PassThru; exit $p.Id",
+                binary.display(),
+                data.display(),
+                config.display()
+            );
+            let status = Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+                .status()
+                .await
+                .map_err(|e| format!("UAC 提权启动失败：{e}"))?;
+            if !status.success() {
+                return Err("提权被取消：TUN 需要管理员权限".to_string());
+            }
+            let mut st = wait_ready(controller_port, None, &log_path, "TUN 内核").await?;
+            st.reclaimed = reclaimed.clone();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            if !tcp_port_open(mixed_port) {
+                return Err(format!(
+                    "TUN 内核已启动，但混合端口 {mixed_port} 没有监听。{}",
+                    log_tail(&log_path)
+                ));
+            }
+            return Ok(st);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
         // 非 setuid 内核的 TUN：借 osascript 提权启动，会弹一次系统密码框
         let script = format!(
             "do shell script \"'{}' -d '{}' -f '{}' > '{}' 2>&1 &\" with administrator privileges",
@@ -637,6 +781,7 @@ pub async fn start_kernel(
             ));
         }
         return Ok(st);
+        }
     }
 
     let mut child = Command::new(&binary)
@@ -696,8 +841,15 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
     }
 
     if privileged {
-        // osascript 提权启动的进程普通用户杀不掉，同样借管理员权限
+        #[cfg(target_os = "windows")]
         if let Some(cfg) = &config_path {
+            if let Some(pid) = pid_of_process(cfg) {
+                terminate(pid);
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        if let Some(cfg) = &config_path {
+            // osascript 提权启动的进程普通用户杀不掉，同样借管理员权限
             let script = format!(
                 "do shell script \"pkill -f '{}'\" with administrator privileges",
                 cfg
@@ -712,11 +864,18 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
         }
         *state.privileged.lock().await = false;
     } else if let Some(cfg) = &config_path {
+        #[cfg(target_os = "windows")]
+        if let Some(pid) = pid_of_process(cfg) {
+            terminate(pid);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
         // 兜底：按配置路径清理孤儿进程（setuid 内核 real uid 仍是当前用户，可杀）
         let _ = std::process::Command::new("pkill")
             .arg("-f")
             .arg(cfg)
             .status();
+        }
     }
 
     // 等端口真正释放再返回：否则紧接着的 restart 会撞上「仍被占用」
@@ -740,12 +899,22 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
 /// 清理数据目录对应的残留内核进程（应用上次崩溃 / 强退时可能留下 TUN 内核）。
 #[tauri::command]
 pub async fn cleanup_stale_kernel() -> Result<(), String> {
-    let _ = Command::new("pkill")
-        .arg("-f")
-        .arg("Application Support/PPClash/config.yaml")
-        .status()
-        .await;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(pid) = pid_of_process("PPClash\\config.yaml") {
+            terminate(pid);
+        }
+        return Ok(());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = Command::new("pkill")
+            .arg("-f")
+            .arg("Application Support/PPClash/config.yaml")
+            .status()
+            .await;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
