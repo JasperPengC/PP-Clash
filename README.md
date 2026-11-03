@@ -45,6 +45,13 @@ npm run bundle     # 打包 .app
 
 ---
 
+## 首次打开
+
+当前分发的是 ad-hoc 签名包，没有 Apple 公证。首次打开如果被 Gatekeeper 拦截：
+
+1. 右键 App →「打开」→ 再点「打开」
+2. 或执行 `xattr -dr com.apple.quarantine "/Applications/PP Clash.app"`
+
 ## 文档
 
 | 文档 | 内容 |
