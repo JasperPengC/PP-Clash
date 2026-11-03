@@ -21,11 +21,14 @@ fn reg(args: &[&str]) -> Result<String, String> {
 
 #[cfg(target_os = "windows")]
 fn refresh_wininet() {
-    // 通知 WinINet 设置已变化；失败不阻塞代理开关。
-    let script = r#"Add-Type -Namespace PPClash -Name WinINet -MemberDefinition '[DllImport("wininet.dll", SetLastError=true)] public static extern bool InternetSetOption(IntPtr h, int o, IntPtr b, int l);'; [PPClash.WinINet]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null"#;
-    let _ = crate::platform::command("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .status();
+    // 直接调用 WinINet，避免为刷新代理再启动一个 PowerShell（既慢又会闪控制台）。
+    use windows_sys::Win32::Networking::WinInet::{
+        InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
+    };
+    unsafe {
+        InternetSetOptionW(std::ptr::null(), INTERNET_OPTION_SETTINGS_CHANGED, std::ptr::null(), 0);
+        InternetSetOptionW(std::ptr::null(), INTERNET_OPTION_REFRESH, std::ptr::null(), 0);
+    }
 }
 
 #[cfg(target_os = "windows")]

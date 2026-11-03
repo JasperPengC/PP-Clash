@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { NodeName } from '../components/NodeName';
 import { EmptyState, navigate, Spinner, Toggle } from '../components/ui';
 import {
   IconAlert,
@@ -383,7 +384,7 @@ export function ProxiesPage() {
                                   void selectNode(g.name, node.name);
                                 }}
                               >
-                                <span className="proxy-node-name">{node.name}</span>
+                                <span className="proxy-node-name"><NodeName name={node.name} /></span>
                                 {busy ? (
                                   <span className="node-delay">
                                     <Spinner small />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { NodeName } from '../components/NodeName';
 import { MiniSparkline, RouteTrafficChart } from '../components/visuals';
 import { navigate, Pill, Segmented, Select, Toggle } from '../components/ui';
 import {
@@ -475,16 +476,18 @@ export function OverviewPage() {
               <div className="switch-main">
                 <div className="switch-title">系统代理</div>
                 <div className="switch-sub">
-                  {proxyPending || (kernelBusy && !sysProxyEnabled)
+                  {proxyPending
                     ? '处理中…'
-                    : sysProxyEnabled
-                      ? '已开启'
-                      : '未开启'}
+                    : kernelBusy
+                      ? '等待中…'
+                      : sysProxyEnabled
+                        ? '已开启'
+                        : '未开启'}
                 </div>
               </div>
               <Toggle
                 on={sysProxyEnabled}
-                busy={proxyPending || (kernelBusy && !sysProxyEnabled)}
+                busy={proxyPending}
                 disabled={switchesBusy}
                 onChange={(v) => void changeSystemProxy(v)}
                 label="系统代理"
@@ -497,16 +500,18 @@ export function OverviewPage() {
               <div className="switch-main">
                 <div className="switch-title">TUN 模式</div>
                 <div className="switch-sub">
-                  {tunPending || (kernelBusy && !tunEnabled)
+                  {tunPending
                     ? '处理中…'
-                    : tunEnabled
-                      ? '已开启'
-                      : '未开启'}
+                    : kernelBusy
+                      ? '等待中…'
+                      : tunEnabled
+                        ? '已开启'
+                        : '未开启'}
                 </div>
               </div>
               <Toggle
                 on={tunEnabled}
-                busy={tunPending || (kernelBusy && !tunEnabled)}
+                busy={tunPending}
                 disabled={switchesBusy}
                 onChange={(v) => void changeTun(v)}
                 label="TUN 模式"
@@ -662,7 +667,7 @@ export function OverviewPage() {
                       className={`group-node${selected ? ' selected' : ''}`}
                       onClick={() => onSelectNode(node.name)}
                     >
-                      <span className="group-node-name">{node.name}</span>
+                      <span className="group-node-name"><NodeName name={node.name} /></span>
                       {selected ? (
                         <span className="group-node-check">
                           <IconCheck size={12} />

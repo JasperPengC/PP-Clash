@@ -1,0 +1,3 @@
+/** 仅用于浏览器侧平台判断；真正的系统行为仍以 Rust target 为准。 */
+export const isWindows =
+  typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);

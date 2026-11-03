@@ -174,3 +174,36 @@ pub fn open_data_dir(data_dir: String) -> Result<(), String> {
         Ok(())
     }
 }
+
+/// 当前应用是否以管理员权限运行。
+#[tauri::command]
+pub fn is_elevated() -> bool {
+    crate::platform::is_elevated()
+}
+
+/// 以管理员身份重启应用（Windows）；其它平台直接 restart。
+#[tauri::command]
+pub async fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let exe = std::env::current_exe().map_err(|e| format!("读自身路径失败：{e}"))?;
+        let ps = format!(
+            "Start-Process -FilePath '{}' -Verb RunAs",
+            exe.display()
+        );
+        let status = crate::platform::async_command("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &ps])
+            .status()
+            .await
+            .map_err(|e| format!("请求管理员权限失败：{e}"))?;
+        if !status.success() {
+            return Err("管理员授权被取消".to_string());
+        }
+        app.exit(0);
+        return Ok(());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        app.restart();
+    }
+}

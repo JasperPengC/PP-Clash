@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { NodeName } from './NodeName';
 import { api, isTauri, type TraySnapshot } from '../core/api';
 import { formatSpeed } from '../core/format';
 import { Segmented, Toggle } from './ui';
@@ -221,7 +222,7 @@ export function TrayPanel() {
                     if (snap?.group) act('node', `${snap.group}|${node.name}`);
                   }}
                 >
-                  <span className="tp-node-item-name">{node.name}</span>
+                  <span className="tp-node-item-name"><NodeName name={node.name} /></span>
                   {node.selected ? (
                     <IconCheck size={12} />
                   ) : (

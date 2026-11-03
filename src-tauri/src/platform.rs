@@ -97,3 +97,15 @@ pub fn async_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::C
     }
     cmd
 }
+
+/// 当前进程是否以管理员权限运行（Windows）；其它平台视为 true。
+pub fn is_elevated() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe { windows_sys::Win32::UI::Shell::IsUserAnAdmin() != 0 }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        true
+    }
+}

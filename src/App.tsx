@@ -17,6 +17,8 @@ import { SettingsPage } from './pages/Settings';
 import { useApp, type OutboundMode, type ToastKind } from './store/app';
 import { api, isTauri } from './core/api';
 import { IconAlert, IconCheck, IconDownload, IconInfo, IconX } from './components/icons';
+import { WindowsTitlebar } from './components/WindowsTitlebar';
+import { isWindows } from './core/platform';
 
 const TOAST_TTL = 5000;
 
@@ -60,6 +62,10 @@ export default function App() {
   const dismissUpdate = useApp((s) => s.dismissUpdate);
   const downloadUpdate = useApp((s) => s.downloadUpdate);
   const downloadingUpdate = useApp((s) => s.downloadingUpdate);
+  const elevationPrompt = useApp((s) => s.elevationPrompt);
+  const elevationBusy = useApp((s) => s.elevationBusy);
+  const confirmElevation = useApp((s) => s.confirmElevation);
+  const cancelElevation = useApp((s) => s.cancelElevation);
 
   // 托盘事件 → 前端状态。托盘在窗口隐藏时也可操作，这里是唯一的回传通道。
   useEffect(() => {
@@ -253,7 +259,9 @@ export default function App() {
   }, [toast?.id, toast, clearToast]);
 
   return (
-    <div className="app">
+    <div className="window-shell">
+      {isWindows && <WindowsTitlebar />}
+      <div className="app">
       <Sidebar current={page} onChange={setPage} />
       <main className="content">
         {updateInfo && (
@@ -306,6 +314,31 @@ export default function App() {
           {page === 'settings' && <SettingsPage />}
         </div>
 
+        {elevationPrompt && (
+          <div className="modal-backdrop" role="presentation">
+            <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="elevation-title">
+              <div className="modal-title" id="elevation-title">开启 TUN 需要管理员权限</div>
+              <div className="modal-desc">
+                Windows 下创建虚拟网卡需要管理员权限。确认后应用会以管理员身份重启，
+                重启后自动开启 TUN。
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-ghost" onClick={cancelElevation}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={elevationBusy}
+                  onClick={() => void confirmElevation()}
+                >
+                  {elevationBusy ? '正在请求…' : '以管理员身份重启'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {toast && (
           <div className="toast-wrap">
             <button
@@ -323,6 +356,7 @@ export default function App() {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }

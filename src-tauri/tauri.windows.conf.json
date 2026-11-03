@@ -12,7 +12,7 @@
         "center": true,
         "visible": true,
         "resizable": true,
-        "decorations": true
+        "decorations": false
       }
     ]
   },

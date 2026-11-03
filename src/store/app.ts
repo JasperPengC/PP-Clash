@@ -6,6 +6,7 @@ import type { Finding } from '../core/audit';
 import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
 import { countRealNodes, isInfoNode, parseSubscriptionMeta, type TrafficInfo } from '../core/subscription';
 import { useTheme } from './theme';
+import { isWindows } from '../core/platform';
 
 export interface Profile {
   id: string;
@@ -163,6 +164,11 @@ interface AppStore {
   updateInfo: AppUpdateInfo | null;
   checkingUpdate: boolean;
   downloadingUpdate: boolean;
+  /** Windows 是否以管理员权限运行。 */
+  elevated: boolean;
+  /** 是否显示「TUN 需要管理员」确认框。 */
+  elevationPrompt: boolean;
+  elevationBusy: boolean;
   policy: SecurityPolicy;
   settings: AppSettings;
   tunEnabled: boolean;
@@ -225,6 +231,8 @@ interface AppStore {
   checkUpdate: (silent?: boolean) => Promise<void>;
   downloadUpdate: () => Promise<void>;
   dismissUpdate: () => void;
+  confirmElevation: () => Promise<void>;
+  cancelElevation: () => void;
 }
 
 function nameFromPath(path: string): string {
@@ -390,6 +398,9 @@ export const useApp = create<AppStore>((set, get) => ({
   updateInfo: null,
   checkingUpdate: false,
   downloadingUpdate: false,
+  elevated: true,
+  elevationPrompt: false,
+  elevationBusy: false,
   policy: DEFAULT_POLICY,
   settings: DEFAULT_SETTINGS,
   tunEnabled: false,
@@ -441,6 +452,21 @@ export const useApp = create<AppStore>((set, get) => ({
 
   dismissUpdate: () => set({ updateInfo: null }),
 
+  confirmElevation: async () => {
+    if (get().elevationBusy) return;
+    set({ elevationBusy: true, elevationPrompt: false, tunEnabled: true });
+    await persist(get());
+    try {
+      await api.restartAsAdmin();
+    } catch (e) {
+      set({ elevationBusy: false, tunEnabled: false });
+      await persist(get());
+      get().notify('error', `请求管理员权限失败：${errorText(e)}`);
+    }
+  },
+
+  cancelElevation: () => set({ elevationPrompt: false }),
+
   notify: (kind, text) => {
     const cur = get().toast;
     // 同一条消息重复出现时不刷新，避免轮询失败把 toast 钉死
@@ -453,6 +479,8 @@ export const useApp = create<AppStore>((set, get) => ({
   hydrate: async () => {
     if (!isTauri) return;
     try {
+      const elevated = await api.isElevated().catch(() => true);
+      set({ elevated });
       const raw = await api.loadAppState(DATA_DIR);
       const saved = raw ? (JSON.parse(raw) as Partial<AppStore>) : {};
 
@@ -579,6 +607,23 @@ export const useApp = create<AppStore>((set, get) => ({
       // 关窗行为/托盘网速/Dock 设置需要同步到 Rust，否则重启后首帧使用旧默认值
       if (isTauri) {
         void api.setCloseToTray(settings.closeToTray).catch(() => null);
+      }
+
+      // Windows 非管理员启动时，不保留 TUN 开关（否则开关显示开启但内核没跑）
+      if (isWindows && !elevated && get().tunEnabled) {
+        set({ tunEnabled: false });
+        get().notify('info', 'TUN 需要管理员权限，请重新开启');
+        void persist(get());
+      }
+
+      // 管理员重启后 / macOS 启动时，恢复上一次的 TUN 接管
+      if (
+        get().tunEnabled &&
+        get().activeId &&
+        !st?.running &&
+        (!isWindows || elevated)
+      ) {
+        window.setTimeout(() => void get().startKernel(true), 500);
       }
 
       await pushTray(get());
@@ -1174,6 +1219,10 @@ export const useApp = create<AppStore>((set, get) => ({
   setTun: async (on) => {
     if (!isTauri) {
       get().notify('error', '浏览器预览模式无法开启 TUN');
+      return;
+    }
+    if (on && isWindows && !get().elevated) {
+      set({ elevationPrompt: true });
       return;
     }
     set({ tunEnabled: on });

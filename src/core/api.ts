@@ -312,6 +312,12 @@ export const api = {
   /** 用系统浏览器打开 http(s) 链接。 */
   openExternalUrl: (url: string) => call<void>('open_external_url', { url }),
 
+  /** 当前进程是否以管理员权限运行。 */
+  isElevated: () => call<boolean>('is_elevated'),
+
+  /** Windows: 以管理员身份重启应用；其它平台直接重启。 */
+  restartAsAdmin: () => call<void>('restart_as_admin'),
+
   /** 下载更新包到临时目录（可选 sha256 校验）。 */
   downloadAppUpdate: (url: string, sha256: string | null) =>
     call<string>('download_app_update', { url, sha256 }),

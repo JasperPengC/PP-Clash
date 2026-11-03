@@ -4640,11 +4640,10 @@ body.tray-panel-window #root {
 
 .toggle-spinner {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  left: 6px;
+  top: 6px;
   width: 9px;
   height: 9px;
-  margin: -5px 0 0 -5px;
   border: 1.5px solid currentColor;
   border-top-color: transparent;
   border-radius: 50%;
@@ -4652,6 +4651,7 @@ body.tray-panel-window #root {
 }
 
 .toggle.on .toggle-spinner {
+  left: 21px;
   color: #fff;
 }
 
@@ -4661,4 +4661,156 @@ body.tray-panel-window #root {
 
 @keyframes toggle-spin {
   to { transform: rotate(360deg); }
+}
+
+/* --- Windows 自定义标题栏 -------------------------------------------------- */
+.window-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.window-shell > .app {
+  flex: 1;
+  min-height: 0;
+}
+
+.win-titlebar {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-soft);
+  user-select: none;
+}
+
+.win-titlebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.01em;
+}
+
+.win-titlebar-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 38% 40%, #fff 0 18%, transparent 19%),
+    radial-gradient(circle at 63% 40%, #fff 0 18%, transparent 19%),
+    var(--accent);
+}
+
+.win-titlebar-controls {
+  display: flex;
+  height: 100%;
+}
+
+.win-titlebar-controls button {
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.win-titlebar-controls button:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.win-titlebar-controls button.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.win-resize {
+  position: fixed;
+  z-index: 9999;
+}
+
+.win-resize.top { top: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.win-resize.bottom { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.win-resize.left { top: 8px; bottom: 8px; left: 0; width: 5px; cursor: ew-resize; }
+.win-resize.right { top: 8px; bottom: 8px; right: 0; width: 5px; cursor: ew-resize; }
+.win-resize.top-left { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+.win-resize.top-right { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.win-resize.bottom-left { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.win-resize.bottom-right { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+
+/* 管理员权限确认弹窗 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: min(420px, calc(100vw - 48px));
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 0.35);
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-1);
+}
+
+.modal-desc {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* Windows 国旗 emoji 的两位国家码兜底 */
+.node-name-with-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.node-country-code {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
 }
