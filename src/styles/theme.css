@@ -4814,3 +4814,60 @@ body.tray-panel-window #root {
   font-weight: 650;
   letter-spacing: 0.04em;
 }
+
+/* Windows 融合式窗口：控件浮在内容右上角，没有独立标题栏 */
+.window-shell.is-windows {
+  position: relative;
+}
+
+.window-shell.is-windows > .app {
+  height: 100%;
+}
+
+.win-drag-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  z-index: 10000;
+}
+
+.win-window-controls {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  z-index: 10001;
+}
+
+.win-window-controls button {
+  width: 44px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.win-window-controls button:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.win-window-controls button.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.window-shell.is-windows .page-head {
+  padding-right: 138px;
+}
+
+.window-shell.is-windows .sidebar > :first-child {
+  padding-top: 8px;
+}

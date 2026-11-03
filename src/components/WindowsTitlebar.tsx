@@ -19,6 +19,10 @@ function ResizeHandle({ dir, className }: { dir: ResizeDirection; className: str
   );
 }
 
+/**
+ * Windows 的无边框窗口控件。它不占一条独立标题栏：
+ * 控件浮在内容右上角，顶部留一条很窄的拖拽带，和 Clash Party 的融合式窗口一致。
+ */
 export function WindowsTitlebar() {
   const [maximized, setMaximized] = useState(false);
 
@@ -37,40 +41,35 @@ export function WindowsTitlebar() {
   return (
     <>
       <div
-        className="win-titlebar"
+        className="win-drag-strip"
         data-tauri-drag-region
         onDoubleClick={() => void win().toggleMaximize()}
-      >
-        <div className="win-titlebar-brand" data-tauri-drag-region>
-          <span className="win-titlebar-dot" />
-          PP Clash
-        </div>
-        <div className="win-titlebar-controls">
-          <button type="button" aria-label="最小化" onClick={() => void win().minimize()}>
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-              <path d="M2 5h6" stroke="currentColor" strokeWidth="1.1" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            aria-label={maximized ? '还原' : '最大化'}
-            onClick={() => void win().toggleMaximize()}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-              <rect x="2" y="2" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.1" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="close"
-            aria-label="关闭"
-            onClick={() => void win().close()}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-              <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.1" />
-            </svg>
-          </button>
-        </div>
+      />
+      <div className="win-window-controls">
+        <button type="button" aria-label="最小化" onClick={() => void win().minimize()}>
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2 5h6" stroke="currentColor" strokeWidth="1.1" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          aria-label={maximized ? '还原' : '最大化'}
+          onClick={() => void win().toggleMaximize()}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect x="2" y="2" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.1" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="close"
+          aria-label="关闭"
+          onClick={() => void win().close()}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.1" />
+          </svg>
+        </button>
       </div>
       <ResizeHandle dir="North" className="top" />
       <ResizeHandle dir="South" className="bottom" />

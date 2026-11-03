@@ -690,11 +690,6 @@ pub async fn start_kernel(
     let mut use_osascript = false;
 
     if privileged {
-        #[cfg(target_os = "windows")]
-        if crate::platform::is_elevated() {
-            // 整个应用已经是管理员：直接 spawn，省掉再起一个 UAC 子进程。
-            use_osascript = false;
-        }
         match explicit {
             Some(ref path) => {
                 // 用户自定义内核：不是 setuid 就只能 osascript 提权
@@ -717,6 +712,11 @@ pub async fn start_kernel(
                     return Err("当前平台暂未实现 TUN".to_string());
                 }
             }
+        }
+        #[cfg(target_os = "windows")]
+        if crate::platform::is_elevated() {
+            // 整个应用已经是管理员：直接 spawn，省掉再起一个 UAC 子进程。
+            use_osascript = false;
         }
     }
 

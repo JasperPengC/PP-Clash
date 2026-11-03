@@ -10,6 +10,7 @@ import {
   IconDownload,
   IconGlobe,
   IconProfiles,
+  IconOverview,
   IconPower,
   IconRefresh,
   IconSettings,
@@ -243,7 +244,7 @@ export function TrayPanel() {
             设置
           </button>
           <button type="button" onClick={() => act('open', 'overview')}>
-            <IconPower size={13} />
+            <IconOverview size={13} />
             主界面
           </button>
           <div className="spacer" />
@@ -252,6 +253,7 @@ export function TrayPanel() {
             重启
           </button>
           <button type="button" className="tp-quit" onClick={() => act('quit')}>
+            <IconPower size={13} />
             退出
           </button>
         </div>

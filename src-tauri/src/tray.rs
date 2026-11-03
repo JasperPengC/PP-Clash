@@ -128,8 +128,30 @@ pub fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
     };
 
     let panel_w = 320.0 * scale;
+    let panel_h = 500.0 * scale;
     let x = (rx + rw / 2.0 - panel_w / 2.0).clamp(8.0, (screen_w - panel_w - 8.0).max(8.0));
-    let y = ry + rh + 8.0 * scale;
+    let y = {
+        #[cfg(target_os = "windows")]
+        {
+            // Windows 任务栏通常在底部，托盘图标位于工作区下方；面板应向上展开。
+            let work = monitor.as_ref().map(|m| m.work_area().clone());
+            let above = work
+                .as_ref()
+                .map(|w| {
+                    (ry + rh * 0.5) >= (w.position.y as f64 + w.size.height as f64 / 2.0)
+                })
+                .unwrap_or(ry > screen_w * 0.0 + 900.0);
+            if above {
+                (ry - panel_h - 8.0 * scale).max(8.0)
+            } else {
+                ry + rh + 8.0 * scale
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            ry + rh + 8.0 * scale
+        }
+    };
     let _ = panel.set_position(PhysicalPosition::new(x, y));
     let _ = panel.show();
     let _ = panel.set_focus();
@@ -702,15 +724,7 @@ pub fn on_tray_click(app: &AppHandle, event: TrayIconEvent) {
         ..
     } = event
     {
-        #[cfg(target_os = "windows")]
-        {
-            let _ = rect;
-            crate::focus_main(app);
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            toggle_panel(app, rect);
-        }
+        toggle_panel(app, rect);
     }
 }
 

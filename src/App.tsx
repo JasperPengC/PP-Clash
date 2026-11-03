@@ -259,7 +259,7 @@ export default function App() {
   }, [toast?.id, toast, clearToast]);
 
   return (
-    <div className="window-shell">
+    <div className={`window-shell${isWindows ? ' is-windows' : ''}`}>
       {isWindows && <WindowsTitlebar />}
       <div className="app">
       <Sidebar current={page} onChange={setPage} />

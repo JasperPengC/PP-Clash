@@ -20,8 +20,6 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
 #[cfg(target_os = "windows")]
 use tauri::Emitter;
-#[cfg(target_os = "windows")]
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 
@@ -51,15 +49,6 @@ pub fn focus_main(app: &tauri::AppHandle) {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn build_windows_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let open = MenuItem::with_id(app, "open", "打开 PP Clash", true, None::<&str>)?;
-    let proxy = MenuItem::with_id(app, "toggle-proxy", "开关系统代理", true, None::<&str>)?;
-    let tun = MenuItem::with_id(app, "toggle-tun", "开关 TUN", true, None::<&str>)?;
-    let sep = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    Menu::with_items(app, &[&open, &proxy, &tun, &sep, &quit])
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -141,24 +130,6 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 tray_builder = tray_builder.icon_as_template(true);
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                let menu = build_windows_tray_menu(app.handle())?;
-                tray_builder = tray_builder.menu(&menu).on_menu_event(
-                    |app, event| match event.id().as_ref() {
-                        "open" => focus_main(app),
-                        "toggle-proxy" => {
-                            let _ = app.emit("tray://toggle-sysproxy", ());
-                        }
-                        "toggle-tun" => {
-                            let _ = app.emit("tray://toggle-tun", ());
-                        }
-                        "quit" => app.exit(0),
-                        _ => {}
-                    },
-                );
             }
 
             tray_builder.build(app)?;
