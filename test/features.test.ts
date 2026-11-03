@@ -21,20 +21,20 @@ const RUNTIME = {
 };
 
 describe('运行参数与覆写', () => {
-  it('DNS 监听端口可配置', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, RUNTIME);
+  it('DNS 监听端口可配置', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME);
     const cfg = JSON.parse(out.config);
     expect(cfg.dns.listen).toBe('127.0.0.1:10530');
   });
 
-  it('局域网开关写进 allow-lan', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, allowLan: true });
+  it('局域网开关写进 allow-lan', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, allowLan: true });
     const cfg = JSON.parse(out.config);
     expect(cfg['allow-lan']).toBe(true);
   });
 
-  it('覆写对象深合并、数组整体替换', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [
+  it('覆写对象深合并、数组整体替换', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [
       {
         mode: 'yaml',
         text: `rules:\n  - DOMAIN-SUFFIX,override.test,DIRECT\ndns:\n  listen: "127.0.0.1:10531"\n`,
@@ -47,16 +47,16 @@ describe('运行参数与覆写', () => {
     expect(cfg['mixed-port']).toBe(17890);
   });
 
-  it('覆写里的出站模式生效', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [{ mode: 'yaml', text: `mode: global\n` }]);
+  it('覆写里的出站模式生效', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [{ mode: 'yaml', text: `mode: global\n` }]);
     const cfg = JSON.parse(out.config);
     expect(cfg.mode).toBe('global');
   });
 });
 
 describe('自定义规则与 JS 覆写', () => {
-  it('自定义规则插在防护规则之后、订阅规则之前', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, {
+  it('自定义规则插在防护规则之后、订阅规则之前', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
       ...RUNTIME,
       customRules: [
         { id: 'r1', type: 'DOMAIN-SUFFIX', payload: 'custom.test', target: 'DIRECT', enabled: true },
@@ -68,8 +68,8 @@ describe('自定义规则与 JS 覆写', () => {
     expect(cfg.rules[i + 1]).toBe('DOMAIN-SUFFIX,example.com,DIRECT');
   });
 
-  it('JS 覆写可以修改配置对象', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [
+  it('JS 覆写可以修改配置对象', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [
       { mode: 'js', text: 'config.mode = "global"; config["log-level"] = "debug";' },
     ]);
     const cfg = JSON.parse(out.config);
@@ -79,8 +79,8 @@ describe('自定义规则与 JS 覆写', () => {
 });
 
 describe('多文件覆写', () => {
-  it('按顺序应用，后面的覆盖前面的', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [
+  it('按顺序应用，后面的覆盖前面的', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [
       { mode: 'yaml', text: 'mode: global\ndns:\n  listen: "127.0.0.1:10531"\n' },
       { mode: 'yaml', text: 'mode: direct\n' },
     ]);
@@ -91,8 +91,8 @@ describe('多文件覆写', () => {
 });
 
 describe('自定义规则（结构化）', () => {
-  it('MATCH 规则只输出两段', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, {
+  it('MATCH 规则只输出两段', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
       ...RUNTIME,
       customRules: [{ id: 'm', type: 'MATCH', payload: '', target: 'G', enabled: true }],
     });
@@ -100,8 +100,8 @@ describe('自定义规则（结构化）', () => {
     expect(cfg.rules).toContain('MATCH,G');
   });
 
-  it('当前节点占位符会解析成实际节点名', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, {
+  it('当前节点占位符会解析成实际节点名', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
       ...RUNTIME,
       currentNode: 'NodeA',
       customRules: [
@@ -112,8 +112,8 @@ describe('自定义规则（结构化）', () => {
     expect(cfg.rules).toContain('DOMAIN-SUFFIX,x.test,NodeA');
   });
 
-  it('覆写里的 {{CURRENT_NODE}} 会被替换', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, currentNode: 'NodeA' }, [
+  it('覆写里的 {{CURRENT_NODE}} 会被替换', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, currentNode: 'NodeA' }, [
       { mode: 'yaml', text: 'proxy-groups:\n  - {name: Cur, type: select, proxies: ["{{CURRENT_NODE}}"]}\n' },
     ]);
     const cfg = JSON.parse(out.config);
@@ -122,8 +122,8 @@ describe('自定义规则（结构化）', () => {
 });
 
 describe('DNS 与嗅探', () => {
-  it('自定义 DNS 会放在 nameserver 首位', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, {
+  it('自定义 DNS 会放在 nameserver 首位', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
       ...RUNTIME,
       dnsNameserver: 'custom',
       dnsCustom: 'https://dns.example/dns-query',
@@ -132,14 +132,14 @@ describe('DNS 与嗅探', () => {
     expect(cfg.dns.nameserver[0]).toBe('https://dns.example/dns-query');
   });
 
-  it('预设 DNS 使用对应 DoH 地址', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, dnsNameserver: 'google' });
+  it('预设 DNS 使用对应 DoH 地址', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, dnsNameserver: 'google' });
     const cfg = JSON.parse(out.config);
     expect(cfg.dns.nameserver).toContain('https://dns.google/dns-query');
   });
 
-  it('开启嗅探会写入 sniffer 配置', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, {
+  it('开启嗅探会写入 sniffer 配置', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
       ...RUNTIME,
       snifferEnabled: true,
       snifferOverrideDestination: true,
@@ -152,8 +152,8 @@ describe('DNS 与嗅探', () => {
 });
 
 describe('额外端口与认证', () => {
-  it('SOCKS / HTTP / Redir / bind-address / authentication', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, {
+  it('SOCKS / HTTP / Redir / bind-address / authentication', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
       ...RUNTIME,
       socksPort: 1080,
       httpPort: 8088,

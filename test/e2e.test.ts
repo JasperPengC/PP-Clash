@@ -31,9 +31,9 @@ const available = Boolean(core) && profiles.length > 0;
 
 describe.skipIf(!available)('端到端：真实订阅 → 生成配置 → 内核校验', () => {
   for (const file of profiles) {
-    it(`${file} 生成的配置能被 mihomo 接受`, () => {
+    it(`${file} 生成的配置能被 mihomo 接受`, async () => {
       const raw = fs.readFileSync(path.join(PROFILE_DIR, file), 'utf-8');
-      const { config, stats } = generateConfig(raw, DEFAULT_POLICY, {
+      const { config, stats } = await generateConfig(raw, DEFAULT_POLICY, {
         mixedPort: 17890,
         controllerPort: 19090,
         controllerSecret: '',
@@ -69,10 +69,10 @@ describe.skipIf(!available)('端到端：真实订阅 → 生成配置 → 内�
     });
   }
 
-  it('自定义 DNS + 嗅探配置能被内核接受', () => {
+  it('自定义 DNS + 嗅探配置能被内核接受', async () => {
     const file = profiles[0];
     const raw = fs.readFileSync(path.join(PROFILE_DIR, file), 'utf-8');
-    const { config } = generateConfig(raw, DEFAULT_POLICY, {
+    const { config } = await generateConfig(raw, DEFAULT_POLICY, {
       mixedPort: 17891,
       controllerPort: 19091,
       controllerSecret: '',

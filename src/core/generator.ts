@@ -1,5 +1,6 @@
 import yaml from 'js-yaml';
 import { auditSubscription, type Finding } from './audit';
+import { runJsOverride } from './js-sandbox';
 import { stripInfoNodes } from './subscription';
 import {
   buildDns,
@@ -42,6 +43,8 @@ export interface RuntimeOptions {
 export interface OverrideInput {
   mode: 'yaml' | 'js';
   text: string;
+  /** 仅用于报错定位。 */
+  name?: string;
 }
 
 export const DEFAULT_RUNTIME: RuntimeOptions = {
@@ -99,12 +102,12 @@ function asArray(v: unknown): unknown[] {
  * 订阅自带的 dns / tun / sniffer / profile / ipv6 会被整体丢弃，
  * 因为它们是最常见的泄漏来源，而不是用户需要调的东西。
  */
-export function generateConfig(
+export async function generateConfig(
   subscriptionYaml: string,
   policy: SecurityPolicy,
   runtime: RuntimeOptions = DEFAULT_RUNTIME,
   overrides?: OverrideInput[]
-): GeneratedConfig {
+): Promise<GeneratedConfig> {
   const doc = asDict(yaml.load(subscriptionYaml));
 
   // 订阅里可能混着「剩余流量 / 套餐到期」这类信息节点，生成配置前剔掉
@@ -202,12 +205,10 @@ export function generateConfig(
     );
     if (override.mode === 'js') {
       try {
-        // 进阶功能：脚本以应用权限执行，只应粘贴可信内容
-        const fn = new Function('config', `${text}\n;return config;`);
-        const next = fn(config);
-        if (next && typeof next === 'object') config = next as Dict;
+        config = await runJsOverride(config, text);
       } catch (e) {
-        console.warn('[PPClash] JS 覆写执行失败，已忽略', e);
+        const name = override.name || '未命名';
+        throw new Error(`JS 覆写「${name}」失败：${(e as Error).message}`);
       }
     } else {
       try {

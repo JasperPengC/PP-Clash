@@ -99,15 +99,6 @@ export function OverridePage() {
         return;
       }
     }
-    if (text.trim() && mode === 'js') {
-      try {
-        // 只做语法编译，不执行
-        new Function('config', text);
-      } catch (e) {
-        setError((e as Error).message);
-        return;
-      }
-    }
 
     setError(null);
     setSaving(true);
@@ -284,7 +275,7 @@ export function OverridePage() {
                   />
                   {mode === 'js' && (
                     <div className="override-error" style={{ color: 'var(--warning)' }}>
-                      JS 脚本以应用权限执行，只粘贴可信内容。
+                      JS 脚本在隔离 Worker 中执行，有 300ms 超时限制。
                     </div>
                   )}
                   {error && <div className="override-error">解析失败：{error}</div>}

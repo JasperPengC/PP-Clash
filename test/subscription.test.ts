@@ -9,7 +9,7 @@ import { generateConfig } from '../src/core/generator';
 import { DEFAULT_POLICY } from '../src/core/security';
 
 describe('订阅响应头解析', () => {
-  it('从 content-disposition 读出中文订阅名', () => {
+  it('从 content-disposition 读出中文订阅名', async () => {
     const meta = parseSubscriptionMeta({
       contentDisposition:
         "attachment;filename*=UTF-8''%E4%B8%80%E6%AF%9B%E6%9C%BA%E5%9C%BA",
@@ -17,19 +17,19 @@ describe('订阅响应头解析', () => {
     expect(meta.name).toBe('一毛机场');
   });
 
-  it('订阅名会去掉 .yaml 之类的文件名后缀', () => {
+  it('订阅名会去掉 .yaml 之类的文件名后缀', async () => {
     const meta = parseSubscriptionMeta({
       contentDisposition: 'attachment;filename="config.yaml"',
     });
     expect(meta.name).toBe('config');
   });
 
-  it('profile-title 支持 base64: 前缀', () => {
+  it('profile-title 支持 base64: 前缀', async () => {
     const meta = parseSubscriptionMeta({ profileTitle: 'base64:5LiA5q+b5py65Zy6' });
     expect(meta.name).toBe('一毛机场');
   });
 
-  it('解析 subscription-userinfo 的已用 / 总量 / 到期时间', () => {
+  it('解析 subscription-userinfo 的已用 / 总量 / 到期时间', async () => {
     const meta = parseSubscriptionMeta({
       subscriptionUserinfo:
         'upload=8921017230; download=36608187967; total=2147483648000; expire=1805204537',
@@ -44,7 +44,7 @@ describe('订阅响应头解析', () => {
     expect(meta.updateIntervalHours).toBe(24);
   });
 
-  it('没有元信息时不该报错，返回 null', () => {
+  it('没有元信息时不该报错，返回 null', async () => {
     const meta = parseSubscriptionMeta({});
     expect(meta.name).toBeNull();
     expect(meta.traffic).toBeNull();
@@ -63,13 +63,13 @@ proxy-groups:
 `;
 
 describe('订阅原文预览（内核未启动时）', () => {
-  it('识别机场塞进节点列表的信息节点', () => {
+  it('识别机场塞进节点列表的信息节点', async () => {
     expect(isInfoNode('剩余流量：1.91 TB')).toBe(true);
     expect(isInfoNode('套餐到期：2027-03-16')).toBe(true);
     expect(isInfoNode('🇯🇵 东京 01')).toBe(false);
   });
 
-  it('解析分组、规范化类型、滤掉信息节点', () => {
+  it('解析分组、规范化类型、滤掉信息节点', async () => {
     const groups = parseSubscriptionPreview(RAW);
     expect(groups).toHaveLength(2);
     expect(groups[0].name).toBe('🚀 节点选择');
@@ -78,7 +78,7 @@ describe('订阅原文预览（内核未启动时）', () => {
     expect(groups[1].type).toBe('URLTest');
   });
 
-  it('没有 proxy-groups 时合成为「全部节点」', () => {
+  it('没有 proxy-groups 时合成为「全部节点」', async () => {
     const raw = `proxies:
   - {name: A, type: ss, server: a.example.com, port: 1, cipher: aes-256-gcm, password: p}
   - {name: B, type: ss, server: b.example.com, port: 2, cipher: aes-256-gcm, password: p}
@@ -89,18 +89,18 @@ describe('订阅原文预览（内核未启动时）', () => {
     expect(groups[0].nodes).toHaveLength(2);
   });
 
-  it('坏 YAML 不应该让页面崩', () => {
+  it('坏 YAML 不应该让页面崩', async () => {
     expect(parseSubscriptionPreview('this: is: not: yaml')).toEqual([]);
   });
 
-  it('countRealNodes 不包含信息节点', () => {
+  it('countRealNodes 不包含信息节点', async () => {
     expect(countRealNodes(RAW)).toBe(2);
   });
 });
 
 describe('生成配置时清理信息节点', () => {
-  it('proxies 与分组引用里都不再出现伪节点', () => {
-    const out = generateConfig(RAW, DEFAULT_POLICY, {
+  it('proxies 与分组引用里都不再出现伪节点', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
       mixedPort: 17890,
       controllerPort: 19090,
       controllerSecret: '',

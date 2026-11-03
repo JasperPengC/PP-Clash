@@ -347,7 +347,7 @@ const runtimeOf = (s: AppStore) => ({
 const overrideOf = (s: AppStore) =>
   s.settings.overrides
     .filter((o) => o.enabled)
-    .map((o) => ({ mode: o.mode, text: o.text }));
+    .map((o) => ({ mode: o.mode, text: o.text, name: o.name }));
 
 /** 把前端状态推给托盘（更新勾选态并重建菜单）。失败静默，托盘不是关键路径。 */
 async function pushTray(s: AppStore) {
@@ -587,7 +587,7 @@ export const useApp = create<AppStore>((set, get) => ({
         useProxy,
         sourceType: 'url',
       };
-      const { audit, stats } = generateConfig(
+      const { audit, stats } = await generateConfig(
         payload.raw,
         get().policy,
         runtimeOf(get()),
@@ -636,7 +636,7 @@ export const useApp = create<AppStore>((set, get) => ({
         useProxy: false,
         sourceType: 'file',
       };
-      const { audit, stats } = generateConfig(raw, get().policy, runtimeOf(get()), overrideOf(get()));
+      const { audit, stats } = await generateConfig(raw, get().policy, runtimeOf(get()), overrideOf(get()));
       set((s) => ({
         profiles: [...s.profiles, profile],
         activeId: s.activeId ?? id,
@@ -661,7 +661,7 @@ export const useApp = create<AppStore>((set, get) => ({
   activate: async (id) => {
     const p = get().profiles.find((x) => x.id === id);
     if (!p || get().activeId === id) return;
-    const { audit, stats } = generateConfig(
+    const { audit, stats } = await generateConfig(
       p.raw,
       get().policy,
       runtimeOf(get()),
@@ -787,7 +787,7 @@ export const useApp = create<AppStore>((set, get) => ({
 
     set({ busy: true });
     try {
-      const { config, audit, stats } = generateConfig(
+      const { config, audit, stats } = await generateConfig(
         profile.raw,
         policy,
         {
