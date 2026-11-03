@@ -170,3 +170,43 @@ describe('额外端口与认证', () => {
     expect(cfg.authentication).toEqual(['pp:clash']);
   });
 });
+
+describe('订阅规则编辑', () => {
+  const RAW_RULES = `proxies:
+  - {name: NodeA, type: ss, server: a.example.com, port: 1, cipher: aes-256-gcm, password: p}
+proxy-groups:
+  - {name: G, type: select, proxies: [NodeA]}
+rules:
+  - DOMAIN,a.example.com,DIRECT
+  - DOMAIN,b.example.com,REJECT
+  - MATCH,DIRECT
+`;
+
+  it('可以排序、停用和覆盖目标', async () => {
+    const out = await generateConfig(RAW_RULES, DEFAULT_POLICY, RUNTIME, undefined, {
+      order: [2, 0, 1],
+      edits: {
+        0: { target: 'G' },
+        1: { enabled: false },
+        2: { target: 'G' },
+      },
+    });
+    const rules: string[] = JSON.parse(out.config).rules;
+    const match = rules.findIndex((r) => r.startsWith('MATCH'));
+    const domainA = rules.findIndex((r) => r.startsWith('DOMAIN,a.example.com'));
+    expect(domainA).toBeGreaterThan(0);
+    expect(rules[domainA]).toBe('DOMAIN,a.example.com,G');
+    expect(rules.some((r) => r.startsWith('DOMAIN,b.example.com'))).toBe(false);
+    expect(rules[match]).toBe('MATCH,G');
+    expect(out.stats.ruleCount).toBe(2);
+  });
+
+  it('缺省规则保持原顺序', async () => {
+    const out = await generateConfig(RAW_RULES, DEFAULT_POLICY, RUNTIME);
+    const rules: string[] = JSON.parse(out.config).rules;
+    expect(rules.filter((r) => r.startsWith('DOMAIN,')).map((r) => r.split(',')[1])).toEqual([
+      'a.example.com',
+      'b.example.com',
+    ]);
+  });
+});

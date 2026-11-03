@@ -40,6 +40,47 @@ export interface RuntimeOptions {
   currentNode?: string;
 }
 
+export interface RuleEditState {
+  /** 完整顺序；未出现的下标按原始顺序补在后面。 */
+  order: number[];
+  edits: Record<number, { enabled?: boolean; target?: string }>;
+}
+
+/** 应用订阅规则编辑：排序、启停、目标覆盖。防护规则和自定义规则不参与。 */
+function applyRuleEdits(rules: string[], edits?: RuleEditState): string[] {
+  if (!edits) return rules;
+  const seen = new Set<number>();
+  const order: number[] = [];
+  for (const i of edits.order) {
+    if (Number.isInteger(i) && i >= 0 && i < rules.length && !seen.has(i)) {
+      seen.add(i);
+      order.push(i);
+    }
+  }
+  for (let i = 0; i < rules.length; i += 1) {
+    if (!seen.has(i)) order.push(i);
+  }
+
+  const out: string[] = [];
+  for (const index of order) {
+    const edit = edits.edits[index];
+    if (edit?.enabled === false) continue;
+    let rule = rules[index];
+    const target = edit?.target?.trim();
+    if (target) {
+      const parts = rule.split(',').map((p) => p.trim());
+      if (parts[0] === 'MATCH') {
+        rule = `MATCH,${target}`;
+      } else if (parts.length >= 3) {
+        parts[2] = target;
+        rule = parts.join(',');
+      }
+    }
+    out.push(rule);
+  }
+  return out;
+}
+
 export interface OverrideInput {
   mode: 'yaml' | 'js';
   text: string;
@@ -106,7 +147,8 @@ export async function generateConfig(
   subscriptionYaml: string,
   policy: SecurityPolicy,
   runtime: RuntimeOptions = DEFAULT_RUNTIME,
-  overrides?: OverrideInput[]
+  overrides?: OverrideInput[],
+  ruleEdits?: RuleEditState
 ): Promise<GeneratedConfig> {
   const doc = asDict(yaml.load(subscriptionYaml));
 
@@ -116,7 +158,10 @@ export async function generateConfig(
     asArray(doc['proxy-groups'])
   );
   const providers = asDict(doc['proxy-providers']);
-  const subscriptionRules = asArray(doc.rules).map(String);
+  const subscriptionRules = applyRuleEdits(
+    asArray(doc.rules).map(String),
+    ruleEdits
+  );
 
   const guardRules = buildGuardRules(policy);
 

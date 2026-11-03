@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { EmptyState, MiniSwitch, Select, Spinner } from '../components/ui';
 import { IconInfo, IconPlus, IconRefresh, IconRules, IconSearch, IconTrash, IconX } from '../components/icons';
 import { useApp, type CustomRule } from '../store/app';
+import { parseSubscriptionRules } from '../core/subscription';
+import type { RuleEditState } from '../core/generator';
 import { api } from '../core/api';
 
 interface KernelRule {
@@ -31,6 +33,9 @@ export function RulesPage() {
   const connected = useApp((s) => s.kernelPhase === 'running');
   const settings = useApp((s) => s.settings);
   const groups = useApp((s) => s.groups);
+  const profiles = useApp((s) => s.profiles);
+  const activeId = useApp((s) => s.activeId);
+  const updateRuleEdits = useApp((s) => s.updateRuleEdits);
   const updateSettings = useApp((s) => s.updateSettings);
   const notify = useApp((s) => s.notify);
 
@@ -48,6 +53,8 @@ export function RulesPage() {
 
   const [showIO, setShowIO] = useState(false);
   const [ioText, setIoText] = useState('');
+  const [subQuery, setSubQuery] = useState('');
+  const [ruleSaving, setRuleSaving] = useState(false);
 
   const targetOptions = useMemo(() => {
     const base = [
@@ -61,6 +68,96 @@ export function RulesPage() {
     }
     return base;
   }, [groups, target]);
+
+  const activeProfile = useMemo(
+    () => profiles.find((p) => p.id === activeId) ?? null,
+    [profiles, activeId]
+  );
+  const subscriptionRules = useMemo(
+    () => parseSubscriptionRules(activeProfile?.raw ?? ''),
+    [activeProfile?.raw]
+  );
+  const fullOrder = useMemo(() => {
+    const saved = activeProfile?.ruleEdits?.order ?? [];
+    const seen = new Set<number>();
+    const out: number[] = [];
+    for (const i of saved) {
+      if (i >= 0 && i < subscriptionRules.length && !seen.has(i)) {
+        seen.add(i);
+        out.push(i);
+      }
+    }
+    for (let i = 0; i < subscriptionRules.length; i += 1) {
+      if (!seen.has(i)) out.push(i);
+    }
+    return out;
+  }, [activeProfile?.ruleEdits?.order, subscriptionRules]);
+
+  const orderedSubscriptionRules = useMemo(
+    () => fullOrder.map((i) => subscriptionRules[i]).filter(Boolean),
+    [fullOrder, subscriptionRules]
+  );
+
+  const filteredSubscriptionRules = useMemo(() => {
+    const q = subQuery.trim().toLowerCase();
+    if (!q) return orderedSubscriptionRules;
+    return orderedSubscriptionRules.filter((r) =>
+      `${r.type} ${r.payload} ${r.target}`.toLowerCase().includes(q)
+    );
+  }, [orderedSubscriptionRules, subQuery]);
+
+  const ruleTargetOptions = (current: string) => {
+    const base = [
+      { value: 'DIRECT', label: 'DIRECT · 直连' },
+      { value: 'REJECT', label: 'REJECT · 拒绝' },
+      ...groups.map((g) => ({ value: g.name, label: g.name })),
+    ];
+    if (current && !base.some((o) => o.value === current)) {
+      base.unshift({ value: current, label: current });
+    }
+    return base;
+  };
+
+  const saveRuleEdit = async (index: number, patch: { enabled?: boolean; target?: string }) => {
+    if (!activeProfile || ruleSaving) return;
+    const prev = activeProfile.ruleEdits ?? { order: fullOrder, edits: {} };
+    const next: RuleEditState = {
+      order: prev.order.length ? prev.order : fullOrder,
+      edits: { ...prev.edits, [index]: { ...prev.edits[index], ...patch } },
+    };
+    setRuleSaving(true);
+    try {
+      await updateRuleEdits(next);
+    } finally {
+      setRuleSaving(false);
+    }
+  };
+
+  const moveSubscriptionRule = async (index: number, dir: -1 | 1) => {
+    if (!activeProfile || ruleSaving) return;
+    const pos = fullOrder.indexOf(index);
+    const targetPos = pos + dir;
+    if (pos < 0 || targetPos < 0 || targetPos >= fullOrder.length) return;
+    const order = [...fullOrder];
+    [order[pos], order[targetPos]] = [order[targetPos], order[pos]];
+    const prev = activeProfile.ruleEdits ?? { order: [], edits: {} };
+    setRuleSaving(true);
+    try {
+      await updateRuleEdits({ ...prev, order });
+    } finally {
+      setRuleSaving(false);
+    }
+  };
+
+  const resetSubscriptionRules = async () => {
+    if (!activeProfile || ruleSaving) return;
+    setRuleSaving(true);
+    try {
+      await updateRuleEdits({ order: [], edits: {} });
+    } finally {
+      setRuleSaving(false);
+    }
+  };
 
   const loadKernelRules = async () => {
     try {
@@ -338,6 +435,108 @@ export function RulesPage() {
 
           <section className="card">
             <div className="row" style={{ gap: 10 }}>
+              <span className="section-title">订阅规则</span>
+              <div className="spacer" />
+              <span className="card-hint">
+                {activeProfile
+                  ? `${orderedSubscriptionRules.length} 条 · 可排序/启停`
+                  : '先选择订阅'}
+              </span>
+              {activeProfile && orderedSubscriptionRules.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={ruleSaving}
+                  onClick={() => void resetSubscriptionRules()}
+                >
+                  重置
+                </button>
+              )}
+            </div>
+            {!activeProfile ? (
+              <div className="rule-empty">还没有活动订阅。</div>
+            ) : orderedSubscriptionRules.length === 0 ? (
+              <div className="rule-empty">当前订阅没有 rules。</div>
+            ) : (
+              <>
+                <div className="row" style={{ gap: 10, marginTop: 10 }}>
+                  <div className="node-search">
+                    <IconSearch size={12} />
+                    <input
+                      value={subQuery}
+                      onChange={(e) => setSubQuery(e.target.value)}
+                      placeholder="搜索订阅规则"
+                      aria-label="搜索订阅规则"
+                      spellCheck={false}
+                    />
+                    {subQuery && (
+                      <button
+                        type="button"
+                        className="node-search-clear"
+                        aria-label="清空搜索"
+                        onClick={() => setSubQuery('')}
+                      >
+                        <IconX size={11} />
+                      </button>
+                    )}
+                  </div>
+                  <span className="card-hint">
+                    显示 {filteredSubscriptionRules.length} / {orderedSubscriptionRules.length}
+                  </span>
+                </div>
+                <div className="sub-rule-list">
+                  {filteredSubscriptionRules.map((r) => {
+                    const edit = activeProfile.ruleEdits?.edits[r.index];
+                    const on = edit?.enabled !== false;
+                    const target = edit?.target || r.target;
+                    return (
+                      <div key={r.index} className={`sub-rule-row${on ? '' : ' is-off'}`}>
+                        <MiniSwitch
+                          on={on}
+                          onChange={(v) => void saveRuleEdit(r.index, { enabled: v })}
+                          label="启用订阅规则"
+                        />
+                        <span className="tag">{r.type}</span>
+                        <span className="sub-rule-payload" title={r.raw}>
+                          {r.type === 'MATCH' ? '默认兜底' : r.payload}
+                        </span>
+                        <Select
+                          value={target}
+                          options={ruleTargetOptions(target)}
+                          onChange={(v) => void saveRuleEdit(r.index, { target: v })}
+                          ariaLabel={`规则目标 ${r.type}`}
+                          className="sub-rule-target"
+                        />
+                        <div className="sub-rule-move">
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label="上移订阅规则"
+                            disabled={ruleSaving}
+                            onClick={() => void moveSubscriptionRule(r.index, -1)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label="下移订阅规则"
+                            disabled={ruleSaving}
+                            onClick={() => void moveSubscriptionRule(r.index, 1)}
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="row" style={{ gap: 10 }}>
               <span className="section-title">当前生效规则</span>
               <div className="spacer" />
               <span className="card-hint">
@@ -402,7 +601,7 @@ export function RulesPage() {
 
           <div className="banner">
             <IconInfo size={13} />
-            <span>只追加规则；其它配置用覆写。</span>
+            <span>订阅规则可排序/启停；安全规则始终只读，其它配置用覆写。</span>
           </div>
         </div>
       </div>

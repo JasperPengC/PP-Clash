@@ -4585,3 +4585,49 @@ body.tray-panel-window #root {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 订阅规则编辑 */
+.sub-rule-list {
+  max-height: 420px;
+  overflow: auto;
+  margin-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.sub-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.sub-rule-row.is-off {
+  opacity: 0.5;
+}
+
+.sub-rule-payload {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub-rule-target {
+  width: 150px;
+  flex: none;
+}
+
+.sub-rule-move {
+  display: flex;
+  gap: 0;
+  flex: none;
+}
+
+.sub-rule-move .icon-btn {
+  width: 22px;
+}

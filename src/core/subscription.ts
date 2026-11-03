@@ -258,3 +258,40 @@ export function countRealNodes(raw: string): number {
     return 0;
   }
 }
+
+export interface SubscriptionRuleItem {
+  index: number;
+  type: string;
+  payload: string;
+  target: string;
+  raw: string;
+}
+
+/** 把订阅里的 rules 数组拆成可展示/可覆盖的结构。 */
+export function parseSubscriptionRules(raw: string): SubscriptionRuleItem[] {
+  let doc: unknown;
+  try {
+    doc = yaml.load(raw);
+  } catch {
+    return [];
+  }
+  const rules = (doc as { rules?: unknown } | null)?.rules;
+  if (!Array.isArray(rules)) return [];
+  return rules
+    .map((entry, index) => {
+      const text = String(entry).trim();
+      if (!text) return null;
+      const parts = text.split(',').map((p) => p.trim());
+      if (parts[0] === 'MATCH') {
+        return { index, type: 'MATCH', payload: '', target: parts[1] ?? '', raw: text };
+      }
+      return {
+        index,
+        type: parts[0] ?? '',
+        payload: parts.length >= 3 ? parts[1] : parts.slice(1).join(','),
+        target: parts.length >= 3 ? parts[2] : '',
+        raw: text,
+      };
+    })
+    .filter((x): x is SubscriptionRuleItem => Boolean(x));
+}

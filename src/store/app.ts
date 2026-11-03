@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api, DATA_DIR, isTauri } from '../core/api';
-import { generateConfig, type ConfigStats } from '../core/generator';
+import { generateConfig, type ConfigStats, type RuleEditState } from '../core/generator';
 import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
 import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
@@ -24,6 +24,8 @@ export interface Profile {
   useProxy?: boolean;
   /** 来源：远程订阅链接或本地文件；旧数据没有该字段时按 url 处理。 */
   sourceType?: 'url' | 'file';
+  /** 订阅规则的启停/目标/排序覆盖。 */
+  ruleEdits?: RuleEditState;
 }
 
 export interface CustomRule {
@@ -193,6 +195,8 @@ interface AppStore {
   refreshProfile: (id: string, quiet?: boolean) => Promise<boolean>;
   /** 更新单个订阅的本地设置（自动更新间隔 / 是否走代理）。 */
   updateProfile: (id: string, patch: Partial<Profile>) => void;
+  /** 更新当前活动订阅的规则编辑并立即应用。 */
+  updateRuleEdits: (edits: RuleEditState) => Promise<void>;
   /** 调整订阅顺序（-1 上移，1 下移）。 */
   moveProfile: (id: string, dir: -1 | 1) => void;
   /** 拖拽排序：把 fromId 移到 toId 的位置。 */
@@ -665,7 +669,8 @@ export const useApp = create<AppStore>((set, get) => ({
       p.raw,
       get().policy,
       runtimeOf(get()),
-      overrideOf(get())
+      overrideOf(get()),
+      p.ruleEdits
     );
     set({ activeId: id, audit, stats });
     await get().applyConfig();
@@ -696,6 +701,22 @@ export const useApp = create<AppStore>((set, get) => ({
       profiles: s.profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
     }));
     void persist(get());
+  },
+
+  updateRuleEdits: async (edits) => {
+    const id = get().activeId;
+    if (!id) return;
+    set((s) => ({
+      profiles: s.profiles.map((p) => (p.id === id ? { ...p, ruleEdits: edits } : p)),
+    }));
+    void persist(get());
+    const st = get();
+    await st.applyConfig();
+    if (st.kernelPhase === 'running') {
+      const ok = await st.restartKernel(true);
+      if (!ok) return;
+    }
+    get().notify('success', '订阅规则已更新');
   },
 
   reorderProfiles: (fromId, toId) => {
@@ -809,7 +830,8 @@ export const useApp = create<AppStore>((set, get) => ({
           snifferEnabled: settings.snifferEnabled,
           snifferOverrideDestination: settings.snifferOverrideDestination,
         },
-        overrideOf(get())
+        overrideOf(get()),
+        profile.ruleEdits
       );
       // save_config 返回绝对路径，直接拿来给内核用，避免相对路径错乱
       const absConfig = await api.saveConfig(config, DATA_DIR);
