@@ -4,6 +4,7 @@ import App from './App';
 import { TrayPanel } from './components/TrayPanel';
 import { initTheme } from './store/theme';
 import { useApp } from './store/app';
+import 'flag-icons/css/flag-icons.min.css';
 import './styles/theme.css';
 
 // 首帧之前定主题，避免深色系统上闪一下白屏

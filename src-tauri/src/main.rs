@@ -34,9 +34,50 @@ fn windows_preflight() -> bool {
     true
 }
 
+
+#[cfg(not(target_os = "windows"))]
+fn unix_preflight() -> bool {
+    use std::process::{Command, Stdio};
+
+    let data = if cfg!(target_os = "macos") {
+        std::env::var("HOME")
+            .map(|h| std::path::PathBuf::from(h).join("Library/Application Support/PPClash"))
+            .ok()
+    } else {
+        std::env::var("XDG_DATA_HOME")
+            .ok()
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var("HOME").ok().map(|h| std::path::PathBuf::from(h).join(".local/share")))
+            .map(|p| p.join("PPClash"))
+    };
+    let Some(data) = data else { return true };
+    let _ = std::fs::create_dir_all(&data);
+    let lock = data.join("instance.lock");
+    if let Ok(text) = std::fs::read_to_string(&lock) {
+        if let Ok(pid) = text.trim().parse::<u32>() {
+            let alive = Command::new("/bin/kill")
+                .args(["-0", &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if alive {
+                return false;
+            }
+        }
+    }
+    let _ = std::fs::write(lock, std::process::id().to_string());
+    true
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
     if !windows_preflight() {
+        return;
+    }
+    #[cfg(not(target_os = "windows"))]
+    if !unix_preflight() {
         return;
     }
     ppclash_lib::run();

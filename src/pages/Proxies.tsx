@@ -6,6 +6,7 @@ import {
   IconChevronRight,
   IconImport,
   IconNodes,
+  IconPin,
   IconRefresh,
   IconSearch,
   IconX,
@@ -39,6 +40,8 @@ export function ProxiesPage() {
   const profiles = useApp((s) => s.profiles);
   const activeId = useApp((s) => s.activeId);
   const selectNode = useApp((s) => s.selectNode);
+  const pinnedNodes = useApp((s) => s.pinnedNodes);
+  const togglePinNode = useApp((s) => s.togglePinNode);
   const testDelay = useApp((s) => s.testDelay);
   const refreshGroups = useApp((s) => s.refreshGroups);
   const notify = useApp((s) => s.notify);
@@ -125,6 +128,12 @@ export function ProxiesPage() {
       });
     } else if (sortBy === 'name') {
       list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    const pins = pinnedNodes[groupName] ?? [];
+    if (pins.length > 0) {
+      list = [...list].sort(
+        (a, b) => Number(!pins.includes(a.name)) - Number(!pins.includes(b.name))
+      );
     }
     return list;
   };
@@ -372,10 +381,27 @@ export function ProxiesPage() {
                             const selected = !usingPreview && g.now === node.name;
                             const busy = testingNodes.has(key);
                             return (
-                              <button
+                              <div
                                 key={node.name}
-                                type="button"
-                                className={`proxy-node${selected ? ' selected' : ''}`}
+                                role="button"
+                                tabIndex={0}
+                                className={`proxy-node${selected ? ' selected' : ''}${
+                                  pinnedNodes[g.name]?.includes(node.name) ? ' pinned' : ''
+                                }`}
+                                onDoubleClick={(e) => {
+                                  e.preventDefault();
+                                  togglePinNode(g.name, node.name);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    if (!connected) {
+                                      notify('info', '先开启接管');
+                                      return;
+                                    }
+                                    void selectNode(g.name, node.name);
+                                  }
+                                }}
                                 onClick={() => {
                                   if (!connected) {
                                     notify('info', '先开启接管');
@@ -385,6 +411,29 @@ export function ProxiesPage() {
                                 }}
                               >
                                 <span className="proxy-node-name"><NodeName name={node.name} /></span>
+                                <button
+                                  type="button"
+                                  className={`node-pin${
+                                    pinnedNodes[g.name]?.includes(node.name) ? ' pinned' : ''
+                                  }`}
+                                  aria-label={
+                                    pinnedNodes[g.name]?.includes(node.name) ? '取消固定' : '固定节点'
+                                  }
+                                  title={
+                                    pinnedNodes[g.name]?.includes(node.name)
+                                      ? '取消固定（也可双击节点）'
+                                      : '固定节点（也可双击节点）'
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePinNode(g.name, node.name);
+                                  }}
+                                >
+                                  <IconPin
+                                    size={11}
+                                    filled={pinnedNodes[g.name]?.includes(node.name)}
+                                  />
+                                </button>
                                 {busy ? (
                                   <span className="node-delay">
                                     <Spinner small />
@@ -394,7 +443,7 @@ export function ProxiesPage() {
                                     {ms != null && ms > 0 ? `${ms} ms` : '—'}
                                   </span>
                                 )}
-                              </button>
+                              </div>
                             );
                           })}
                         </div>

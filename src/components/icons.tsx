@@ -267,3 +267,12 @@ export const IconRestart = (p: IconProps) => (
     <path d="M6.7 7.2a8 8 0 1 0 10.6 0" />
   </Svg>
 );
+
+export const IconPin = ({ filled, ...p }: IconProps & { filled?: boolean }) => (
+  <Svg {...p}>
+    <path
+      d="M9.2 3h5.6l-.9 5 3.4 3.4-5.6 1.5L8.4 20l-1.3-.7 2.8-7.1-3.4-3.4L8.6 3h.6Z"
+      fill={filled ? 'currentColor' : 'none'}
+    />
+  </Svg>
+);

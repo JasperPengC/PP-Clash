@@ -12,7 +12,7 @@ import {
   IconTun,
   IconUpload,
 } from '../components/icons';
-import { resolveActiveNode, useApp, type OutboundMode } from '../store/app';
+import { resolveActiveNode, resolveEffectiveGroup, useApp, type OutboundMode } from '../store/app';
 import { api } from '../core/api';
 import { parseSubscriptionPreview } from '../core/subscription';
 import { formatBytes, formatDuration, formatExpire, formatSpeed } from '../core/format';
@@ -77,6 +77,8 @@ export function OverviewPage() {
   };
   const activeProfile = profiles.find((p) => p.id === activeId);
   const primaryGroup = groups[0];
+  const effectiveGroup =
+    connected && primaryGroup ? resolveEffectiveGroup(groups, primaryGroup.name) : undefined;
   const nodeName = resolveActiveNode(groups, primaryGroup?.now ?? '');
 
   const [up, setUp] = useState<number[]>(EMPTY);
@@ -106,7 +108,7 @@ export function OverviewPage() {
     [activeProfile?.raw]
   );
   const displayGroup = connected
-    ? primaryGroup
+    ? effectiveGroup
     : previewGroups[0]
       ? { name: previewGroups[0].name, now: '', nodes: previewGroups[0].nodes }
       : undefined;
@@ -320,7 +322,7 @@ export function OverviewPage() {
 
   const uptime = connected && connectedAt ? formatDuration(now - connectedAt) : null;
 
-  const groupNow = connected ? (primaryGroup?.now ?? '') : '';
+  const groupNow = connected ? (displayGroup?.now ?? '') : '';
   const groupNodes = displayGroup
     ? [...displayGroup.nodes].sort((a, b) => {
         // 已选中的节点永远排第一，其余按延迟升序
@@ -335,11 +337,11 @@ export function OverviewPage() {
     : [];
 
   const onSelectNode = (name: string) => {
-    if (!connected || !primaryGroup) {
+    if (!connected || !displayGroup) {
       notify('info', '先开启系统代理或 TUN');
       return;
     }
-    void selectNode(primaryGroup.name, name);
+    void selectNode(displayGroup.name, name);
   };
 
   return (
@@ -349,6 +351,7 @@ export function OverviewPage() {
           <h1 className="page-title">概览</h1>
         </div>
         <div className="page-actions">
+          <span className={`mode-switch-hint${switchingMode ? ' show' : ''}`}>切换中…</span>
           <Segmented
             ariaLabel="出站模式"
             options={[
@@ -359,7 +362,6 @@ export function OverviewPage() {
             value={settings.mode}
             onChange={(v) => void changeMode(v)}
           />
-          {switchingMode && <span className="card-hint">切换中…</span>}
         </div>
       </header>
 

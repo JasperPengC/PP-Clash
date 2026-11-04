@@ -4798,6 +4798,16 @@ body.tray-panel-window #root {
   min-width: 0;
 }
 
+.node-flag-icon {
+  flex: none;
+  width: 16px;
+  height: 12px;
+  border-radius: 2px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 0 1px rgb(16 24 40 / 0.08);
+}
+
 .node-country-code {
   flex: none;
   display: inline-flex;
@@ -4884,4 +4894,58 @@ body.tray-panel-window #root {
 :root[data-win-max='1'] .window-shell.is-windows {
   border-radius: 0;
   border: 0;
+}
+
+/* 模式切换提示固定在选项卡左侧，避免出现/消失时把选项卡挤得跳动 */
+.mode-switch-hint {
+  min-width: 52px;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--text-3);
+  visibility: hidden;
+}
+
+.mode-switch-hint.show {
+  visibility: visible;
+}
+
+/* 节点固定 */
+.proxy-node {
+  position: relative;
+}
+
+.node-pin {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.proxy-node:hover .node-pin,
+.proxy-node.pinned .node-pin {
+  opacity: 1;
+}
+
+.node-pin:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.node-pin.pinned,
+.node-pin.pinned:hover {
+  color: var(--accent);
+}
+
+.proxy-node.pinned {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-soft));
 }

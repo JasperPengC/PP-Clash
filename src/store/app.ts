@@ -179,6 +179,8 @@ interface AppStore {
   /** 最近一次内核启动/运行失败的原因，直接展示给用户。 */
   kernelError: string | null;
   groups: ProxyGroup[];
+  /** 节点页手动固定的节点：groupName -> nodeName[]。 */
+  pinnedNodes: Record<string, string[]>;
   audit: Finding[];
   stats: ConfigStats | null;
   toast: Toast | null;
@@ -219,6 +221,7 @@ interface AppStore {
   handleKernelLost: () => Promise<void>;
   refreshGroups: (quiet?: boolean) => Promise<void>;
   selectNode: (group: string, node: string) => Promise<void>;
+  togglePinNode: (group: string, node: string) => void;
   testDelay: (node: string) => Promise<number | null>;
   toggleSystemProxy: (on: boolean) => Promise<void>;
   /** 托盘事件回写（只改状态并持久化，不再发系统调用）。 */
@@ -264,6 +267,7 @@ async function disableProxyOnFailure(port: number) {
 }
 
 let restartChain: Promise<void> = Promise.resolve();
+let kernelStartRetry = 0;
 let recoveryToken = 0;
 let recoveryRunning = false;
 let configRevision = 0;
@@ -314,6 +318,18 @@ function parseGroups(raw: any): ProxyGroup[] {
  * 分组里选中的可能还是另一个分组（例如「一毛机场」的当前项是「自动选择」）。
  * 一直往下追到真实节点，只用于展示；切换/选中判断仍然用原始 now。
  */
+export function resolveEffectiveGroup(groups: ProxyGroup[], name: string): ProxyGroup | undefined {
+  let group = groups.find((g) => g.name === name);
+  const seen = new Set<string>();
+  while (group && !seen.has(group.name)) {
+    seen.add(group.name);
+    const next = groups.find((g) => g.name === group!.now);
+    if (!next) break;
+    group = next;
+  }
+  return group;
+}
+
 export function resolveActiveNode(groups: ProxyGroup[], name: string): string {
   let cur = name;
   const seen = new Set<string>();
@@ -338,6 +354,7 @@ async function persist(s: AppStore) {
     settings: s.settings,
     tunEnabled: s.tunEnabled,
     sysProxyEnabled: s.sysProxyEnabled,
+    pinnedNodes: s.pinnedNodes,
   });
   try {
     await api.saveAppState(payload, DATA_DIR);
@@ -409,6 +426,7 @@ export const useApp = create<AppStore>((set, get) => ({
   connectedAt: null,
   kernelError: null,
   groups: [],
+  pinnedNodes: {},
   audit: [],
   stats: null,
   toast: null,
@@ -553,6 +571,7 @@ export const useApp = create<AppStore>((set, get) => ({
         settings,
         tunEnabled: saved.tunEnabled ?? false,
         sysProxyEnabled: saved.sysProxyEnabled ?? false,
+        pinnedNodes: saved.pinnedNodes ?? {},
       });
       setMihomoBase(settings.controllerPort);
 
@@ -968,6 +987,7 @@ export const useApp = create<AppStore>((set, get) => ({
         get().settings.controllerPort
       );
       if (st.running) {
+        kernelStartRetry = 0;
         set({ kernelPhase: 'running', connectedAt: Date.now(), kernelError: null });
         recoveryToken += 1;
         if (st.reclaimed && st.reclaimed.length > 0) {
@@ -997,6 +1017,16 @@ export const useApp = create<AppStore>((set, get) => ({
       }
     } catch (e) {
       const msg = errorText(e);
+      // 端口刚被旧内核释放时会有一次短暂冲突；自动重试一次，避免用户看到假失败。
+      if (kernelStartRetry < 1 && /address already in use|没有监听/.test(msg)) {
+        kernelStartRetry += 1;
+        set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
+        if (!quiet) get().notify('info', '端口刚释放，正在重试启动…');
+        window.setTimeout(() => void get().startKernel(true), 1200);
+        await pushTray(get());
+        return;
+      }
+      kernelStartRetry = 0;
       set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
       if (get().sysProxyEnabled) {
         await disableProxyOnFailure(get().settings.mixedPort);
@@ -1157,6 +1187,15 @@ export const useApp = create<AppStore>((set, get) => ({
       get().notify('error', `切换节点失败：${errorText(e)}`);
     }
     await pushTray(get());
+  },
+
+  togglePinNode: (group, node) => {
+    const current = get().pinnedNodes[group] ?? [];
+    const next = current.includes(node)
+      ? current.filter((x) => x !== node)
+      : [...current, node];
+    set({ pinnedNodes: { ...get().pinnedNodes, [group]: next } });
+    void persist(get());
   },
 
   testDelay: async (node) => {

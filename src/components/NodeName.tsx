@@ -19,7 +19,7 @@ export function NodeName({ name, className }: { name: string; className?: string
   if (!code) return <span className={className}>{name}</span>;
   return (
     <span className={`node-name-with-code${className ? ` ${className}` : ''}`}>
-      <span className="node-country-code">{code}</span>
+      <span className={`fi fi-${code.toLowerCase()} node-flag-icon`} aria-hidden="true" />
       <span>{rest}</span>
     </span>
   );
