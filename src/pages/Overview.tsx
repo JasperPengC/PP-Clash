@@ -64,6 +64,7 @@ export function OverviewPage() {
   const [servicesLoading, setServicesLoading] = useState(false);
   const serviceProbeRunning = useRef(false);
   const [egressCountry, setEgressCountry] = useState<string | null>(null);
+  const [egressLoading, setEgressLoading] = useState(false);
   const [leakPhase, setLeakPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [leakRows, setLeakRows] = useState<
     Array<{ id: string; label: string; status: 'ok' | 'warn' | 'bad' | 'info'; text: string }>
@@ -256,23 +257,33 @@ export function OverviewPage() {
     };
   }, [connected]);
 
-  // 出口 IP：连接后异步取一次，之后 60s 刷新
+  // 出口 IP：连接后异步取一次；首轮失败自动重试，避免偶尔空白。
   useEffect(() => {
     if (!connected) {
       setEgress(null);
+      setEgressLoading(false);
       return;
     }
     let alive = true;
     const load = async () => {
-      try {
-        const r = await api.leakCheckIp(mixedPort);
-        if (alive) setEgress(r.proxied ?? null);
-      } catch {
-        /* 拿不到就不显示 */
+      if (alive) setEgressLoading(true);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const r = await api.leakCheckIp(mixedPort);
+          if (!alive) return;
+          if (r.proxied) {
+            setEgress(r.proxied);
+            break;
+          }
+        } catch {
+          /* 下一轮重试 */
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 800 * (attempt + 1)));
       }
+      if (alive) setEgressLoading(false);
     };
     void load();
-    const t = window.setInterval(load, 60000);
+    const t = window.setInterval(() => void load(), 60_000);
     return () => {
       alive = false;
       window.clearInterval(t);
@@ -355,13 +366,6 @@ export function OverviewPage() {
       window.clearInterval(timer);
     };
   }, [connected, kernelBusy, mixedPort, runServiceProbe]);
-
-  // 手动/自动切换节点后补一次探测；不影响上面的固定轮询。
-  useEffect(() => {
-    if (!connected || kernelBusy) return;
-    const t = window.setTimeout(() => void runServiceProbe(), 5000);
-    return () => window.clearTimeout(t);
-  }, [nodeName, connected, kernelBusy, runServiceProbe]);
 
   const testCurrentGroup = async () => {
     if (!displayGroup || testingGroup) return;
@@ -570,7 +574,7 @@ export function OverviewPage() {
                   <div>
                     <div className="hero-stat-label">出口地址</div>
                     <div className="hero-stat-value" style={{ fontSize: 12.5 }}>
-                      {connected ? egress ?? '—' : '—'}
+                      {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
                       {connected && egressCountry && (
                         <small className="hero-country">{egressCountry}</small>
                       )}

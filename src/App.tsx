@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { Sidebar, type PageKey } from './components/Sidebar';
 import { OverviewPage } from './pages/Overview';
@@ -14,7 +14,7 @@ import { DnsPage } from './pages/Dns';
 import { SecurityPage } from './pages/Security';
 import { ProfilesPage } from './pages/Profiles';
 import { SettingsPage } from './pages/Settings';
-import { useApp, type OutboundMode, type ToastKind } from './store/app';
+import { resolveEffectiveGroup, useApp, type OutboundMode, type ToastKind } from './store/app';
 import { api, isTauri } from './core/api';
 import { IconAlert, IconCheck, IconDownload, IconInfo, IconX } from './components/icons';
 import { WindowsTitlebar } from './components/WindowsTitlebar';
@@ -198,6 +198,55 @@ export default function App() {
       for (const item of thumbs.values()) item.el.remove();
       thumbs.clear();
     };
+  }, []);
+
+  // 节点故障自动切换：只对 Selector 组生效，URLTest 交给内核自动调度。
+  const failoverBusy = useRef(false);
+  const lastFailoverAt = useRef(0);
+  useEffect(() => {
+    if (!isTauri) return;
+    const timer = window.setInterval(async () => {
+      const s = useApp.getState();
+      if (
+        !s.settings.autoFailover ||
+        s.kernelPhase !== 'running' ||
+        !(s.sysProxyEnabled || s.tunEnabled) ||
+        failoverBusy.current ||
+        Date.now() - lastFailoverAt.current < 20_000
+      ) {
+        return;
+      }
+      const base = s.groups[0];
+      const group = base ? resolveEffectiveGroup(s.groups, base.name) : undefined;
+      if (!group || group.type !== 'Selector') return;
+      const current = group.now;
+      if (!current || !group.nodes.some((n) => n.name === current)) return;
+
+      failoverBusy.current = true;
+      try {
+        const currentDelay = await s.testDelay(current);
+        if (currentDelay != null && currentDelay > 0) return;
+        const candidates = group.nodes.filter((n) => n.name !== current).slice(0, 6);
+        if (candidates.length === 0) return;
+        const tested = await Promise.all(
+          candidates.map(async (n) => ({ node: n, delay: await s.testDelay(n.name) }))
+        );
+        const best = tested
+          .filter((x): x is { node: (typeof candidates)[number]; delay: number } =>
+            x.delay != null && x.delay > 0
+          )
+          .sort((a, b) => a.delay - b.delay)[0];
+        if (!best) return;
+        lastFailoverAt.current = Date.now();
+        await s.selectNode(group.name, best.node.name);
+        s.notify('info', `节点 ${current} 不可用，已切换到 ${best.node.name}`);
+      } catch {
+        /* 自动切换失败不打扰用户 */
+      } finally {
+        failoverBusy.current = false;
+      }
+    }, 20_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // 内核心跳：mihomo 可能自己退出（配置/端口/数据问题），

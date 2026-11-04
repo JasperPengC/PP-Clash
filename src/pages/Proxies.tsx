@@ -51,7 +51,6 @@ export function ProxiesPage() {
   const [hideUnavailable, setHideUnavailable] = useState(false);
   const [openState, setOpenState] = useState<Record<string, boolean>>(loadOpen);
   const [testing, setTesting] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [delays, setDelays] = useState<Record<string, number | null>>({});
   const [testingNodes, setTestingNodes] = useState<Set<string>>(new Set());
   const [didInitOpen, setDidInitOpen] = useState(false);
@@ -141,9 +140,7 @@ export function ProxiesPage() {
   const runTest = async (targets: Array<{ group: string; node: string }>) => {
     if (testing || !connected || targets.length === 0) return;
     setTesting(true);
-    setProgress({ done: 0, total: targets.length });
     const queue = [...targets];
-    let done = 0;
     const worker = async () => {
       for (;;) {
         const item = queue.shift();
@@ -151,8 +148,6 @@ export function ProxiesPage() {
         const key = `${item.group}|${item.node}`;
         setTestingNodes((prev) => new Set(prev).add(key));
         const d = await testDelay(item.node);
-        done += 1;
-        setProgress({ done, total: targets.length });
         setDelays((prev) => ({ ...prev, [key]: d }));
         setTestingNodes((prev) => {
           const next = new Set(prev);
@@ -170,14 +165,6 @@ export function ProxiesPage() {
     void runTest(
       visibleNodes(groupName, nodes).map((n) => ({ group: groupName, node: n.name }))
     );
-  };
-
-  const testAll = () => {
-    const targets: Array<{ group: string; node: string }> = [];
-    for (const g of displayGroups) {
-      for (const n of visibleNodes(g.name, g.nodes)) targets.push({ group: g.name, node: n.name });
-    }
-    void runTest(targets);
   };
 
   const toggleGroup = (name: string) =>
@@ -287,21 +274,6 @@ export function ProxiesPage() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void testAll()}
-            disabled={!connected || testing || displayGroups.length === 0}
-          >
-            {testing ? (
-              <>
-                <Spinner small />
-                {progress.done}/{progress.total}
-              </>
-            ) : (
-              '全部测速'
-            )}
-          </button>
           <button
             type="button"
             className="icon-btn"
@@ -446,14 +418,6 @@ export function ProxiesPage() {
                 })}
               </div>
 
-              <div className="banner">
-                <IconNodes size={13} />
-                <span>
-                  {usingPreview
-                    ? '订阅预览'
-                    : '点击切换节点'}
-                </span>
-              </div>
             </>
           )}
         </div>

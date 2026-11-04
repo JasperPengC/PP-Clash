@@ -361,6 +361,17 @@ export function SettingsPage() {
                 }
               />
               <Row
+                label="节点不可用自动切换"
+                hint="探测当前节点，失败时切换到同组可用节点"
+                control={
+                  <Toggle
+                    on={settings.autoFailover}
+                    onChange={(v) => updateSettings({ autoFailover: v })}
+                    label="节点不可用自动切换"
+                  />
+                }
+              />
+              <Row
                 label="订阅自动更新"
                 hint="各订阅单独设置"
                 control={

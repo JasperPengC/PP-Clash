@@ -101,6 +101,8 @@ export interface AppSettings {
   snifferOverrideDestination: boolean;
   /** 订阅自动更新（按机场返回的 profile-update-interval，缺省 24h）。 */
   autoUpdate: boolean;
+  /** 节点不可用时自动探测并切换到同组可用节点。 */
+  autoFailover: boolean;
   /** 进阶覆写：多份 YAML/JS 文件，按顺序合并到生成配置。 */
   overrides: OverrideFile[];
   /** GitHub 下载代理前缀（下载内核/资源时使用，留空直连）。 */
@@ -149,6 +151,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   snifferEnabled: false,
   snifferOverrideDestination: false,
   autoUpdate: true,
+  autoFailover: true,
   overrides: [],
   githubProxy: '',
   customRules: [],
