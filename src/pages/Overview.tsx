@@ -477,7 +477,13 @@ export function OverviewPage() {
                 </div>
 
                 <div className="hero-node">
-                  {connected ? nodeName || '未选择节点' : failed ? '启动失败' : '未接管流量'}
+                  {connected ? (
+                    <NodeName name={nodeName || '未选择节点'} />
+                  ) : failed ? (
+                    '启动失败'
+                  ) : (
+                    '未接管流量'
+                  )}
                 </div>
                 <div className="hero-sub">{desc}</div>
 
