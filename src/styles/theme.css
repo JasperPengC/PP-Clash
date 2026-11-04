@@ -1450,6 +1450,7 @@ textarea:focus-visible {
 .seg {
   display: inline-flex;
   align-items: center;
+  height: 31px;
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-control);
@@ -4847,10 +4848,11 @@ body.tray-panel-window #root {
 
 .win-window-controls {
   position: fixed;
-  top: 20px;
+  top: 18px;
   right: var(--page-pad);
   height: 31px;
   display: flex;
+  align-items: center;
   z-index: 10001;
   border-radius: var(--radius-control);
   overflow: hidden;
@@ -4861,7 +4863,7 @@ body.tray-panel-window #root {
 
 .win-window-controls button {
   width: 34px;
-  height: 31px;
+  height: 29px;
   border: none;
   background: transparent;
   color: var(--text-2);
