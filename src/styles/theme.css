@@ -4835,22 +4835,21 @@ body.tray-panel-window #root {
 
 .win-window-controls {
   position: fixed;
-  top: 8px;
-  right: 10px;
-  height: 30px;
+  top: 20px;
+  right: var(--page-pad);
+  height: 28px;
   display: flex;
   z-index: 10001;
-  border-radius: 9px;
+  border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  box-shadow: 0 2px 10px -4px rgb(16 24 40 / 0.18);
-  backdrop-filter: blur(10px);
+  background: var(--surface);
+  box-shadow: 0 1px 4px rgb(16 24 40 / 0.06);
 }
 
 .win-window-controls button {
-  width: 38px;
-  height: 30px;
+  width: 32px;
+  height: 28px;
   border: none;
   background: transparent;
   color: var(--text-2);
@@ -4871,12 +4870,10 @@ body.tray-panel-window #root {
 }
 
 .window-shell.is-windows .page-head {
-  padding-right: 138px;
+  padding-right: 148px;
 }
 
-.window-shell.is-windows .sidebar > :first-child {
-  padding-top: 8px;
-}
+
 
 .window-shell.is-windows {
   border-radius: 10px;

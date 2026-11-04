@@ -91,7 +91,7 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="titlebar" />
+      <div className="titlebar" data-tauri-drag-region />
 
       <div className="sidebar-brand">
         <img className="brand-mark" src={cat} alt="" width={28} height={28} />

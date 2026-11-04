@@ -55,17 +55,18 @@ export function WindowsTitlebar() {
         onDoubleClick={() => void win().toggleMaximize()}
       />
       <div className="win-window-controls">
-        <button type="button" aria-label="最小化" onClick={() => void win().minimize()}>
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        <button type="button" aria-label="最小化" title="最小化" onClick={() => void win().minimize()}>
+          <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
             <path d="M2 5h6" stroke="currentColor" strokeWidth="1.1" />
           </svg>
         </button>
         <button
           type="button"
           aria-label={maximized ? '还原' : '最大化'}
+          title={maximized ? '还原' : '最大化'}
           onClick={() => void win().toggleMaximize()}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
             <rect x="2" y="2" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.1" />
           </svg>
         </button>
@@ -73,9 +74,10 @@ export function WindowsTitlebar() {
           type="button"
           className="close"
           aria-label="关闭"
+          title="关闭"
           onClick={() => void win().close()}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
             <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.1" />
           </svg>
         </button>
