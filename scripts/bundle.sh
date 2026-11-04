@@ -16,7 +16,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 echo "▸ 构建前端"
 npm run build
 
-APP="src-tauri/target/release/bundle/macos/PPClash.app"
+APP="src-tauri/target/release/bundle/macos/PP Clash.app"
 BIN="src-tauri/target/release/ppclash"
 
 if [ "${UNIVERSAL:-0}" = "1" ]; then

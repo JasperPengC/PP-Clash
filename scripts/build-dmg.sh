@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_DEFAULT="src-tauri/target/release/bundle/macos/PPClash.app"
+APP_DEFAULT="src-tauri/target/release/bundle/macos/PP Clash.app"
 APP_PATH="${APP_PATH:-$APP_DEFAULT}"
 if [ ! -d "$APP_PATH" ]; then
   echo "▸ 未找到 $APP_PATH，先运行 scripts/bundle.sh"

@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_PATH="${1:-src-tauri/target/release/bundle/macos/PPClash.app}"
+APP_PATH="${1:-src-tauri/target/release/bundle/macos/PP Clash.app}"
 [ -d "$APP_PATH" ] || { echo "找不到 $APP_PATH" >&2; exit 1; }
 
 IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
