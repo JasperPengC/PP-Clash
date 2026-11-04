@@ -33,7 +33,8 @@ PY
 done
 
 echo "== controller =="
-VERSION=$(curl -sS --max-time 4 "http://127.0.0.1:$CTRL/version" 2>/dev/null || true)
+SECRET=$(json "d['settings'].get('controllerSecret','')")
+VERSION=$(curl -sS --max-time 4 ${SECRET:+-H "Authorization: Bearer $SECRET"} "http://127.0.0.1:$CTRL/version" 2>/dev/null || true)
 [ -n "$VERSION" ] && ok "controller /version" || bad "controller /version"
 
 echo "== proxy =="

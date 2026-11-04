@@ -6359,3 +6359,8 @@ body.tray-panel-window #root {
 .hero-session .hero-down {
   color: var(--down);
 }
+
+.hero-meta {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
