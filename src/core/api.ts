@@ -326,6 +326,18 @@ export const api = {
   /** Windows: 以管理员身份重启应用；其它平台直接重启。 */
   restartAsAdmin: () => call<void>('restart_as_admin'),
 
+  /** 查询出口 IP 的国家/地区。 */
+  lookupIpCountry: (ip: string) =>
+    call<{ country: string | null; country_code: string | null }>('lookup_ip_country_auto', {
+      ip,
+    }),
+
+  /** 通过 mihomo mixed 端口探测常用服务连通性。 */
+  probeServices: () =>
+    call<Array<{ id: string; ok: boolean; latency_ms: number | null }>>(
+      'probe_services_auto'
+    ),
+
   /** 下载更新包到临时目录（可选 sha256 校验）。 */
   downloadAppUpdate: (url: string, sha256: string | null) =>
     call<string>('download_app_update', { url, sha256 }),

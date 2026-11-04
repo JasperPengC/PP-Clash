@@ -276,3 +276,12 @@ export const IconPin = ({ filled, ...p }: IconProps & { filled?: boolean }) => (
     />
   </Svg>
 );
+
+export const IconFlag = ({ filled, ...p }: IconProps & { filled?: boolean }) => (
+  <Svg {...p}>
+    <path
+      d="M5.5 21V3.8c2.8-1.7 5.4 1.8 8.2.2 1.4-.8 2.6-1 3.8-.7v8.2c-1.2-.3-2.4-.1-3.8.7-2.8 1.6-5.4-1.9-8.2-.2"
+      fill={filled ? 'currentColor' : 'none'}
+    />
+  </Svg>
+);

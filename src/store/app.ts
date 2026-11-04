@@ -836,7 +836,6 @@ export const useApp = create<AppStore>((set, get) => ({
   refreshProfile: async (id, quiet = false) => {
     const p = get().profiles.find((x) => x.id === id);
     if (!p) return false;
-    if (!quiet) set({ busy: true });
     set((s) => ({
       refreshingIds: s.refreshingIds.includes(id) ? s.refreshingIds : [...s.refreshingIds, id],
     }));
@@ -871,7 +870,6 @@ export const useApp = create<AppStore>((set, get) => ({
               }
             : x
         ),
-        busy: false,
         refreshingIds: s.refreshingIds.filter((x) => x !== id),
       }));
       // 活动中的订阅更新后立即重生成配置
@@ -881,7 +879,6 @@ export const useApp = create<AppStore>((set, get) => ({
       return true;
     } catch (e) {
       set((s) => ({
-        busy: quiet ? s.busy : false,
         refreshingIds: s.refreshingIds.filter((x) => x !== id),
       }));
       if (!quiet) get().notify('error', `更新失败：${errorText(e)}`);

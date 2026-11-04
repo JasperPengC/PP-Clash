@@ -2,6 +2,7 @@ mod icons;
 mod kernel;
 mod leakcheck;
 mod platform;
+mod services;
 mod update;
 mod watchdog;
 mod mihomo;
@@ -90,6 +91,10 @@ pub fn run() {
             prefs::open_external_url,
             prefs::is_elevated,
             prefs::restart_as_admin,
+            services::probe_services,
+            services::probe_services_auto,
+            services::lookup_ip_country,
+            services::lookup_ip_country_auto,
             tray::sync_tray,
             tray::set_tray_flags,
             tray::tray_snapshot,

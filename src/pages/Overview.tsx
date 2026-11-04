@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NodeName } from '../components/NodeName';
 import { MiniSparkline, RouteTrafficChart } from '../components/visuals';
-import { navigate, Pill, Segmented, Select, Toggle } from '../components/ui';
+import { navigate, Pill, Segmented, Select, Spinner, Toggle } from '../components/ui';
 import {
+  IconBolt,
   IconCheck,
   IconChevronRight,
   IconDownload,
   IconGlobe,
   IconProfiles,
+  IconRefresh,
   IconSecurity,
   IconTun,
   IconUpload,
@@ -15,9 +17,19 @@ import {
 import { resolveActiveNode, resolveEffectiveGroup, useApp, type OutboundMode } from '../store/app';
 import { api } from '../core/api';
 import { parseSubscriptionPreview } from '../core/subscription';
-import { formatBytes, formatDuration, formatExpire, formatSpeed } from '../core/format';
+import { formatBytes, formatDuration, formatExpire, formatSpeed, formatTime } from '../core/format';
+import { siGoogle, siYoutube, siGithub, siOpenai, siAnthropic } from 'simple-icons';
 
 const EMPTY = Array.from({ length: 32 }, () => 0);
+
+const SERVICES = [
+  { id: 'google', name: 'Google', icon: siGoogle },
+  { id: 'youtube', name: 'YouTube', icon: siYoutube },
+  { id: 'github', name: 'GitHub', icon: siGithub },
+  { id: 'openai', name: 'ChatGPT', icon: siOpenai },
+  { id: 'anthropic', name: 'Claude', icon: siAnthropic },
+] as const;
+
 
 export function OverviewPage() {
   const kernelPhase = useApp((s) => s.kernelPhase);
@@ -34,10 +46,20 @@ export function OverviewPage() {
   const toggleSystemProxy = useApp((s) => s.toggleSystemProxy);
   const setTun = useApp((s) => s.setTun);
   const selectNode = useApp((s) => s.selectNode);
+  const testDelay = useApp((s) => s.testDelay);
+  const refreshProfile = useApp((s) => s.refreshProfile);
+  const refreshingIds = useApp((s) => s.refreshingIds);
   const activate = useApp((s) => s.activate);
   const notify = useApp((s) => s.notify);
   const updateSettings = useApp((s) => s.updateSettings);
   const [switchingMode, setSwitchingMode] = useState(false);
+  const [groupDelays, setGroupDelays] = useState<Record<string, number | null>>({});
+  const [testingGroup, setTestingGroup] = useState(false);
+  const [services, setServices] = useState<
+    Array<{ id: string; ok: boolean; latency_ms: number | null }>
+  >([]);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [egressCountry, setEgressCountry] = useState<string | null>(null);
 
   const changeMode = async (mode: OutboundMode) => {
     if (mode === settings.mode) return;
@@ -251,6 +273,24 @@ export function OverviewPage() {
     };
   }, [connected, mixedPort]);
 
+  // 出口 IP 归属地
+  useEffect(() => {
+    if (!connected || !egress) {
+      setEgressCountry(null);
+      return;
+    }
+    let alive = true;
+    void api
+      .lookupIpCountry(egress)
+      .then((r) => {
+        if (alive) setEgressCountry(r.country);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [connected, egress, mixedPort]);
+
   // 运行时长计时
   useEffect(() => {
     if (!connected || !connectedAt) return;
@@ -284,6 +324,56 @@ export function OverviewPage() {
   const peakUp = Math.max(...up);
   const peakDown = Math.max(...down);
 
+  const runServiceProbe = useCallback(async () => {
+    if (!connected) return;
+    setServicesLoading(true);
+    try {
+      const rows = await api.probeServices();
+      setServices(rows);
+    } catch {
+      /* 探测失败保留上一轮结果 */
+    } finally {
+      setServicesLoading(false);
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    if (!connected || kernelBusy) {
+      setServices([]);
+      return;
+    }
+    // 首次接管/切换节点后等内核和路由完全落稳再探测，避免刚启动时的假失败。
+    let alive = true;
+    const start = window.setTimeout(() => {
+      if (alive) void runServiceProbe();
+    }, 3500);
+    const timer = window.setInterval(() => {
+      if (alive) void runServiceProbe();
+    }, 30_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(start);
+      window.clearInterval(timer);
+    };
+  }, [connected, kernelBusy, mixedPort, nodeName, runServiceProbe]);
+
+  const testCurrentGroup = async () => {
+    if (!displayGroup || testingGroup) return;
+    if (!connected) {
+      notify('info', '先开启接管');
+      return;
+    }
+    setTestingGroup(true);
+    try {
+      for (const node of displayGroup.nodes) {
+        const d = await testDelay(node.name);
+        setGroupDelays((prev) => ({ ...prev, [node.name]: d }));
+      }
+    } finally {
+      setTestingGroup(false);
+    }
+  };
+
   const guards = [
     { key: 'DNS 防泄漏', on: policy.dnsLeakProtection },
     { key: 'WebRTC', on: policy.blockWebRtc },
@@ -308,10 +398,15 @@ export function OverviewPage() {
           ? '启动失败'
           : '未接管';
 
-  const modeLabel =
-    settings.mode === 'global' ? '全局模式' : settings.mode === 'direct' ? '直连模式' : '规则模式';
+  const takeoverLabel = connected
+    ? tunEnabled
+      ? 'TUN 模式'
+      : sysProxyEnabled
+        ? '系统代理'
+        : '未接管'
+    : '未接管';
   const desc = connected
-    ? [modeLabel, primaryGroup?.now && primaryGroup.now !== nodeName ? primaryGroup.now : '']
+    ? [primaryGroup?.now && primaryGroup.now !== nodeName ? primaryGroup.now : '已接管系统流量']
         .filter(Boolean)
         .join(' · ')
     : failed
@@ -370,12 +465,16 @@ export function OverviewPage() {
           {/* 连接主卡 */}
           <section className={`card hero-card span-6${connected ? ' on' : ' disconnected'}`}>
             <div className="hero-top">
+              <div className="hero-mode-tag">
+                <Pill tone={connected && (tunEnabled || sysProxyEnabled) ? 'accent' : 'muted'}>
+                  {takeoverLabel}
+                </Pill>
+              </div>
               <div className="hero-main">
                 <div className="hero-status-row">
                   <span className={`status-dot${connected ? ' on' : failed ? ' warn' : ''}`} />
                   <span className="status-text">{stateText}</span>
                   {uptime && <span className="hero-uptime">{uptime}</span>}
-                  {connected && tunEnabled && <Pill tone="accent">TUN</Pill>}
                 </div>
 
                 <div className="hero-node">
@@ -398,31 +497,25 @@ export function OverviewPage() {
                     </div>
                   </div>
                   <div>
-                    <div className="hero-stat-label">出口 IP</div>
+                    <div className="hero-stat-label">出口地址</div>
                     <div className="hero-stat-value" style={{ fontSize: 12.5 }}>
                       {connected ? egress ?? '—' : '—'}
+                      {connected && egressCountry && (
+                        <small className="hero-country">{egressCountry}</small>
+                      )}
                     </div>
                   </div>
                   <div>
                     <div className="hero-stat-label">本次会话</div>
-                    <div className="hero-stat-value" style={{ fontSize: 12.5 }}>
-                      ↑{formatBytes(upTotal)} ↓{formatBytes(downTotal)}
+                    <div className="hero-stat-value hero-session" style={{ fontSize: 12.5 }}>
+                      <span>↑ {formatBytes(upTotal)}</span>
+                      <span>↓ {formatBytes(downTotal)}</span>
                     </div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 13 }}>
-                  {connected && (
-                    <button
-                      type="button"
-                      className="link-action"
-                      onClick={() => navigate('proxies')}
-                    >
-                      切换节点
-                      <IconChevronRight size={11} />
-                    </button>
-                  )}
-                  {!activeProfile && (
+                {!activeProfile && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 13 }}>
                     <button
                       type="button"
                       className="link-action"
@@ -431,8 +524,8 @@ export function OverviewPage() {
                       导入订阅
                       <IconChevronRight size={11} />
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -591,6 +684,30 @@ export function OverviewPage() {
                 )}
               </div>
             )}
+            <div className="quota-updated">
+              <span>
+                {activeProfile
+                  ? `更新于 ${formatTime(activeProfile.updatedAt)}`
+                  : '尚未导入订阅'}
+              </span>
+              <div className="spacer" />
+              {activeId && (
+                <button
+                  type="button"
+                  className="icon-btn quota-refresh"
+                  title="更新当前订阅"
+                  aria-label="更新当前订阅"
+                  disabled={refreshingIds.includes(activeId)}
+                  onClick={() => void refreshProfile(activeId)}
+                >
+                  {refreshingIds.includes(activeId) ? (
+                    <Spinner small />
+                  ) : (
+                    <IconRefresh size={12} />
+                  )}
+                </button>
+              )}
+            </div>
           </section>
 
           {/* 流量曲线 */}
@@ -646,6 +763,16 @@ export function OverviewPage() {
               <div className="spacer" />
               <button
                 type="button"
+                className="icon-btn"
+                title="测速当前分组"
+                aria-label="测速当前分组"
+                disabled={!connected || testingGroup}
+                onClick={() => void testCurrentGroup()}
+              >
+                {testingGroup ? <Spinner small /> : <IconBolt size={13} />}
+              </button>
+              <button
+                type="button"
                 className="link-action"
                 title="打开节点页"
                 aria-label="打开节点页"
@@ -661,7 +788,7 @@ export function OverviewPage() {
                 <div className="group-nodes">
                 {groupNodes.slice(0, groupSlots).map((node) => {
                   const selected = connected && groupNow === node.name;
-                  const ms = node.delay;
+                  const ms = groupDelays[node.name] ?? node.delay;
                   return (
                     <button
                       key={node.name}
@@ -704,6 +831,70 @@ export function OverviewPage() {
                 )}
               </div>
             )}
+          </section>
+
+          {/* 服务连通 */}
+          <section className="card service-card span-12">
+            <div className="service-head">
+              <span className="service-lead-icon">
+                <IconGlobe size={15} />
+              </span>
+              <div className="service-heading">
+                <span className="service-title">服务连通</span>
+                <span className="service-sub">
+                  {connected
+                    ? servicesLoading
+                      ? '检测中…'
+                      : '经当前出口探测'
+                    : '接管后检测'}
+                </span>
+              </div>
+              <div className="spacer" />
+              <button
+                type="button"
+                className="icon-btn service-refresh"
+                title="重新测试连通性"
+                aria-label="重新测试连通性"
+                disabled={!connected || servicesLoading}
+                onClick={() => void runServiceProbe()}
+              >
+                {servicesLoading ? <Spinner small /> : <IconRefresh size={13} />}
+              </button>
+            </div>
+            <div className="service-grid">
+              {SERVICES.map(({ id, name, icon }) => {
+                const row = services.find((x) => x.id === id);
+                const state = !connected
+                  ? 'pending'
+                  : servicesLoading
+                    ? 'pending'
+                    : row?.ok
+                      ? 'ok'
+                      : 'bad';
+                return (
+                  <div className={`service-tile ${state}`} key={id}>
+                    <span className="service-logo" style={{ color: `#${icon.hex}` }}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d={icon.path} fill="currentColor" />
+                      </svg>
+                    </span>
+                    <div className="service-info">
+                      <span className="service-name">{name}</span>
+                      <span className="service-latency">
+                        {!connected
+                          ? '未接管'
+                          : servicesLoading
+                            ? '检测中…'
+                            : row?.ok
+                              ? `${row.latency_ms ?? '—'} ms`
+                              : '不可达'}
+                      </span>
+                    </div>
+                    <span className={`service-dot ${state}`} />
+                  </div>
+                );
+              })}
+            </div>
           </section>
 
           {/* 防护状态 */}

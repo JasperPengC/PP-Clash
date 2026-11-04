@@ -5,13 +5,13 @@ import {
   IconAlert,
   IconChevronRight,
   IconImport,
+  IconFlag,
   IconNodes,
-  IconPin,
   IconRefresh,
   IconSearch,
   IconX,
 } from '../components/icons';
-import { resolveActiveNode, useApp } from '../store/app';
+import { useApp } from '../store/app';
 import { countRealNodes, parseSubscriptionPreview } from '../core/subscription';
 
 function delayBadge(ms: number | null | undefined): string {
@@ -240,7 +240,53 @@ export function ProxiesPage() {
           <h1 className="page-title">节点</h1>
           <div className="page-sub">{subTitle}</div>
         </div>
-        <div className="page-actions">
+        <div className="page-actions proxy-head-tools">
+          <div className="node-search">
+            <IconSearch size={12} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索节点"
+              aria-label="搜索节点"
+              spellCheck={false}
+            />
+            {query && (
+              <button
+                type="button"
+                className="node-search-clear"
+                aria-label="清空搜索"
+                onClick={() => setQuery('')}
+              >
+                <IconX size={11} />
+              </button>
+            )}
+          </div>
+          <div className="row" style={{ gap: 7 }}>
+            <span className="card-hint">仅显示可用</span>
+            <Toggle
+              on={hideUnavailable}
+              onChange={setHideUnavailable}
+              label="仅显示可用节点"
+            />
+          </div>
+          <div className="seg" role="group" aria-label="排序方式">
+            {(
+              [
+                ['default', '默认'],
+                ['delay', '延迟'],
+                ['name', '名称'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`seg-btn${sortBy === value ? ' active' : ''}`}
+                onClick={() => setSortBy(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className="btn"
@@ -277,64 +323,11 @@ export function ProxiesPage() {
             </section>
           ) : (
             <>
-              <div className="card proxy-toolbar">
-                <div className="node-search">
-                  <IconSearch size={12} />
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="搜索节点"
-                    aria-label="搜索节点"
-                    spellCheck={false}
-                  />
-                  {query && (
-                    <button
-                      type="button"
-                      className="node-search-clear"
-                      aria-label="清空搜索"
-                      onClick={() => setQuery('')}
-                    >
-                      <IconX size={11} />
-                    </button>
-                  )}
-                </div>
-
-                <div className="spacer" />
-
-                <div className="row" style={{ gap: 7 }}>
-                  <span className="card-hint">仅显示可用</span>
-                  <Toggle
-                    on={hideUnavailable}
-                    onChange={setHideUnavailable}
-                    label="仅显示可用节点"
-                  />
-                </div>
-
-                <div className="seg" role="group" aria-label="排序方式">
-                  {(
-                    [
-                      ['default', '默认'],
-                      ['delay', '延迟'],
-                      ['name', '名称'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`seg-btn${sortBy === value ? ' active' : ''}`}
-                      onClick={() => setSortBy(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="proxy-groups">
                 {filteredGroups.map(({ g, nodes }) => {
                   const isOpen = openState[g.name] ?? false;
                   const groupTesting = nodes.some((n) => testingNodes.has(`${g.name}|${n.name}`));
-                  const current = resolveActiveNode(displayGroups, g.now);
+                  const current = g.now;
                   return (
                     <section key={g.name} className="card proxy-group">
                       <div
@@ -429,7 +422,7 @@ export function ProxiesPage() {
                                     togglePinNode(g.name, node.name);
                                   }}
                                 >
-                                  <IconPin
+                                  <IconFlag
                                     size={11}
                                     filled={pinnedNodes[g.name]?.includes(node.name)}
                                   />

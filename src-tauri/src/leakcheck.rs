@@ -63,9 +63,13 @@ async fn fetch_exit_ip(proxy_port: Option<u16>) -> Option<String> {
 
 #[tauri::command]
 pub async fn leak_check_ip(mixed_port: u16, tun_enabled: bool) -> Result<IpCheck, String> {
-    let proxied = fetch_exit_ip(Some(mixed_port)).await;
-    // TUN 会把「直连」请求也劫持进内核，此时对比直连/代理出口没有意义，
-    // 反而会误报「代理未生效」。TUN 开启时不取 direct。
+    // TUN 开启时，直接请求本身已经由 TUN 接管；再走一次 mixed 代理反而会
+    // 多一层链路，Rust HTTP 客户端更容易失败。
+    let proxied = if tun_enabled {
+        fetch_exit_ip(None).await
+    } else {
+        fetch_exit_ip(Some(mixed_port)).await
+    };
     let direct = if tun_enabled { None } else { fetch_exit_ip(None).await };
     Ok(IpCheck { direct, proxied })
 }

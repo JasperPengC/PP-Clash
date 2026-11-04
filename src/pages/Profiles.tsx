@@ -257,7 +257,6 @@ export function ProfilesPage() {
     };
   }, [dragId, reorderProfiles]);
   const stats = useApp((s) => s.stats);
-  const busy = useApp((s) => s.busy);
   const importing = useApp((s) => s.importing);
   const refreshingIds = useApp((s) => s.refreshingIds);
 
@@ -344,8 +343,8 @@ export function ProfilesPage() {
         </div>
       </header>
 
-      <div className="page-scroll">
-        <div className="page-inner">
+      <div className="page-scroll profiles-scroll">
+        <div className="page-inner profiles-page">
           {!isTauri && !previewMode && (
             <div className="banner warn">
               <IconAlert size={14} />
@@ -355,11 +354,26 @@ export function ProfilesPage() {
 
           <section className="card import-card">
             <div className="import-head">
-              <span className="section-title">添加订阅</span>
-              <span className="card-hint">Clash / mihomo 链接或本地文件</span>
+              <span className="icon-tile accent import-icon">
+                <IconImport size={16} />
+              </span>
+              <div className="import-heading">
+                <span className="section-title">添加订阅</span>
+                <span className="card-hint">Clash / mihomo 链接或本地文件</span>
+              </div>
+              <div className="spacer" />
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={importing}
+                onClick={() => void pickFile()}
+              >
+                <IconFolder size={13} />
+                从文件导入
+              </button>
             </div>
             <form
-              className="row import-row"
+              className="import-row"
               onSubmit={(e) => {
                 e.preventDefault();
                 void submit();
@@ -367,7 +381,6 @@ export function ProfilesPage() {
             >
               <input
                 className="input input-mono"
-                style={{ flex: 1, minWidth: 0 }}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com/api/v1/client/subscribe?token=…"
@@ -386,7 +399,7 @@ export function ProfilesPage() {
               </label>
               <button
                 type="submit"
-                className="btn btn-primary"
+                className="btn btn-primary import-submit"
                 disabled={importing || !url.trim()}
               >
                 {importing ? (
@@ -402,17 +415,8 @@ export function ProfilesPage() {
                 )}
               </button>
             </form>
-            <div className="import-file-row">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={importing}
-                onClick={() => void pickFile()}
-              >
-                <IconFolder size={13} />
-                从文件导入
-              </button>
-              <span className="card-hint">.yaml / .yml / .json，最大 10MB</span>
+            <div className="import-foot">
+              <span className="card-hint">支持 .yaml / .yml / .json，最大 10MB</span>
             </div>
           </section>
 
@@ -424,6 +428,7 @@ export function ProfilesPage() {
                 <span>自动更新 / 代理</span>
                 <span className="sub-head-actions">操作</span>
               </div>
+              <div className="sub-rows">
               {profiles.map((p, index) => (
                 <ProfileRow
                   key={p.id}
@@ -432,7 +437,7 @@ export function ProfilesPage() {
                   canMoveDown={index < profiles.length - 1}
                   profile={p}
                   active={p.id === activeId}
-                  busy={busy}
+                  busy={refreshingIds.includes(p.id)}
                   confirming={confirmId === p.id}
                   nodeCount={nodeCounts[p.id] ?? 0}
                   refreshing={refreshingIds.includes(p.id)}
@@ -450,6 +455,7 @@ export function ProfilesPage() {
                   }}
                 />
               ))}
+              </div>
             </section>
           ) : (
             <section className="card">

@@ -563,7 +563,7 @@ textarea:focus-visible {
 }
 
 .page-inner {
-  max-width: 900px;
+  max-width: 1040px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1737,7 +1737,7 @@ code {
 /* 设置页：单列定宽，信息不挤在两列里 */
 .settings-page {
   width: 100%;
-  max-width: 780px;
+  max-width: none;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1745,7 +1745,7 @@ code {
 }
 
 .settings-page .card {
-  padding: 18px 20px;
+  padding: 17px;
 }
 
 .settings-page .section-head {
@@ -3611,7 +3611,7 @@ code {
 
 .kernel-page {
   width: 100%;
-  max-width: 780px;
+  max-width: none;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -3619,7 +3619,7 @@ code {
 }
 
 .kernel-page .card {
-  padding: 18px 20px;
+  padding: 17px;
 }
 
 .kernel-page .section-head {
@@ -4948,4 +4948,408 @@ body.tray-panel-window #root {
 
 .proxy-node.pinned {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--border-soft));
+}
+
+/* --- 概览页紧凑排版 ------------------------------------------------------ */
+.dash {
+  max-width: 1040px;
+  margin: 0 auto;
+  gap: 12px;
+}
+
+.page-scroll:has(.dash) {
+  padding-bottom: 14px;
+}
+
+.hero-card {
+  padding: 14px 16px 12px;
+}
+
+.hero-mode-tag {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+}
+
+.hero-status-row {
+  padding-right: 96px;
+}
+
+.hero-node {
+  margin-top: 6px;
+  font-size: 18px;
+}
+
+.hero-sub {
+  margin-top: 2px;
+}
+
+.hero-stats {
+  margin-top: 10px;
+  gap: 16px;
+}
+
+.hero-session {
+  display: inline-flex;
+  gap: 10px;
+}
+
+.stat-card {
+  min-height: 0;
+  padding: 13px 14px 0;
+}
+
+.stat-number {
+  margin-top: 8px;
+  font-size: 21px;
+}
+
+.chart-card {
+  padding: 12px 16px 10px;
+}
+
+.chart-head {
+  margin-bottom: 4px;
+}
+
+.chart {
+  height: 108px;
+}
+
+.group-head {
+  padding: 11px 14px 7px;
+}
+
+.group-node {
+  padding: 6px 14px;
+}
+
+.quota-card {
+  padding: 13px 16px;
+}
+
+.quota-card .progress {
+  margin-top: 8px;
+}
+
+.quota-updated {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.quota-refresh {
+  width: 22px;
+  height: 22px;
+}
+
+.protection-card {
+  padding: 10px 14px;
+}
+
+.service-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 16px;
+  min-height: 46px;
+}
+
+.service-list {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.service-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.service-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.service-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.service-name {
+  font-weight: 550;
+}
+
+.service-state {
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-state.ok {
+  color: var(--success);
+}
+
+.service-state.bad {
+  color: var(--danger);
+}
+
+/* --- 订阅页：添加卡重排 + 列表内部滚动 -------------------------------- */
+.profiles-scroll {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.profiles-page {
+  width: 100%;
+  max-width: 1040px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profiles-page > .card {
+  flex: none;
+}
+
+.import-card {
+  padding: 13px 16px 12px;
+  gap: 10px;
+}
+
+.import-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.import-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.import-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.import-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.import-row .input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.import-submit {
+  min-width: 88px;
+}
+
+.import-foot {
+  display: flex;
+  align-items: center;
+}
+
+.profiles-page .sub-table {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.profiles-page .sub-head {
+  flex: none;
+}
+
+.sub-rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.sub-rows::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sub-rows::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 8px;
+}
+
+.sub-rows .sub-row:first-child {
+  border-top: none;
+}
+
+.profiles-page .stats-card,
+.profiles-page > .card:last-child:not(.sub-table):not(.import-card) {
+  flex: none;
+}
+
+
+/* 服务连通：标题一行 + 服务卡一行 */
+.service-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 11px 14px;
+}
+
+.service-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-lead-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+  flex: none;
+}
+
+.service-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.service-title {
+  font-size: 11.5px;
+  font-weight: 620;
+  letter-spacing: -0.1px;
+}
+
+.service-sub {
+  font-size: 9px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.service-tile {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.service-logo {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border-soft);
+}
+
+.service-logo svg {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+
+.service-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.service-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.service-latency {
+  font-size: 9px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.service-tile.ok .service-latency {
+  color: var(--success);
+}
+
+.service-tile.bad .service-latency {
+  color: var(--danger);
+}
+
+.service-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+  margin-left: auto;
+  background: var(--text-3);
+}
+
+.service-dot.ok {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.service-dot.bad {
+  background: var(--danger);
+}
+
+.service-dot.pending {
+  background: var(--warning);
+}
+
+.service-refresh {
+  width: 24px;
+  height: 24px;
+  flex: none;
 }
