@@ -3,6 +3,13 @@ import { invoke } from '@tauri-apps/api/core';
 /** 是否运行在 Tauri 里。浏览器里跑（纯前端预览）时用 mock，避免 invoke 直接抛错。 */
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+/** 当前 mihomo 控制端口；由应用 hydrate/设置变更时更新，避免 Windows 自定义端口仍打到 9090。 */
+let mihomoBase = 'http://127.0.0.1:9090';
+
+export function setMihomoBase(port: number) {
+  mihomoBase = `http://127.0.0.1:${port}`;
+}
+
 /**
  * 设计预览模式：`npm run dev` 后访问 `/?preview=connected`。
  * 只在开发构建里生效，生产构建中被静态剔除；用于在没有内核的环境下检查「已连接」态 UI。
@@ -41,6 +48,7 @@ export interface TraySnapshot {
   up: number;
   down: number;
   showSpeed: boolean;
+  controllerPort: number;
   nodes: TrayNode[];
   profiles: TrayProfile[];
   activeProfile: string | null;
@@ -429,7 +437,7 @@ export const api = {
     secret?: string
   ): Promise<unknown> => {
     const raw = await call<string>('mihomo_request', {
-      base: base ?? 'http://127.0.0.1:9090',
+      base: base ?? mihomoBase,
       secret: secret ?? '',
       method,
       path,

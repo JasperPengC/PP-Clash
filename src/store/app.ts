@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, DATA_DIR, isTauri } from '../core/api';
+import { api, DATA_DIR, isTauri, setMihomoBase } from '../core/api';
 import { generateConfig, type ConfigStats, type RuleEditState } from '../core/generator';
 import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
@@ -554,6 +554,7 @@ export const useApp = create<AppStore>((set, get) => ({
         tunEnabled: saved.tunEnabled ?? false,
         sysProxyEnabled: saved.sysProxyEnabled ?? false,
       });
+      setMihomoBase(settings.controllerPort);
 
       // 老版本导入的订阅没有订阅名和流量信息：后台补一次响应头（失败静默）
       const active = profiles.find((p) => p.id === saved.activeId);
@@ -1314,6 +1315,9 @@ export const useApp = create<AppStore>((set, get) => ({
       patch.hideDockOnClose !== undefined
     ) {
       void pushTray(get());
+    }
+    if (patch.controllerPort !== undefined) {
+      setMihomoBase(patch.controllerPort);
     }
     if (patch.mixedPort !== undefined) {
       void pushTray(get());

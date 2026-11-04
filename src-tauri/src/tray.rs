@@ -184,6 +184,8 @@ pub struct TraySnapshot {
     pub up: f64,
     pub down: f64,
     pub show_speed: bool,
+    #[serde(rename = "controllerPort")]
+    pub controller_port: u16,
     pub nodes: Vec<TrayNode>,
     pub profiles: Vec<TrayProfile>,
     pub active_profile: Option<String>,
@@ -628,6 +630,7 @@ pub async fn tray_snapshot(app: AppHandle) -> Result<TraySnapshot, String> {
         nodes,
         profiles,
         active_profile,
+        controller_port: port,
     })
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NodeName } from './NodeName';
-import { api, isTauri, type TraySnapshot } from '../core/api';
+import { api, isTauri, setMihomoBase, type TraySnapshot } from '../core/api';
 import { formatSpeed } from '../core/format';
 import { Segmented, Toggle } from './ui';
 import {
@@ -41,7 +41,10 @@ export function TrayPanel() {
       void api
         .traySnapshot()
         .then((v) => {
-          if (alive) setSnap(v);
+          if (alive) {
+            setMihomoBase(v.controllerPort);
+            setSnap(v);
+          }
         })
         .catch(() => undefined);
     };
