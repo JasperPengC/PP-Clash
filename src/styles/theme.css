@@ -4837,10 +4837,10 @@ body.tray-panel-window #root {
   position: fixed;
   top: 20px;
   right: var(--page-pad);
-  height: 28px;
+  height: 31px;
   display: flex;
   z-index: 10001;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -4848,8 +4848,8 @@ body.tray-panel-window #root {
 }
 
 .win-window-controls button {
-  width: 32px;
-  height: 28px;
+  width: 34px;
+  height: 31px;
   border: none;
   background: transparent;
   color: var(--text-2);
@@ -4870,7 +4870,7 @@ body.tray-panel-window #root {
 }
 
 .window-shell.is-windows .page-head {
-  padding-right: 148px;
+  padding-right: 140px;
 }
 
 
