@@ -111,9 +111,9 @@ pub fn remove_native_caption(hwnd: isize) {
     let hwnd = hwnd as *mut core::ffi::c_void;
     unsafe {
         let style = GetWindowLongW(hwnd, GWL_STYLE);
-        // 保留 WS_THICKFRAME 让 DWM 继续给无边框窗口画阴影和圆角；
-        // 只去掉标题栏/边框本身。
-        let no_frame = (WS_CAPTION | WS_BORDER | WS_DLGFRAME) as i32;
+        // 去掉所有原生边框；阴影/圆角交给 DWM + CSS，避免 Windows 11
+        // 在窗口四周再画一圈白色/浅色边框。
+        let no_frame = (WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME) as i32;
         SetWindowLongW(hwnd, GWL_STYLE, style & !no_frame);
         SetWindowPos(
             hwnd,

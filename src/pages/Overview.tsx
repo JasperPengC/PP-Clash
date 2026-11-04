@@ -23,11 +23,11 @@ import { siGoogle, siYoutube, siGithub, siOpenai, siAnthropic } from 'simple-ico
 const EMPTY = Array.from({ length: 32 }, () => 0);
 
 const SERVICES = [
-  { id: 'google', name: 'Google', icon: siGoogle },
-  { id: 'youtube', name: 'YouTube', icon: siYoutube },
-  { id: 'github', name: 'GitHub', icon: siGithub },
-  { id: 'openai', name: 'ChatGPT', icon: siOpenai },
-  { id: 'anthropic', name: 'Claude', icon: siAnthropic },
+  { id: 'google', name: 'Google', icon: siGoogle, mono: false },
+  { id: 'youtube', name: 'YouTube', icon: siYoutube, mono: false },
+  { id: 'github', name: 'GitHub', icon: siGithub, mono: true },
+  { id: 'openai', name: 'ChatGPT', icon: siOpenai, mono: true },
+  { id: 'anthropic', name: 'Claude', icon: siAnthropic, mono: true },
 ] as const;
 
 
@@ -55,10 +55,11 @@ export function OverviewPage() {
   const [switchingMode, setSwitchingMode] = useState(false);
   const [groupDelays, setGroupDelays] = useState<Record<string, number | null>>({});
   const [testingGroup, setTestingGroup] = useState(false);
-  const [services, setServices] = useState<
-    Array<{ id: string; ok: boolean; latency_ms: number | null }>
-  >([]);
+  const [serviceMap, setServiceMap] = useState<
+    Record<string, { ok: boolean; latency_ms: number | null }>
+  >({});
   const [servicesLoading, setServicesLoading] = useState(false);
+  const serviceProbeRunning = useRef(false);
   const [egressCountry, setEgressCountry] = useState<string | null>(null);
 
   const changeMode = async (mode: OutboundMode) => {
@@ -116,8 +117,6 @@ export function OverviewPage() {
   const [directUpBytes, setDirectUpBytes] = useState(0);
   const [directDownBytes, setDirectDownBytes] = useState(0);
   const prevConns = useRef<Map<string, { up: number; down: number }>>(new Map());
-  const groupCardRef = useRef<HTMLElement | null>(null);
-  const [groupSlots, setGroupSlots] = useState(5);
   const [latency, setLatency] = useState<number | null>(null);
   const [egress, setEgress] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -298,22 +297,7 @@ export function OverviewPage() {
     return () => window.clearInterval(t);
   }, [connected, connectedAt]);
 
-  useEffect(() => {
-    const el = groupCardRef.current;
-    if (!el) return;
-    const measure = () => {
-      const nodes = el.querySelector('.group-nodes') as HTMLElement | null;
-      const row = el.querySelector('.group-node') as HTMLElement | null;
-      const avail = nodes?.clientHeight ?? 0;
-      const rowH = row?.offsetHeight || 31;
-      const count = Math.floor(avail / rowH);
-      setGroupSlots(Math.max(3, Math.min(12, count)));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+
 
   const latestUp = up[up.length - 1] ?? 0;
   const latestDown = down[down.length - 1] ?? 0;
@@ -325,24 +309,32 @@ export function OverviewPage() {
   const peakDown = Math.max(...down);
 
   const runServiceProbe = useCallback(async () => {
-    if (!connected) return;
+    if (!connected || serviceProbeRunning.current) return;
+    serviceProbeRunning.current = true;
     setServicesLoading(true);
-    try {
-      const rows = await api.probeServices();
-      setServices(rows);
-    } catch {
-      /* 探测失败保留上一轮结果 */
-    } finally {
-      setServicesLoading(false);
-    }
+    // 每个服务独立请求，谁先返回谁先更新，不等待最慢的 ChatGPT。
+    await Promise.all(
+      SERVICES.map(async ({ id }) => {
+        try {
+          const row = await api.probeService(id);
+          setServiceMap((prev) => ({ ...prev, [id]: row }));
+        } catch {
+          /* 单个失败保留旧结果 */
+        }
+      })
+    );
+    serviceProbeRunning.current = false;
+    setServicesLoading(false);
   }, [connected]);
 
   useEffect(() => {
     if (!connected || kernelBusy) {
-      setServices([]);
+      setServiceMap({});
+      setServicesLoading(false);
       return;
     }
-    // 首次接管/切换节点后等内核和路由完全落稳再探测，避免刚启动时的假失败。
+    // 首次接管后等内核和路由完全落稳再探测，避免刚启动时的假失败。
+    // 这里不依赖 nodeName：URLTest 自动换节点时不能反复重置探测定时器。
     let alive = true;
     const start = window.setTimeout(() => {
       if (alive) void runServiceProbe();
@@ -355,7 +347,14 @@ export function OverviewPage() {
       window.clearTimeout(start);
       window.clearInterval(timer);
     };
-  }, [connected, kernelBusy, mixedPort, nodeName, runServiceProbe]);
+  }, [connected, kernelBusy, mixedPort, runServiceProbe]);
+
+  // 手动/自动切换节点后补一次探测；不影响上面的固定轮询。
+  useEffect(() => {
+    if (!connected || kernelBusy) return;
+    const t = window.setTimeout(() => void runServiceProbe(), 5000);
+    return () => window.clearTimeout(t);
+  }, [nodeName, connected, kernelBusy, runServiceProbe]);
 
   const testCurrentGroup = async () => {
     if (!displayGroup || testingGroup) return;
@@ -755,7 +754,7 @@ export function OverviewPage() {
           </section>
 
           {/* 当前分组 */}
-          <section ref={groupCardRef} className="card group-card span-4">
+          <section className="card group-card span-4">
             <div className="group-head">
               <span className="section-title">{connected ? '当前分组' : '订阅节点'}</span>
               {displayGroup && <Pill tone={connected ? 'accent' : 'muted'}>{displayGroup.name}</Pill>}
@@ -763,30 +762,21 @@ export function OverviewPage() {
               <div className="spacer" />
               <button
                 type="button"
-                className="icon-btn"
+                className="link-action group-test-link"
                 title="测速当前分组"
                 aria-label="测速当前分组"
                 disabled={!connected || testingGroup}
                 onClick={() => void testCurrentGroup()}
               >
-                {testingGroup ? <Spinner small /> : <IconBolt size={13} />}
-              </button>
-              <button
-                type="button"
-                className="link-action"
-                title="打开节点页"
-                aria-label="打开节点页"
-                onClick={() => navigate('proxies')}
-              >
-                全部
-                <IconChevronRight size={11} />
+                {testingGroup ? <Spinner small /> : <IconBolt size={12} />}
+                测速
               </button>
             </div>
 
             {groupNodes.length > 0 ? (
               <>
-                <div className="group-nodes">
-                {groupNodes.slice(0, groupSlots).map((node) => {
+                <div className="group-nodes-scroll">
+                {groupNodes.map((node) => {
                   const selected = connected && groupNow === node.name;
                   const ms = groupDelays[node.name] ?? node.delay;
                   return (
@@ -844,7 +834,9 @@ export function OverviewPage() {
                 <span className="service-sub">
                   {connected
                     ? servicesLoading
-                      ? '检测中…'
+                      ? Object.keys(serviceMap).length
+                        ? '更新中…'
+                        : '检测中…'
                       : '经当前出口探测'
                     : '接管后检测'}
                 </span>
@@ -862,18 +854,23 @@ export function OverviewPage() {
               </button>
             </div>
             <div className="service-grid">
-              {SERVICES.map(({ id, name, icon }) => {
-                const row = services.find((x) => x.id === id);
+              {SERVICES.map(({ id, name, icon, mono }) => {
+                const row = serviceMap[id];
                 const state = !connected
                   ? 'pending'
-                  : servicesLoading
-                    ? 'pending'
-                    : row?.ok
+                  : row
+                    ? row.ok
                       ? 'ok'
+                      : 'bad'
+                    : servicesLoading
+                      ? 'pending'
                       : 'bad';
                 return (
                   <div className={`service-tile ${state}`} key={id}>
-                    <span className="service-logo" style={{ color: `#${icon.hex}` }}>
+                    <span
+                      className="service-logo"
+                      style={{ color: mono ? 'var(--text-1)' : `#${icon.hex}` }}
+                    >
                       <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d={icon.path} fill="currentColor" />
                       </svg>
@@ -883,11 +880,13 @@ export function OverviewPage() {
                       <span className="service-latency">
                         {!connected
                           ? '未接管'
-                          : servicesLoading
-                            ? '检测中…'
-                            : row?.ok
+                          : row
+                            ? row.ok
                               ? `${row.latency_ms ?? '—'} ms`
-                              : '不可达'}
+                              : '不可达'
+                            : servicesLoading
+                              ? '检测中…'
+                              : '—'}
                       </span>
                     </div>
                     <span className={`service-dot ${state}`} />
@@ -899,38 +898,44 @@ export function OverviewPage() {
 
           {/* 防护状态 */}
           <section className="card protection-card span-12">
-            <span className={`icon-tile ${allGood ? 'success' : 'warn'}`}>
-              <IconSecurity size={16} />
-            </span>
-            <div className="protection-main">
-              <div className="protection-title">
-                {allGood ? '核心防护完整' : '防护有缺口'}
-                <Pill tone={allGood ? 'ok' : 'warn'}>
-                  {goodCount}/{guards.length}
-                </Pill>
+            <div className="protection-head">
+              <span className={`protection-lead-icon ${allGood ? 'ok' : 'warn'}`}>
+                <IconSecurity size={15} />
+              </span>
+              <div className="protection-heading">
+                <div className="protection-title">
+                  泄露检查
+                  <Pill tone={allGood ? 'ok' : 'warn'}>
+                    {allGood ? '通过' : '有风险'} {goodCount}/{guards.length}
+                  </Pill>
+                </div>
+                <div className={`protection-sub${sysProxyEnabled && !tunEnabled ? ' warn' : ''}`}>
+                  {sysProxyEnabled && !tunEnabled
+                    ? '系统代理不接管 UDP / WebRTC / DNS，建议开启 TUN'
+                    : allGood
+                      ? 'DNS · WebRTC · IPv6 · TUN 严格路由'
+                      : '有项目未开启'}
+                </div>
               </div>
-              <div className="protection-sub">
-                {allGood
-                  ? 'DNS · WebRTC · IPv6 · TUN 严格路由'
-                  : '有项目被关闭'}
-              </div>
+              <div className="spacer" />
+              <button
+                type="button"
+                className="link-action"
+                onClick={() => navigate('security')}
+              >
+                安全设置
+                <IconChevronRight size={11} />
+              </button>
             </div>
-            <div className="spacer" />
-            <div className="protection-chips">
+            <div className="protection-grid">
               {guards.map((g) => (
-                <Pill key={g.key} tone={g.on ? 'ok' : 'muted'}>
-                  {g.key}
-                </Pill>
+                <div className={`protection-tile ${g.on ? 'ok' : 'bad'}`} key={g.key}>
+                  <span className={`protection-dot ${g.on ? 'ok' : 'bad'}`} />
+                  <span className="protection-name">{g.key}</span>
+                  <span className="protection-state">{g.on ? '已开启' : '未开启'}</span>
+                </div>
               ))}
             </div>
-            <button
-              type="button"
-              className="link-action"
-              onClick={() => navigate('security')}
-            >
-              安全设置
-              <IconChevronRight size={11} />
-            </button>
           </section>
         </div>
       </div>

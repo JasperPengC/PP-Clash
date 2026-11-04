@@ -93,6 +93,7 @@ pub fn run() {
             prefs::restart_as_admin,
             services::probe_services,
             services::probe_services_auto,
+            services::probe_service_auto,
             services::lookup_ip_country,
             services::lookup_ip_country_auto,
             tray::sync_tray,
@@ -115,14 +116,32 @@ pub fn run() {
             });
             // 兜底：无论窗口配置怎么变，启动后都把主窗口显示出来并置前
             if let Some(w) = app.get_webview_window("main") {
-                #[cfg(target_os = "windows")]
-                let _ = w.set_decorations(false);
                 let _ = w.show();
                 #[cfg(target_os = "windows")]
-                if let Ok(hwnd) = w.hwnd() {
-                    platform::remove_native_caption(hwnd.0 as isize);
+                {
+                    let _ = w.set_decorations(false);
+                    let _ = w.set_shadow(false);
+                    if let Ok(hwnd) = w.hwnd() {
+                        platform::remove_native_caption(hwnd.0 as isize);
+                    }
                 }
                 let _ = w.set_focus();
+            }
+
+            // show() 之后 Windows 11 可能会重新补上阴影/边框，延迟再压一次。
+            #[cfg(target_os = "windows")]
+            {
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(600)).await;
+                    if let Some(w) = h.get_webview_window("main") {
+                        let _ = w.set_decorations(false);
+                        let _ = w.set_shadow(false);
+                        if let Ok(hwnd) = w.hwnd() {
+                            platform::remove_native_caption(hwnd.0 as isize);
+                        }
+                    }
+                });
             }
 
             // macOS：单色模板图自适应菜单栏；Windows：彩色状态图标 + 原生右键菜单。

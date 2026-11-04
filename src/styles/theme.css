@@ -1005,7 +1005,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 10px 0;
+  padding: 8px 0;
 }
 
 .switch-row + .switch-row {
@@ -4888,12 +4888,11 @@ body.tray-panel-window #root {
 .window-shell.is-windows {
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 0;
 }
 
 :root[data-win-max='1'] .window-shell.is-windows {
   border-radius: 0;
-  border: 0;
 }
 
 /* 模式切换提示固定在选项卡左侧，避免出现/消失时把选项卡挤得跳动 */
@@ -4954,15 +4953,15 @@ body.tray-panel-window #root {
 .dash {
   max-width: 1040px;
   margin: 0 auto;
-  gap: 12px;
+  gap: 10px;
 }
 
 .page-scroll:has(.dash) {
-  padding-bottom: 14px;
+  padding-bottom: 10px;
 }
 
 .hero-card {
-  padding: 14px 16px 12px;
+  padding: 12px 16px 10px;
 }
 
 .hero-mode-tag {
@@ -4977,8 +4976,8 @@ body.tray-panel-window #root {
 }
 
 .hero-node {
-  margin-top: 6px;
-  font-size: 18px;
+  margin-top: 4px;
+  font-size: 17px;
 }
 
 .hero-sub {
@@ -4986,7 +4985,7 @@ body.tray-panel-window #root {
 }
 
 .hero-stats {
-  margin-top: 10px;
+  margin-top: 8px;
   gap: 16px;
 }
 
@@ -4997,7 +4996,7 @@ body.tray-panel-window #root {
 
 .stat-card {
   min-height: 0;
-  padding: 13px 14px 0;
+  padding: 12px 14px 0;
 }
 
 .stat-number {
@@ -5006,7 +5005,7 @@ body.tray-panel-window #root {
 }
 
 .chart-card {
-  padding: 12px 16px 10px;
+  padding: 10px 16px 8px;
 }
 
 .chart-head {
@@ -5014,7 +5013,7 @@ body.tray-panel-window #root {
 }
 
 .chart {
-  height: 108px;
+  height: 92px;
 }
 
 .group-head {
@@ -5220,8 +5219,8 @@ body.tray-panel-window #root {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
-  padding: 11px 14px;
+  gap: 7px;
+  padding: 9px 14px;
 }
 
 .service-head {
@@ -5243,8 +5242,9 @@ body.tray-panel-window #root {
 
 .service-heading {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -5271,7 +5271,7 @@ body.tray-panel-window #root {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  height: 34px;
+  height: 30px;
   padding: 0 9px;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -5352,4 +5352,186 @@ body.tray-panel-window #root {
   width: 24px;
   height: 24px;
   flex: none;
+}
+
+/* 防护卡：与服务连通同一套两行结构 */
+.protection-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  padding: 9px 14px;
+}
+
+.protection-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.protection-lead-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.protection-lead-icon.ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+}
+
+.protection-lead-icon.warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 13%, var(--surface));
+}
+
+.protection-heading {
+  min-width: 0;
+}
+
+.protection-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: -0.1px;
+}
+
+.protection-sub {
+  margin-top: 1px;
+  font-size: 9px;
+  color: var(--text-3);
+}
+
+.protection-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.protection-tile {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+.protection-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.protection-dot.ok {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.protection-dot.bad {
+  background: var(--danger);
+}
+
+.protection-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.protection-state {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.protection-tile.ok .protection-state {
+  color: var(--success);
+}
+
+.protection-tile.bad .protection-state {
+  color: var(--danger);
+}
+
+.service-title {
+  font-size: 13px;
+}
+
+/* 侧栏纯猫头标志：去掉底色/阴影，颜色随主题 */
+.brand-cat {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: block;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* 暗色模式下，深色品牌图标（GitHub/OpenAI/Claude）跟随文字颜色 */
+:root[data-theme='dark'] .service-logo {
+  background: var(--surface);
+}
+
+/* 当前分组：全部节点内部滚动 */
+.group-nodes-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.group-nodes-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.group-nodes-scroll::-webkit-scrollbar-thumb {
+  background: var(--surface-3);
+  border-radius: 6px;
+}
+
+.group-test-link {
+  gap: 4px;
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+
+.group-test-link:hover {
+  color: var(--text-1);
+}
+
+.group-test-link:disabled {
+  opacity: 0.45;
+}
+
+.leak-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: -2px;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--warning);
+}
+
+/* 当前分组卡固定高度，节点在卡内滚动，避免把整行撑高 */
+.group-card {
+  height: 200px;
+  min-height: 200px;
+}
+
+.protection-sub.warn {
+  color: var(--warning);
 }

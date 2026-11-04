@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useApp } from '../store/app';
-import cat from '../assets/brand-cat.png';
+import { BrandCat } from './BrandCat';
 import {
   IconActivity,
   IconChip,
@@ -94,7 +94,7 @@ export function Sidebar({
       <div className="titlebar" data-tauri-drag-region />
 
       <div className="sidebar-brand">
-        <img className="brand-mark" src={cat} alt="" width={28} height={28} />
+        <BrandCat size={30} className="brand-cat" />
         <span className="brand-name">PP Clash</span>
       </div>
 

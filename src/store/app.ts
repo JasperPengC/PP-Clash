@@ -483,7 +483,10 @@ export const useApp = create<AppStore>((set, get) => ({
     }
   },
 
-  cancelElevation: () => set({ elevationPrompt: false }),
+  cancelElevation: () => {
+    set({ elevationPrompt: false, elevationBusy: false, tunEnabled: false });
+    void persist(get());
+  },
 
   notify: (kind, text) => {
     const cur = get().toast;
@@ -574,6 +577,8 @@ export const useApp = create<AppStore>((set, get) => ({
         pinnedNodes: saved.pinnedNodes ?? {},
       });
       setMihomoBase(settings.controllerPort);
+      const desiredTun = saved.tunEnabled ?? false;
+      const desiredSysProxy = saved.sysProxyEnabled ?? false;
 
       // 老版本导入的订阅没有订阅名和流量信息：后台补一次响应头（失败静默）
       const active = profiles.find((p) => p.id === saved.activeId);
@@ -603,7 +608,9 @@ export const useApp = create<AppStore>((set, get) => ({
 
       // 系统代理的真实状态以 networksetup 为准（用户可能在系统设置里改过）
       const sp = await api.getSystemProxy().catch(() => null);
+      let actualSysProxy = false;
       if (sp) {
+        actualSysProxy = sp.enabled;
         set({ sysProxyEnabled: sp.enabled });
         if (sp.enabled && !st?.running) {
           if (sp.port === get().settings.mixedPort) {
@@ -612,6 +619,7 @@ export const useApp = create<AppStore>((set, get) => ({
             await api
               .setSystemProxy(false, '127.0.0.1', get().settings.mixedPort)
               .catch(() => null);
+            actualSysProxy = false;
             set({ sysProxyEnabled: false });
             get().notify('info', '已关闭遗留的系统代理');
           } else {
@@ -629,21 +637,64 @@ export const useApp = create<AppStore>((set, get) => ({
         void api.setCloseToTray(settings.closeToTray).catch(() => null);
       }
 
-      // Windows 非管理员启动时，不保留 TUN 开关（否则开关显示开启但内核没跑）
-      if (isWindows && !elevated && get().tunEnabled) {
-        set({ tunEnabled: false });
-        get().notify('info', 'TUN 需要管理员权限，请重新开启');
-        void persist(get());
-      }
-
-      // 管理员重启后 / macOS 启动时，恢复上一次的 TUN 接管
-      if (
-        get().tunEnabled &&
-        get().activeId &&
-        !st?.running &&
-        (!isWindows || elevated)
-      ) {
-        window.setTimeout(() => void get().startKernel(true), 500);
+      // 状态记忆：上次开启的系统代理/TUN，启动后自动恢复。
+      const wantsTun = desiredTun;
+      const wantsSysProxy = desiredSysProxy && !desiredTun;
+      if (st?.running) {
+        // 内核还在，直接补回系统代理即可；TUN 内核一般本身仍是 TUN 模式。
+        if (wantsSysProxy && !actualSysProxy) {
+          try {
+            const restored = await api.setSystemProxy(
+              true,
+              '127.0.0.1',
+              settings.mixedPort
+            );
+            set({ sysProxyEnabled: restored.enabled });
+            void persist(get());
+            get().notify('info', '已恢复系统代理');
+          } catch (e) {
+            get().notify('error', `恢复系统代理失败：${errorText(e)}`);
+          }
+        }
+        if (wantsTun) set({ tunEnabled: true, sysProxyEnabled: false });
+      } else if (get().activeId) {
+        if (wantsTun && isWindows && !elevated) {
+          // Windows TUN 需要管理员：先弹确认框，确认后 UAC 重启应用再自动恢复。
+          set({ tunEnabled: false, sysProxyEnabled: false, elevationPrompt: true });
+          get().notify('info', '上次开启了 TUN，需要管理员权限才能恢复');
+        } else if (wantsTun) {
+          set({ tunEnabled: true, sysProxyEnabled: false });
+          window.setTimeout(() => void get().startKernel(true), 600);
+          get().notify('info', '正在恢复上次的 TUN 接管');
+        } else if (wantsSysProxy) {
+          set({ tunEnabled: false, sysProxyEnabled: false });
+          const restoreSysProxy = async () => {
+            await get().startKernel(true);
+            if (get().kernelPhase !== 'running') return;
+            // 启动成功后再显式确认一次系统代理，避免 mixed 端口刚就绪时的竞态。
+            for (let i = 0; i < 3; i += 1) {
+              try {
+                const restored = await api.setSystemProxy(
+                  true,
+                  '127.0.0.1',
+                  get().settings.mixedPort
+                );
+                if (restored.enabled) {
+                  set({ sysProxyEnabled: true });
+                  void persist(get());
+                  await pushTray(get());
+                  get().notify('info', '已恢复上次的系统代理');
+                  return;
+                }
+              } catch {
+                /* 端口/服务可能还未就绪，稍后重试 */
+              }
+              await new Promise((r) => setTimeout(r, 800));
+            }
+          };
+          window.setTimeout(() => void restoreSysProxy(), 600);
+          get().notify('info', '正在恢复上次的系统代理');
+        }
       }
 
       await pushTray(get());

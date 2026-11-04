@@ -298,21 +298,26 @@ export default function App() {
             </button>
           </div>
         )}
-        <div key={page} className="page-anim">
-          {page === 'overview' && <OverviewPage />}
-          {page === 'proxies' && <ProxiesPage />}
-          {page === 'connections' && <ConnectionsPage />}
-          {page === 'rules' && <RulesPage />}
-          {page === 'logs' && <LogsPage />}
-          {page === 'override' && <OverridePage />}
-          {page === 'kernel' && <KernelPage />}
-          {page === 'resources' && <ResourcesPage />}
-          {page === 'traffic' && <TrafficPage />}
-          {page === 'dns' && <DnsPage />}
-          {page === 'security' && <SecurityPage />}
-          {page === 'profiles' && <ProfilesPage />}
-          {page === 'settings' && <SettingsPage />}
+        {/* 概览常驻挂载：切换页面不再重置流量曲线/服务探测等状态 */}
+        <div className="page-anim" style={{ display: page === 'overview' ? undefined : 'none' }}>
+          <OverviewPage />
         </div>
+        {page !== 'overview' && (
+          <div key={page} className="page-anim">
+            {page === 'proxies' && <ProxiesPage />}
+            {page === 'connections' && <ConnectionsPage />}
+            {page === 'rules' && <RulesPage />}
+            {page === 'logs' && <LogsPage />}
+            {page === 'override' && <OverridePage />}
+            {page === 'kernel' && <KernelPage />}
+            {page === 'resources' && <ResourcesPage />}
+            {page === 'traffic' && <TrafficPage />}
+            {page === 'dns' && <DnsPage />}
+            {page === 'security' && <SecurityPage />}
+            {page === 'profiles' && <ProfilesPage />}
+            {page === 'settings' && <SettingsPage />}
+          </div>
+        )}
 
         {elevationPrompt && (
           <div className="modal-backdrop" role="presentation">
