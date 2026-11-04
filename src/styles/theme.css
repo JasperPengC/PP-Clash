@@ -5263,9 +5263,9 @@ body.tray-panel-window #root {
 .service-tile {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
-  height: 30px;
+  height: 36px;
   padding: 0 9px;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -5273,8 +5273,8 @@ body.tray-panel-window #root {
 }
 
 .service-logo {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex: none;
   display: grid;
   place-items: center;
@@ -5284,8 +5284,8 @@ body.tray-panel-window #root {
 }
 
 .service-logo svg {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   display: block;
 }
 
@@ -5512,8 +5512,8 @@ body.tray-panel-window #root {
 
 /* 当前分组卡固定高度，节点在卡内滚动，避免把整行撑高 */
 .group-card {
-  height: 176px;
-  min-height: 176px;
+  height: 168px;
+  min-height: 168px;
 }
 
 .protection-sub.warn {

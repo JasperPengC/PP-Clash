@@ -36,7 +36,7 @@ const SERVICES = [
 ] as const;
 
 
-export function OverviewPage() {
+export function OverviewPage({ active = true }: { active?: boolean }) {
   const kernelPhase = useApp((s) => s.kernelPhase);
   const connectedAt = useApp((s) => s.connectedAt);
   const kernelError = useApp((s) => s.kernelError);
@@ -143,6 +143,7 @@ export function OverviewPage() {
       : undefined;
 
   useEffect(() => {
+    if (!active) return;
     if (!connected) {
       setUp(EMPTY);
       setDown(EMPTY);
@@ -255,10 +256,11 @@ export function OverviewPage() {
       window.clearInterval(i2);
       window.clearInterval(i3);
     };
-  }, [connected]);
+  }, [connected, active]);
 
   // 出口 IP：连接后异步取一次；首轮失败自动重试，避免偶尔空白。
   useEffect(() => {
+    if (!active) return;
     if (!connected) {
       setEgress(null);
       setEgressLoading(false);
@@ -288,10 +290,11 @@ export function OverviewPage() {
       alive = false;
       window.clearInterval(t);
     };
-  }, [connected, mixedPort]);
+  }, [connected, mixedPort, active]);
 
   // 出口 IP 归属地
   useEffect(() => {
+    if (!active) return;
     if (!connected || !egress) {
       setEgressCountry(null);
       return;
@@ -310,10 +313,10 @@ export function OverviewPage() {
 
   // 运行时长计时
   useEffect(() => {
-    if (!connected || !connectedAt) return;
+    if (!active || !connected || !connectedAt) return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
-  }, [connected, connectedAt]);
+  }, [connected, connectedAt, active]);
 
 
 
@@ -346,6 +349,7 @@ export function OverviewPage() {
   }, [connected]);
 
   useEffect(() => {
+    if (!active) return;
     if (!connected || kernelBusy) {
       setServiceMap({});
       setServicesLoading(false);
@@ -365,7 +369,7 @@ export function OverviewPage() {
       window.clearTimeout(start);
       window.clearInterval(timer);
     };
-  }, [connected, kernelBusy, mixedPort, runServiceProbe]);
+  }, [connected, kernelBusy, mixedPort, runServiceProbe, active]);
 
   const testCurrentGroup = async () => {
     if (!displayGroup || testingGroup) return;
@@ -439,6 +443,7 @@ export function OverviewPage() {
   }, [connected, mixedPort, settings.dnsPort, tunEnabled]);
 
   useEffect(() => {
+    if (!active) return;
     if (!connected) {
       setLeakRows([]);
       setLeakPhase('idle');
@@ -446,7 +451,7 @@ export function OverviewPage() {
     }
     const t = window.setTimeout(() => void runLeakCheck(), 2500);
     return () => window.clearTimeout(t);
-  }, [connected, runLeakCheck]);
+  }, [connected, runLeakCheck, active]);
 
   const leakHasBad = leakRows.some((r) => r.status === 'bad');
   const leakHasWarn = leakRows.some((r) => r.status === 'warn');

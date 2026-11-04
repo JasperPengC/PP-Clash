@@ -349,7 +349,7 @@ export default function App() {
         )}
         {/* 概览常驻挂载：切换页面不再重置流量曲线/服务探测等状态 */}
         <div className="page-anim" style={{ display: page === 'overview' ? undefined : 'none' }}>
-          <OverviewPage />
+          <OverviewPage active={page === 'overview'} />
         </div>
         {page !== 'overview' && (
           <div key={page} className="page-anim">
