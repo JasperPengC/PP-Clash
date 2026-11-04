@@ -28,14 +28,23 @@ export function WindowsTitlebar() {
 
   useEffect(() => {
     const sync = () => {
-      void win().isMaximized().then(setMaximized).catch(() => undefined);
+      void win()
+        .isMaximized()
+        .then((max) => {
+          setMaximized(max);
+          document.documentElement.dataset.winMax = max ? '1' : '0';
+        })
+        .catch(() => undefined);
     };
     sync();
     let unlisten: (() => void) | undefined;
     void win().onResized(sync).then((fn) => {
       unlisten = fn;
     });
-    return () => unlisten?.();
+    return () => {
+      unlisten?.();
+      delete document.documentElement.dataset.winMax;
+    };
   }, []);
 
   return (

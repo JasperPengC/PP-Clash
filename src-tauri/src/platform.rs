@@ -101,14 +101,20 @@ pub fn async_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::C
 /// Windows：用原生样式去掉标题栏，避免 Tauri set_decorations 未生效。
 #[cfg(target_os = "windows")]
 pub fn remove_native_caption(hwnd: isize) {
+    use windows_sys::Win32::Graphics::Dwm::{DwmExtendFrameIntoClientArea, DwmSetWindowAttribute};
+    use windows_sys::Win32::UI::Controls::MARGINS;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_BORDER, WS_CAPTION,
+        WS_DLGFRAME, WS_THICKFRAME,
     };
     let hwnd = hwnd as *mut core::ffi::c_void;
     unsafe {
         let style = GetWindowLongW(hwnd, GWL_STYLE);
-        SetWindowLongW(hwnd, GWL_STYLE, style & !(WS_CAPTION as i32));
+        // 保留 WS_THICKFRAME 让 DWM 继续给无边框窗口画阴影和圆角；
+        // 只去掉标题栏/边框本身。
+        let no_frame = (WS_CAPTION | WS_BORDER | WS_DLGFRAME) as i32;
+        SetWindowLongW(hwnd, GWL_STYLE, style & !no_frame);
         SetWindowPos(
             hwnd,
             std::ptr::null_mut(),
@@ -118,6 +124,24 @@ pub fn remove_native_caption(hwnd: isize) {
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
+
+        // Windows 11：保留圆角和 DWM 阴影，同时把原生白色/黑色边框颜色去掉。
+        let corners: u32 = 2; // DWMWCP_ROUND
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            33, // DWMWA_WINDOW_CORNER_PREFERENCE
+            &corners as *const u32 as *const core::ffi::c_void,
+            4,
+        );
+        let none: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            34, // DWMWA_BORDER_COLOR
+            &none as *const u32 as *const core::ffi::c_void,
+            4,
+        );
+        let margins = MARGINS { cxLeftWidth: 1, cxRightWidth: 1, cyTopHeight: 1, cyBottomHeight: 1 };
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
     }
 }
 
