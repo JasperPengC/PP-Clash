@@ -69,6 +69,7 @@ fn redact(value: &mut Value) {
                 "raw",
                 "authUser",
                 "authPass",
+                "controllerSecret",
                 "overrideText",
                 "updateFeedUrl",
                 "subscriptionUserinfo",

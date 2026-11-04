@@ -188,13 +188,15 @@ pub struct TraySnapshot {
     pub show_speed: bool,
     #[serde(rename = "controllerPort")]
     pub controller_port: u16,
+    #[serde(rename = "controllerSecret")]
+    pub controller_secret: String,
     pub nodes: Vec<TrayNode>,
     pub profiles: Vec<TrayProfile>,
     pub active_profile: Option<String>,
 }
 
-async fn fetch_group_info(port: u16) -> Option<(String, String, Vec<TrayNode>)> {
-    let raw = mihomo::request(&base(port), "", "GET", "/proxies", None)
+async fn fetch_group_info(port: u16, secret: &str) -> Option<(String, String, Vec<TrayNode>)> {
+    let raw = mihomo::request(&base(port), secret, "GET", "/proxies", None)
         .await
         .ok()?;
     let v: Value = serde_json::from_str(&raw).ok()?;
@@ -541,6 +543,7 @@ pub async fn sync_tray(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn set_tray_flags(
     app: AppHandle,
     tun_enabled: bool,
@@ -549,6 +552,7 @@ pub async fn set_tray_flags(
     mode: String,
     show_speed: bool,
     hide_dock: bool,
+    controller_secret: String,
 ) -> Result<(), String> {
     if sys_proxy_enabled {
         crate::watchdog::set_port(mixed_port);
@@ -560,6 +564,7 @@ pub async fn set_tray_flags(
         *flags.tun_enabled.lock().unwrap() = tun_enabled;
         *flags.sys_proxy_enabled.lock().unwrap() = sys_proxy_enabled;
         *flags.mixed_port.lock().unwrap() = mixed_port;
+        *flags.controller_secret.lock().unwrap() = controller_secret;
         *flags.mode.lock().unwrap() = mode;
         *flags.show_tray_speed.lock().unwrap() = show_speed;
         *flags.hide_dock_on_close.lock().unwrap() = hide_dock;
@@ -606,8 +611,9 @@ pub async fn tray_snapshot(app: AppHandle) -> Result<TraySnapshot, String> {
     let (sys_proxy, tun, show_speed, mode) = read_flags(&app);
     let running = crate::kernel::is_running(&app).await;
     let port = *app.state::<KernelState>().controller_port.lock().await;
+    let secret = app.state::<AppFlags>().controller_secret.lock().unwrap().clone();
     let group_info = if running {
-        fetch_group_info(port).await
+        fetch_group_info(port, &secret).await
     } else {
         None
     };
@@ -631,6 +637,7 @@ pub async fn tray_snapshot(app: AppHandle) -> Result<TraySnapshot, String> {
         profiles,
         active_profile,
         controller_port: port,
+        controller_secret: secret,
     })
 }
 

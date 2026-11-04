@@ -261,7 +261,7 @@ export default function App() {
         return;
       }
       void api
-        .kernelStatus()
+        .kernelStatus(s.settings.controllerSecret)
         .then((st) => {
           if (st.running) {
             misses = 0;

@@ -5,9 +5,14 @@ export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in
 
 /** 当前 mihomo 控制端口；由应用 hydrate/设置变更时更新，避免 Windows 自定义端口仍打到 9090。 */
 let mihomoBase = 'http://127.0.0.1:9090';
+let mihomoSecret = '';
 
 export function setMihomoBase(port: number) {
   mihomoBase = `http://127.0.0.1:${port}`;
+}
+
+export function setMihomoSecret(secret: string) {
+  mihomoSecret = secret;
 }
 
 /**
@@ -49,6 +54,7 @@ export interface TraySnapshot {
   down: number;
   showSpeed: boolean;
   controllerPort: number;
+  controllerSecret: string;
   nodes: TrayNode[];
   profiles: TrayProfile[];
   activeProfile: string | null;
@@ -376,7 +382,8 @@ export const api = {
     dataDir: string,
     binaryPath: string | null,
     privileged: boolean,
-    controllerPort: number
+    controllerPort: number,
+    controllerSecret: string
   ) =>
     call<KernelStatus>('start_kernel', {
       configPath,
@@ -384,6 +391,7 @@ export const api = {
       binaryPath: binaryPath ?? null,
       privileged,
       controllerPort,
+      controllerSecret,
     }),
 
   stopKernel: () => call<KernelStatus>('stop_kernel'),
@@ -391,7 +399,8 @@ export const api = {
   /** 清理上次崩溃/强退留下的内核进程（含 TUN）。 */
   cleanupStaleKernel: () => call<void>('cleanup_stale_kernel'),
 
-  kernelStatus: () => call<KernelStatus>('kernel_status'),
+  kernelStatus: (controllerSecret = '') =>
+    call<KernelStatus>('kernel_status', { secret: controllerSecret }),
 
   /** 重新解压内置内核与 Geo 数据。 */
   reinstallResources: () => call<string>('reinstall_bundled_resources'),
@@ -463,7 +472,7 @@ export const api = {
   ): Promise<unknown> => {
     const raw = await call<string>('mihomo_request', {
       base: base ?? mihomoBase,
-      secret: secret ?? '',
+      secret: secret ?? mihomoSecret,
       method,
       path,
       body: body === undefined ? null : JSON.stringify(body),
@@ -483,7 +492,8 @@ export const api = {
     mixedPort: number,
     mode: string,
     showSpeed: boolean,
-    hideDock: boolean
+    hideDock: boolean,
+    controllerSecret: string
   ) =>
     call<void>('set_tray_flags', {
       tunEnabled,
@@ -492,6 +502,7 @@ export const api = {
       mode,
       showSpeed,
       hideDock,
+      controllerSecret,
     }),
 
   traySnapshot: () => call<TraySnapshot>('tray_snapshot'),

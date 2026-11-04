@@ -16,6 +16,8 @@ pub struct AppFlags {
     pub tun_enabled: Mutex<bool>,
     /// mihomo 混合端口，托盘直接切系统代理时要用。
     pub mixed_port: Mutex<u16>,
+    /// external-controller bearer secret，托盘读取节点时使用。
+    pub controller_secret: Mutex<String>,
     /// 出站模式：rule / global / direct。
     pub mode: Mutex<String>,
     /// 菜单栏是否显示实时网速。
@@ -31,6 +33,7 @@ impl Default for AppFlags {
             sys_proxy_enabled: Mutex::new(false),
             tun_enabled: Mutex::new(false),
             mixed_port: Mutex::new(7890),
+            controller_secret: Mutex::new(String::new()),
             mode: Mutex::new("rule".to_string()),
             show_tray_speed: Mutex::new(true),
             hide_dock_on_close: Mutex::new(true),

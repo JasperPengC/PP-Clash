@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, DATA_DIR, isTauri, setMihomoBase } from '../core/api';
+import { api, DATA_DIR, isTauri, setMihomoBase, setMihomoSecret } from '../core/api';
 import { generateConfig, type ConfigStats, type RuleEditState } from '../core/generator';
 import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
@@ -68,6 +68,8 @@ export interface AppSettings {
   mixedPort: number;
   /** mihomo 控制端口：前端经它读流量/延迟/切换节点。 */
   controllerPort: number;
+  /** mihomo 控制端口 bearer secret。 */
+  controllerSecret: string;
   /** 自定义内核路径；留空则按优先级自动查找。 */
   kernelPath: string;
   /** 开机自启（macOS LaunchAgent）。 */
@@ -131,6 +133,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   mixedPort: 7890,
   controllerPort: 9090,
+  controllerSecret: '',
   kernelPath: '',
   launchAtLogin: false,
   closeToTray: true,
@@ -370,7 +373,7 @@ async function persist(s: AppStore) {
 const runtimeOf = (s: AppStore) => ({
   mixedPort: s.settings.mixedPort,
   controllerPort: s.settings.controllerPort,
-  controllerSecret: '',
+  controllerSecret: s.settings.controllerSecret,
   tunEnabled: s.tunEnabled,
   mode: s.settings.mode,
   allowLan: s.settings.allowLan,
@@ -404,7 +407,8 @@ async function pushTray(s: AppStore) {
       s.settings.mixedPort,
       s.settings.mode,
       s.settings.traySpeed,
-      s.settings.hideDockOnClose
+      s.settings.hideDockOnClose,
+      s.settings.controllerSecret
     );
   } catch (e) {
     console.error('[PPClash] 同步托盘失败', e);
@@ -576,6 +580,14 @@ export const useApp = create<AppStore>((set, get) => ({
         updateIntervalHours: p.updateIntervalHours ?? null,
       }));
 
+      if (!settings.controllerSecret.trim()) {
+        const bytes = new Uint8Array(18);
+        crypto.getRandomValues(bytes);
+        settings.controllerSecret = Array.from(bytes, (b) =>
+          b.toString(16).padStart(2, '0')
+        ).join('');
+      }
+      setMihomoSecret(settings.controllerSecret);
       set({
         profiles,
         activeId: saved.activeId ?? null,
@@ -585,6 +597,9 @@ export const useApp = create<AppStore>((set, get) => ({
         sysProxyEnabled: saved.sysProxyEnabled ?? false,
         pinnedNodes: saved.pinnedNodes ?? {},
       });
+      // 首次生成 controller secret 必须落盘，否则下次启动会生成新的，
+      // 与已生成配置里的 secret 不一致，内核 API 会 401。
+      await persist(get());
       setMihomoBase(settings.controllerPort);
       const desiredTun = saved.tunEnabled ?? false;
       const desiredSysProxy = saved.sysProxyEnabled ?? false;
@@ -606,7 +621,7 @@ export const useApp = create<AppStore>((set, get) => ({
       }
 
       // 内核可能在应用上次退出后仍在运行（或用户外部启动过），以实际探测为准
-      const st = await api.kernelStatus().catch(() => null);
+      const st = await api.kernelStatus(settings.controllerSecret).catch(() => null);
       if (st?.running) {
         set({ kernelPhase: 'running', connectedAt: Date.now() });
         await get().refreshGroups();
@@ -964,7 +979,7 @@ export const useApp = create<AppStore>((set, get) => ({
         {
           mixedPort: settings.mixedPort,
           controllerPort: settings.controllerPort,
-          controllerSecret: '',
+          controllerSecret: settings.controllerSecret,
           tunEnabled,
           mode: settings.mode,
           allowLan: settings.allowLan,
@@ -1041,7 +1056,8 @@ export const useApp = create<AppStore>((set, get) => ({
         dataDir || DATA_DIR,
         get().settings.kernelPath || null,
         get().tunEnabled,
-        get().settings.controllerPort
+        get().settings.controllerPort,
+        get().settings.controllerSecret
       );
       if (st.running) {
         kernelStartRetry = 0;
@@ -1414,6 +1430,9 @@ export const useApp = create<AppStore>((set, get) => ({
     }
     if (patch.controllerPort !== undefined) {
       setMihomoBase(patch.controllerPort);
+    }
+    if (patch.controllerSecret !== undefined) {
+      setMihomoSecret(patch.controllerSecret);
     }
     if (patch.mixedPort !== undefined) {
       void pushTray(get());

@@ -171,7 +171,8 @@ export async function generateConfig(
 
     // 应用自己的运行时设置
     'mixed-port': runtime.mixedPort,
-    'allow-lan': runtime.allowLan ?? false,
+    // 没有认证凭据时不允许局域网暴露代理端口
+    'allow-lan': Boolean(runtime.allowLan && runtime.authUser && runtime.authPass),
     'find-process-mode': 'always',
     'socks-port': runtime.socksPort ?? 0,
     'port': runtime.httpPort ?? 0,

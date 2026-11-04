@@ -21,6 +21,8 @@ pub struct KernelState {
     config_path: Mutex<Option<String>>,
     /// 当前内核二进制路径（内核信息展示）。
     binary_path: Mutex<Option<String>>,
+    /// mihomo external-controller 的 bearer secret。
+    controller_secret: Mutex<String>,
     /// 防止并发 start 互相踩踏（前端状态更新前的竞态）。
     start_lock: tokio::sync::Mutex<()>,
 }
@@ -33,6 +35,7 @@ impl Default for KernelState {
             controller_port: Mutex::new(9090),
             config_path: Mutex::new(None),
             binary_path: Mutex::new(None),
+            controller_secret: Mutex::new(String::new()),
             start_lock: tokio::sync::Mutex::new(()),
         }
     }
@@ -435,7 +438,7 @@ async fn preflight_ports(
 }
 
 /// 探测控制端口是否可连，能连上说明内核活着。
-async fn probe_controller(port: u16) -> bool {
+async fn probe_controller(port: u16, secret: &str) -> bool {
     let url = format!("http://127.0.0.1:{port}/version");
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(1))
@@ -444,19 +447,19 @@ async fn probe_controller(port: u16) -> bool {
         Ok(c) => c,
         Err(_) => return false,
     };
-    matches!(client.get(&url).send().await, Ok(resp) if resp.status().is_success())
+    let req = client.get(&url);
+    let req = if secret.is_empty() { req } else { req.bearer_auth(secret) };
+    matches!(req.send().await, Ok(resp) if resp.status().is_success())
 }
 
-async fn controller_version(port: u16) -> Option<String> {
+async fn controller_version(port: u16, secret: &str) -> Option<String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(1))
         .build()
         .ok()?;
-    let resp = client
-        .get(format!("http://127.0.0.1:{port}/version"))
-        .send()
-        .await
-        .ok()?;
+    let req = client.get(format!("http://127.0.0.1:{port}/version"));
+    let req = if secret.is_empty() { req } else { req.bearer_auth(secret) };
+    let resp = req.send().await.ok()?;
     if !resp.status().is_success() {
         return None;
     }
@@ -470,8 +473,10 @@ async fn controller_version(port: u16) -> Option<String> {
 
 /// 内核是否在运行（探测控制端口）。托盘与泄漏自检共用，不改动任何状态。
 pub async fn is_running(app: &tauri::AppHandle) -> bool {
-    let port = *app.state::<KernelState>().controller_port.lock().await;
-    probe_controller(port).await
+    let state = app.state::<KernelState>();
+    let port = *state.controller_port.lock().await;
+    let secret = state.controller_secret.lock().await.clone();
+    probe_controller(port, &secret).await
 }
 
 /// 取内核日志最后几行，拼进错误信息里。
@@ -505,6 +510,7 @@ fn tun_error_line(log_path: &Path) -> Option<String> {
 /// 等控制端口真正可连才算启动成功；期间盯着子进程是否已经退出。
 async fn wait_ready(
     port: u16,
+    secret: &str,
     mut child: Option<&mut Child>,
     log_path: &Path,
     what: &str,
@@ -514,7 +520,7 @@ async fn wait_ready(
     loop {
         tokio::time::sleep(Duration::from_millis(250)).await;
 
-        if probe_controller(port).await {
+        if probe_controller(port, secret).await {
             let pid = child.as_ref().and_then(|c| c.id());
             return Ok(KernelStatus {
                 running: true,
@@ -570,11 +576,18 @@ fn rss_kb(pid: u32) -> Option<u64> {
 }
 
 #[tauri::command]
-pub async fn kernel_status(app: tauri::AppHandle) -> Result<KernelStatus, String> {
+pub async fn kernel_status(
+    app: tauri::AppHandle,
+    secret: Option<String>,
+) -> Result<KernelStatus, String> {
     let state = app.state::<KernelState>();
     let port = *state.controller_port.lock().await;
+    let probe_secret = match secret.filter(|s| !s.is_empty()) {
+        Some(s) => s,
+        None => state.controller_secret.lock().await.clone(),
+    };
 
-    if probe_controller(port).await {
+    if probe_controller(port, &probe_secret).await {
         let pid = state.child.lock().await.as_ref().and_then(|c| c.id());
         return Ok(KernelStatus {
             running: true,
@@ -609,7 +622,8 @@ pub async fn kernel_status(app: tauri::AppHandle) -> Result<KernelStatus, String
 pub async fn kernel_info(app: tauri::AppHandle) -> Result<KernelInfo, String> {
     let state = app.state::<KernelState>();
     let port = *state.controller_port.lock().await;
-    let running = probe_controller(port).await;
+    let secret = state.controller_secret.lock().await.clone();
+    let running = probe_controller(port, &secret).await;
     let bundled_version = resources::bundled_version(&app);
 
     if !running {
@@ -624,7 +638,7 @@ pub async fn kernel_info(app: tauri::AppHandle) -> Result<KernelInfo, String> {
         });
     }
 
-    let version = controller_version(port).await;
+    let version = controller_version(port, &secret).await;
     let child_pid = {
         let guard = state.child.lock().await;
         guard.as_ref().and_then(|c| c.id())
@@ -656,8 +670,10 @@ pub async fn start_kernel(
     data_dir: String,
     privileged: bool,
     controller_port: u16,
+    controller_secret: String,
 ) -> Result<KernelStatus, String> {
     let state = app.state::<KernelState>();
+    *state.controller_secret.lock().await = controller_secret.clone();
     let _start_guard = state
         .start_lock
         .try_lock()
@@ -773,7 +789,7 @@ pub async fn start_kernel(
             if !status.success() {
                 return Err("提权被取消：TUN 需要管理员权限".to_string());
             }
-            let mut st = wait_ready(controller_port, None, &log_path, "TUN 内核").await?;
+            let mut st = wait_ready(controller_port, &controller_secret, None, &log_path, "TUN 内核").await?;
             st.reclaimed = reclaimed.clone();
             tokio::time::sleep(Duration::from_millis(300)).await;
             if !tcp_port_open(mixed_port) {
@@ -807,7 +823,7 @@ pub async fn start_kernel(
             return Err("提权被取消：TUN 需要管理员权限".to_string());
         }
 
-        let mut st = wait_ready(controller_port, None, &log_path, "TUN 内核").await?;
+        let mut st = wait_ready(controller_port, &controller_secret, None, &log_path, "TUN 内核").await?;
         st.reclaimed = reclaimed.clone();
         tokio::time::sleep(Duration::from_millis(300)).await;
         if !tcp_port_open(mixed_port) {
@@ -836,7 +852,7 @@ pub async fn start_kernel(
         .spawn()
         .map_err(|e| format!("启动内核失败：{e}"))?;
 
-    match wait_ready(controller_port, Some(&mut child), &log_path, "内核").await {
+    match wait_ready(controller_port, &controller_secret, Some(&mut child), &log_path, "内核").await {
         Ok(mut st) => {
             st.reclaimed = reclaimed.clone();
             tokio::time::sleep(Duration::from_millis(300)).await;
