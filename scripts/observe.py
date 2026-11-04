@@ -26,7 +26,7 @@ def sh(cmd, timeout=8):
         return ""
 
 
-def procs(name):
+def procs(name, min_rss_mb=20.0):
     out = sh(["ps", "ax", "-o", "pid=,rss=,command="])
     rows = []
     for line in out.splitlines():
@@ -34,7 +34,9 @@ def procs(name):
             parts = line.strip().split(None, 2)
             if len(parts) == 3:
                 try:
-                    rows.append({"pid": int(parts[0]), "rss_mb": round(int(parts[1]) / 1024, 1)})
+                    rss = round(int(parts[1]) / 1024, 1)
+                    if rss >= min_rss_mb:
+                        rows.append({"pid": int(parts[0]), "rss_mb": rss})
                 except ValueError:
                     pass
     return rows

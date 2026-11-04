@@ -507,6 +507,10 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       })
     : [];
 
+  const selectedNodeDelay = displayGroup?.nodes.find((n) => n.name === groupNow)?.delay;
+  const heroDelay =
+    connected && latency != null && latency > 0 ? latency : selectedNodeDelay ?? null;
+
   const onSelectNode = (name: string) => {
     if (!connected || !displayGroup) {
       notify('info', '先开启系统代理或 TUN');
@@ -553,63 +557,61 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                   {uptime && <span className="hero-uptime">{uptime}</span>}
                 </div>
 
-                <div className="hero-node">
-                  {connected ? (
-                    <NodeName name={nodeName || '未选择节点'} />
-                  ) : failed ? (
-                    '启动失败'
-                  ) : (
-                    '未接管流量'
+                <div className="hero-node-row">
+                  <div className="hero-node">
+                    {connected ? (
+                      <NodeName name={nodeName || '未选择节点'} />
+                    ) : failed ? (
+                      '启动失败'
+                    ) : (
+                      '未接管流量'
+                    )}
+                  </div>
+                  {connected && heroDelay != null && heroDelay > 0 && (
+                    <span className="hero-node-delay">
+                      {heroDelay}
+                      <small>ms</small>
+                    </span>
                   )}
                 </div>
-                <div className="hero-sub">{desc}</div>
 
-                <div className="hero-stats">
-                  <div>
-                    <div className="hero-stat-label">延迟</div>
-                    <div className="hero-stat-value">
-                      {connected && latency != null && latency > 0 ? (
-                        <>
-                          {latency}
-                          <small>ms</small>
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="hero-stat-label">出口地址</div>
-                    <div className="hero-stat-value" style={{ fontSize: 12.5 }}>
-                      {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
-                      {connected && egressCountry && (
-                        <small className="hero-country">{egressCountry}</small>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="hero-stat-label">本次会话</div>
-                    <div className="hero-stat-value hero-session" style={{ fontSize: 12.5 }}>
-                      <span>↑ {formatBytes(upTotal)}</span>
-                      <span>↓ {formatBytes(downTotal)}</span>
-                    </div>
-                  </div>
+                <div className="hero-group-text">
+                  {connected ? displayGroup?.name ?? '未分组' : desc}
                 </div>
-
-                {!activeProfile && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 13 }}>
-                    <button
-                      type="button"
-                      className="link-action"
-                      onClick={() => navigate('profiles')}
-                    >
-                      导入订阅
-                      <IconChevronRight size={11} />
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
+
+            <div className="hero-meta">
+              <div className="hero-meta-item">
+                <span className="hero-meta-label">出口</span>
+                <span className="hero-meta-value">
+                  {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
+                </span>
+                {connected && egressCountry && (
+                  <span className="hero-country-inline">· {egressCountry}</span>
+                )}
+              </div>
+              <div className="hero-meta-item hero-meta-end">
+                <span className="hero-meta-label">本次</span>
+                <span className="hero-session">
+                  <span className="hero-up">↑ {formatBytes(upTotal)}</span>
+                  <span className="hero-down">↓ {formatBytes(downTotal)}</span>
+                </span>
+              </div>
+            </div>
+
+            {!activeProfile && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 13 }}>
+                <button
+                  type="button"
+                  className="link-action"
+                  onClick={() => navigate('profiles')}
+                >
+                  导入订阅
+                  <IconChevronRight size={11} />
+                </button>
+              </div>
+            )}
           </section>
 
           {/* 上传 */}

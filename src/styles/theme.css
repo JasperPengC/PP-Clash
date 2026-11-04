@@ -4990,7 +4990,7 @@ body.tray-panel-window #root {
 }
 
 .hero-card {
-  padding: 12px 16px 10px;
+  padding: 10px 16px 9px;
 }
 
 .hero-mode-tag {
@@ -5378,8 +5378,8 @@ body.tray-panel-window #root {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 7px;
-  padding: 9px 14px;
+  gap: 6px;
+  padding: 8px 14px;
 }
 
 .protection-head {
@@ -5537,8 +5537,8 @@ body.tray-panel-window #root {
 
 /* 当前分组卡固定高度，节点在卡内滚动，避免把整行撑高 */
 .group-card {
-  height: 168px;
-  min-height: 168px;
+  height: 156px;
+  min-height: 156px;
 }
 
 .protection-sub.warn {
@@ -5621,4 +5621,741 @@ body.tray-panel-window #root {
 .proxy-head-tools .icon-btn {
   width: 31px;
   height: 31px;
+}
+
+/* 概览主卡：信息层级与指标条 */
+.hero-group-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.hero-group-label {
+  flex: none;
+  font-size: 9.5px;
+  color: var(--text-3);
+}
+
+.hero-group-name {
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: 0.9fr 1.35fr 1.25fr;
+  gap: 0;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.hero-stat {
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.hero-stat:first-child {
+  padding-left: 0;
+}
+
+.hero-stat + .hero-stat {
+  border-left: 1px solid var(--border-soft);
+}
+
+.hero-egress {
+  font-size: 12.5px !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-country-line {
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--text-3);
+}
+
+.hero-session {
+  display: flex;
+  gap: 10px;
+  font-size: 12.5px !important;
+  white-space: nowrap;
+}
+
+.hero-session span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 主卡第二轮：延迟靠近节点，底部只留出口/会话两组信息 */
+.hero-node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.hero-node-row .hero-node {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.hero-latency-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-group-name {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+
+.hero-stats {
+  grid-template-columns: 1.4fr 1fr;
+}
+
+.hero-session span {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* 主卡第三轮：三列指标，统一呼吸感 */
+.hero-card {
+  padding: 14px 20px 13px;
+}
+
+.hero-node-row {
+  margin-top: 8px;
+}
+
+.hero-group-line {
+  margin-top: 5px;
+}
+
+.hero-group-name {
+  padding: 2px 7px;
+}
+
+.hero-stats {
+  grid-template-columns: 1.25fr 1.3fr 0.75fr;
+  margin-top: 10px;
+  padding-top: 9px;
+}
+
+.hero-stat {
+  padding: 0 16px;
+}
+
+.hero-stat:last-child {
+  padding-right: 0;
+}
+
+.hero-session {
+  gap: 12px;
+  font-size: 12px !important;
+}
+
+.hero-country-line {
+  margin-top: 3px;
+}
+
+/* 主卡第四轮：右侧元信息列 + 两列指标 */
+.hero-top {
+  position: relative;
+  align-items: flex-start;
+}
+
+.hero-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin-left: 12px;
+}
+
+.hero-latency {
+  font-size: 10px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-stats {
+  grid-template-columns: 1.55fr 1fr;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.hero-stat {
+  padding: 0 18px;
+}
+
+.hero-stat:first-child {
+  padding-left: 0;
+}
+
+.hero-stat:last-child {
+  padding-right: 0;
+}
+
+.hero-egress {
+  font-size: 14px !important;
+}
+
+.hero-session {
+  gap: 14px;
+  font-size: 13px !important;
+}
+
+/* 主卡第五轮：底部指标改为两块内嵌面板，避免表格感与贴边 */
+.hero-card {
+  padding: 16px 20px 15px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 10px;
+  margin-top: 13px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.hero-stat {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+}
+
+.hero-stat + .hero-stat {
+  border-left: 1px solid var(--border-soft);
+}
+
+.hero-stat-label {
+  margin-bottom: 2px;
+}
+
+.hero-egress {
+  font-size: 13px !important;
+}
+
+.hero-session {
+  gap: 10px;
+  font-size: 12px !important;
+}
+
+.hero-country-line {
+  margin-top: 2px;
+}
+
+/* 主卡第六轮：状态行 + 内联分组 + 干净的两列指标 */
+.hero-card {
+  padding: 15px 20px 14px;
+}
+
+.hero-top {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+}
+
+.hero-main {
+  flex: 1;
+  min-width: 0;
+  padding-right: 96px;
+}
+
+.hero-mode-tag {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.hero-status-row {
+  gap: 7px;
+  min-width: 0;
+}
+
+.hero-latency-inline {
+  margin-left: 2px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 7px;
+}
+
+.hero-node-row .hero-node {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.hero-group-pill {
+  flex: none;
+  max-width: 136px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 9.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-sub {
+  margin-top: 4px;
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 0;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.hero-stat {
+  min-width: 0;
+  padding: 0 18px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.hero-stat:first-child {
+  padding-left: 0;
+}
+
+.hero-stat + .hero-stat {
+  border-left: 1px solid var(--border-soft);
+  border-radius: 0;
+}
+
+.hero-stat:last-child {
+  padding-right: 0;
+}
+
+.hero-egress {
+  font-size: 13.5px !important;
+}
+
+.hero-session {
+  display: flex;
+  gap: 12px;
+  font-size: 12.5px !important;
+  white-space: nowrap;
+}
+
+.hero-country-line {
+  margin-top: 2px;
+}
+
+/* 主卡第七轮：指标收成一条基线对齐的摘要行，去掉表格和卡片套卡片 */
+.hero-stats {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  margin-top: 13px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.hero-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 16px;
+}
+
+.hero-metric:first-child {
+  padding-left: 0;
+}
+
+.hero-metric + .hero-metric {
+  border-left: 1px solid var(--border-soft);
+}
+
+.hero-metric-session {
+  margin-left: auto;
+  padding-right: 0;
+}
+
+.hero-metric-label {
+  flex: none;
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+
+.hero-metric-value {
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hero-metric-value small {
+  margin-left: 2px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-weight: 500;
+}
+
+.hero-country-inline {
+  color: var(--text-3);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.hero-session {
+  display: flex;
+  gap: 12px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hero-stat-bg-placeholder {
+  display: none;
+}
+
+/* 主卡第八轮：两列信息面板，足量内边距，数值不截断 */
+.hero-card {
+  padding: 16px 20px 15px;
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.hero-metric-card {
+  min-width: 0;
+  padding: 9px 12px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.hero-metric-card .hero-stat-label {
+  display: block;
+  margin: 0 0 3px;
+}
+
+.hero-egress-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hero-egress {
+  min-width: 0;
+  font-size: 13px !important;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-country-inline {
+  flex: none;
+  font-size: 9px;
+}
+
+.hero-session {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hero-metric,
+.hero-metric-label,
+.hero-metric-value {
+  all: unset;
+}
+
+/* 主卡最终：无内嵌卡片、无表格线，只靠间距和字号分组 */
+.hero-card {
+  padding: 18px 20px 17px;
+}
+
+.hero-group-text {
+  margin-top: 3px;
+  color: var(--text-3);
+  font-size: 10px;
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: 0.8fr 1.35fr 1.15fr;
+  align-items: start;
+  gap: 18px;
+  margin-top: 16px;
+  padding-top: 0;
+  border: 0;
+}
+
+.hero-metric {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.hero-stat-label {
+  margin: 0 0 4px;
+}
+
+.hero-metric-value {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hero-metric-value small {
+  margin-left: 2px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-weight: 500;
+}
+
+.hero-egress {
+  font-size: 13px !important;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-country-line {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 9px;
+}
+
+.hero-session {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.hero-session span {
+  white-space: nowrap;
+}
+
+/* 清掉之前几轮遗留的卡片化覆盖 */
+.hero-metric-card,
+.hero-egress-line,
+.hero-country-inline,
+.hero-group-pill,
+.hero-latency {
+  display: none !important;
+}
+
+/* 概览连接卡最终版：状态 → 节点 → 分组 → 两行元信息
+   不使用内嵌卡片、不使用分隔线，靠固定标签列和行距对齐。 */
+.hero-card {
+  padding: 17px 20px 16px;
+}
+
+.hero-main {
+  padding-right: 82px;
+}
+
+.hero-status-row {
+  gap: 7px;
+}
+
+.hero-node-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.hero-node-row .hero-node {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.hero-node-delay {
+  flex: none;
+  color: var(--text-3);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-node-delay small {
+  margin-left: 2px;
+  font-size: 9px;
+}
+
+.hero-group-text {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 15px;
+}
+
+.hero-meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hero-meta-label {
+  flex: none;
+  width: 30px;
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+
+.hero-meta-value {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-country-inline {
+  flex: none;
+  color: var(--text-3);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.hero-session {
+  display: flex;
+  gap: 12px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 清掉迭代遗留的卡片化/多列样式 */
+.hero-stats,
+.hero-metric,
+.hero-metric-card,
+.hero-egress-line,
+.hero-group-pill,
+.hero-latency,
+.hero-latency-inline {
+  display: none !important;
+}
+
+/* 最终布局：底部一条左右分置的摘要，填满卡片宽度 */
+.hero-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+
+.hero-meta-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hero-meta-end {
+  margin-left: auto;
+}
+
+.hero-meta-label {
+  flex: none;
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+
+.hero-meta-value {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hero-country-inline {
+  flex: none;
+  color: var(--text-3);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.hero-session {
+  display: flex;
+  gap: 11px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hero-session .hero-up {
+  color: var(--up);
+}
+
+.hero-session .hero-down {
+  color: var(--down);
 }
