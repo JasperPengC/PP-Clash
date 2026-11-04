@@ -82,7 +82,7 @@ export function DnsPage() {
 
   return (
     <>
-      <header className="page-head">
+      <header className="page-head page-head-wide">
         <div className="page-heading">
           <h1 className="page-title">DNS 与嗅探</h1>
           <div className="page-sub">DNS 服务器、Fake-IP、IPv6 与域名嗅探</div>

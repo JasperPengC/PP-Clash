@@ -254,7 +254,7 @@ export function KernelPage() {
 
   return (
     <>
-      <header className="page-head">
+      <header className="page-head page-head-wide">
         <div className="page-heading">
           <h1 className="page-title">内核</h1>
           <div className="page-sub">

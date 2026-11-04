@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isTauri } from '../core/api';
 
 type ResizeDirection =
   | 'East' | 'North' | 'NorthEast' | 'NorthWest'
   | 'South' | 'SouthEast' | 'SouthWest' | 'West';
 
-const win = () => getCurrentWindow();
+/** 浏览器预览模式里没有 Tauri 运行时：返回 null，控件照常渲染但不触发窗口操作。 */
+const win = () => (isTauri ? getCurrentWindow() : null);
 
 function ResizeHandle({ dir, className }: { dir: ResizeDirection; className: string }) {
   return (
@@ -13,7 +15,7 @@ function ResizeHandle({ dir, className }: { dir: ResizeDirection; className: str
       className={`win-resize ${className}`}
       onPointerDown={(e) => {
         e.preventDefault();
-        void win().startResizeDragging(dir).catch(() => undefined);
+        void win()?.startResizeDragging(dir).catch(() => undefined);
       }}
     />
   );
@@ -27,8 +29,10 @@ export function WindowsTitlebar() {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
+    const w = win();
+    if (!w) return;
     const sync = () => {
-      void win()
+      void w
         .isMaximized()
         .then((max) => {
           setMaximized(max);
@@ -38,7 +42,7 @@ export function WindowsTitlebar() {
     };
     sync();
     let unlisten: (() => void) | undefined;
-    void win().onResized(sync).then((fn) => {
+    void w.onResized(sync).then((fn) => {
       unlisten = fn;
     });
     return () => {
@@ -52,10 +56,10 @@ export function WindowsTitlebar() {
       <div
         className="win-drag-strip"
         data-tauri-drag-region
-        onDoubleClick={() => void win().toggleMaximize()}
+        onDoubleClick={() => void win()?.toggleMaximize()}
       />
       <div className="win-window-controls">
-        <button type="button" aria-label="最小化" title="最小化" onClick={() => void win().minimize()}>
+        <button type="button" aria-label="最小化" title="最小化" onClick={() => void win()?.minimize()}>
           <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
             <path d="M2 5h6" stroke="currentColor" strokeWidth="1.1" />
           </svg>
@@ -64,7 +68,7 @@ export function WindowsTitlebar() {
           type="button"
           aria-label={maximized ? '还原' : '最大化'}
           title={maximized ? '还原' : '最大化'}
-          onClick={() => void win().toggleMaximize()}
+          onClick={() => void win()?.toggleMaximize()}
         >
           <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
             <rect x="2" y="2" width="6" height="6" fill="none" stroke="currentColor" strokeWidth="1.1" />
@@ -75,7 +79,7 @@ export function WindowsTitlebar() {
           className="close"
           aria-label="关闭"
           title="关闭"
-          onClick={() => void win().close()}
+          onClick={() => void win()?.close()}
         >
           <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
             <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" strokeWidth="1.1" />

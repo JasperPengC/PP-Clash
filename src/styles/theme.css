@@ -4883,13 +4883,38 @@ body.tray-panel-window #root {
   color: #fff;
 }
 
+/* 页头与 1040px 内容列同宽并居中：窗口拉宽后标题和工具不再贴住窗口两侧 */
 .window-shell.is-windows .page-head {
+  width: 100%;
+  max-width: calc(1040px + 2 * var(--page-pad));
+  margin-inline: auto;
+}
+
+/* 内核 / DNS 页正文本身就是通栏，页头跟着保持通栏 */
+.window-shell.is-windows .page-head.page-head-wide {
+  max-width: none;
+}
+
+/* 右侧预留量随窗口连续变化：窗口越宽，窗口控件离内容列越远，预留量从 140px 平滑收到
+   page-pad（工具右缘与卡片列对齐），缩放窗口时不会来回跳 */
+.window-shell.is-windows .page-head:not(.page-head-wide) {
+  padding-right: clamp(
+    var(--page-pad),
+    calc((1040px + 2 * var(--page-pad)) / 2 + 140px + var(--sidebar-w) / 2 - 50vw),
+    140px
+  );
+}
+
+/* 通栏页头始终为右上角窗口控件让出位置 */
+.window-shell.is-windows .page-head.page-head-wide {
   padding-right: 140px;
 }
 
 
 
 .window-shell.is-windows {
+  /* Windows 没有红绿灯：顶部不用留 macOS 的 40px，品牌行与页头标题同一水平线 */
+  --titlebar-h: 13px;
   border-radius: 10px;
   overflow: hidden;
   border: 0;
