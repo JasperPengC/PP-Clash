@@ -51,6 +51,11 @@ pub fn focus_main(app: &tauri::AppHandle) {
 }
 
 
+#[cfg(target_os = "windows")]
+pub fn is_elevated() -> bool {
+    platform::is_elevated()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()

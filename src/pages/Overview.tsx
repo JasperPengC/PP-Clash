@@ -17,10 +17,15 @@ import {
 import { resolveActiveNode, resolveEffectiveGroup, useApp, type OutboundMode } from '../store/app';
 import { api } from '../core/api';
 import { parseSubscriptionPreview } from '../core/subscription';
+import { checkWebRtc } from '../core/selfcheck';
 import { formatBytes, formatDuration, formatExpire, formatSpeed, formatTime } from '../core/format';
 import { siGoogle, siYoutube, siGithub, siOpenai, siAnthropic } from 'simple-icons';
 
 const EMPTY = Array.from({ length: 32 }, () => 0);
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+}
 
 const SERVICES = [
   { id: 'google', name: 'Google', icon: siGoogle, mono: false },
@@ -40,13 +45,11 @@ export function OverviewPage() {
   const activeId = useApp((s) => s.activeId);
   const sysProxyEnabled = useApp((s) => s.sysProxyEnabled);
   const tunEnabled = useApp((s) => s.tunEnabled);
-  const policy = useApp((s) => s.policy);
   const settings = useApp((s) => s.settings);
   const mixedPort = useApp((s) => s.settings.mixedPort);
   const toggleSystemProxy = useApp((s) => s.toggleSystemProxy);
   const setTun = useApp((s) => s.setTun);
   const selectNode = useApp((s) => s.selectNode);
-  const testDelay = useApp((s) => s.testDelay);
   const refreshProfile = useApp((s) => s.refreshProfile);
   const refreshingIds = useApp((s) => s.refreshingIds);
   const activate = useApp((s) => s.activate);
@@ -61,6 +64,10 @@ export function OverviewPage() {
   const [servicesLoading, setServicesLoading] = useState(false);
   const serviceProbeRunning = useRef(false);
   const [egressCountry, setEgressCountry] = useState<string | null>(null);
+  const [leakPhase, setLeakPhase] = useState<'idle' | 'running' | 'done'>('idle');
+  const [leakRows, setLeakRows] = useState<
+    Array<{ id: string; label: string; status: 'ok' | 'warn' | 'bad' | 'info'; text: string }>
+  >([]);
 
   const changeMode = async (mode: OutboundMode) => {
     if (mode === settings.mode) return;
@@ -364,23 +371,82 @@ export function OverviewPage() {
     }
     setTestingGroup(true);
     try {
-      for (const node of displayGroup.nodes) {
-        const d = await testDelay(node.name);
-        setGroupDelays((prev) => ({ ...prev, [node.name]: d }));
+      // 交给 mihomo 分组测速：服务端并发测完整组，避免前端逐个节点串行等待。
+      const data = await api.mihomo(
+        'GET',
+        `/group/${encodeURIComponent(displayGroup.name)}/delay?url=${encodeURIComponent(
+          'https://www.gstatic.com/generate_204'
+        )}&timeout=5000`
+      );
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        setGroupDelays((prev) => ({
+          ...prev,
+          ...(data as Record<string, number | null>),
+        }));
       }
+      await useApp.getState().refreshGroups(true);
+    } catch (e) {
+      notify('error', `分组测速失败：${errorText(e)}`);
     } finally {
       setTestingGroup(false);
     }
   };
 
-  const guards = [
-    { key: 'DNS 防泄漏', on: policy.dnsLeakProtection },
-    { key: 'WebRTC', on: policy.blockWebRtc },
-    { key: 'IPv6 隔离', on: !policy.ipv6 },
-    { key: 'TUN 严格路由', on: policy.tunStrictRoute },
-  ];
-  const goodCount = guards.filter((g) => g.on).length;
-  const allGood = goodCount === guards.length;
+  const runLeakCheck = useCallback(async () => {
+    if (!connected) return;
+    setLeakPhase('running');
+    const [ip, dns, webrtc] = await Promise.all([
+      api.leakCheckIp(mixedPort, tunEnabled).catch(() => null),
+      api.leakCheckDns('www.apple.com', settings.dnsPort).catch(() => null),
+      checkWebRtc(),
+    ]);
+
+    let ipRow: { status: 'ok' | 'warn' | 'bad' | 'info'; text: string };
+    if (!ip) ipRow = { status: 'warn', text: '检测失败' };
+    else if (!ip.proxied) ipRow = { status: 'warn', text: '代理端口不可达' };
+    else if (tunEnabled) ipRow = { status: 'ok', text: `TUN 出口 ${ip.proxied}` };
+    else if (ip.direct && ip.direct === ip.proxied)
+      ipRow = { status: 'bad', text: `直连与代理出口相同（${ip.direct}）` };
+    else ipRow = { status: 'ok', text: `代理出口 ${ip.proxied}` };
+
+    let dnsRow: { status: 'ok' | 'warn' | 'bad' | 'info'; text: string };
+    if (!dns) dnsRow = { status: 'warn', text: '检测失败' };
+    else if (dns.system_fake_ip) dnsRow = { status: 'ok', text: '已接管（Fake-IP）' };
+    else if (dns.kernel_alive && dns.kernel_fake_ip)
+      dnsRow = { status: 'info', text: '内核正常；系统未接管' };
+    else if (dns.kernel_alive) dnsRow = { status: 'info', text: '内核可达，未返回 Fake-IP' };
+    else dnsRow = { status: 'warn', text: '内核 DNS 不可达' };
+
+    let webRtcRow: { status: 'ok' | 'warn' | 'bad' | 'info'; text: string };
+    if (!webrtc.supported) webRtcRow = { status: 'info', text: '当前环境不支持' };
+    else if (webrtc.publicIps.length === 0) webRtcRow = { status: 'ok', text: '无公网候选' };
+    else if (ip?.direct && webrtc.publicIps.includes(ip.direct))
+      webRtcRow = { status: 'bad', text: `真实 IP ${webrtc.publicIps.join('、')}` };
+    else if (ip?.proxied && webrtc.publicIps.every((x) => ip.proxied!.includes(x)))
+      webRtcRow = { status: 'info', text: `代理 IP ${webrtc.publicIps.join('、')}` };
+    else webRtcRow = { status: 'info', text: webrtc.publicIps.join('、') || '无候选' };
+
+    setLeakRows([
+      { id: 'ip', label: '出口 IP', ...ipRow },
+      { id: 'dns', label: 'DNS 接管', ...dnsRow },
+      { id: 'webrtc', label: 'WebRTC', ...webRtcRow },
+    ]);
+    setLeakPhase('done');
+  }, [connected, mixedPort, settings.dnsPort, tunEnabled]);
+
+  useEffect(() => {
+    if (!connected) {
+      setLeakRows([]);
+      setLeakPhase('idle');
+      return;
+    }
+    const t = window.setTimeout(() => void runLeakCheck(), 2500);
+    return () => window.clearTimeout(t);
+  }, [connected, runLeakCheck]);
+
+  const leakHasBad = leakRows.some((r) => r.status === 'bad');
+  const leakHasWarn = leakRows.some((r) => r.status === 'warn');
+  const leakTone = leakPhase !== 'done' ? 'muted' : leakHasBad ? 'bad' : leakHasWarn ? 'warn' : 'ok';
 
   const quota = activeProfile?.userinfo ?? null;
   const quotaUsed = quota ? quota.upload + quota.download : 0;
@@ -902,28 +968,46 @@ export function OverviewPage() {
             </div>
           </section>
 
-          {/* 防护状态 */}
+          {/* 泄露检查 */}
           <section className="card protection-card span-12">
             <div className="protection-head">
-              <span className={`protection-lead-icon ${allGood ? 'ok' : 'warn'}`}>
+              <span
+                className={`protection-lead-icon ${
+                  leakPhase !== 'done' ? '' : leakHasBad ? 'bad' : leakHasWarn ? 'warn' : 'ok'
+                }`}
+              >
                 <IconSecurity size={15} />
               </span>
               <div className="protection-heading">
                 <div className="protection-title">
                   泄露检查
-                  <Pill tone={allGood ? 'ok' : 'warn'}>
-                    {allGood ? '通过' : '有风险'} {goodCount}/{guards.length}
-                  </Pill>
+                  {leakPhase === 'done' && (
+                    <Pill tone={leakTone === 'ok' ? 'ok' : leakTone === 'bad' ? 'bad' : leakTone === 'warn' ? 'warn' : 'muted'}>
+                      {leakHasBad ? '有泄漏风险' : leakHasWarn ? '部分未通过' : '通过'}
+                    </Pill>
+                  )}
                 </div>
                 <div className={`protection-sub${sysProxyEnabled && !tunEnabled ? ' warn' : ''}`}>
                   {sysProxyEnabled && !tunEnabled
                     ? '系统代理不接管 UDP / WebRTC / DNS，建议开启 TUN'
-                    : allGood
-                      ? 'DNS · WebRTC · IPv6 · TUN 严格路由'
-                      : '有项目未开启'}
+                    : leakPhase === 'running'
+                      ? '正在实测出口 / DNS / WebRTC…'
+                      : leakPhase === 'done'
+                        ? '出口 IP · DNS 接管 · WebRTC'
+                        : '接管后自动检测'}
                 </div>
               </div>
               <div className="spacer" />
+              <button
+                type="button"
+                className="icon-btn"
+                title="重新检测"
+                aria-label="重新检测"
+                disabled={!connected || leakPhase === 'running'}
+                onClick={() => void runLeakCheck()}
+              >
+                {leakPhase === 'running' ? <Spinner small /> : <IconRefresh size={13} />}
+              </button>
               <button
                 type="button"
                 className="link-action"
@@ -933,12 +1017,19 @@ export function OverviewPage() {
                 <IconChevronRight size={11} />
               </button>
             </div>
-            <div className="protection-grid">
-              {guards.map((g) => (
-                <div className={`protection-tile ${g.on ? 'ok' : 'bad'}`} key={g.key}>
-                  <span className={`protection-dot ${g.on ? 'ok' : 'bad'}`} />
-                  <span className="protection-name">{g.key}</span>
-                  <span className="protection-state">{g.on ? '已开启' : '未开启'}</span>
+            <div className="protection-grid leak-grid">
+              {(leakRows.length > 0
+                ? leakRows
+                : [
+                    { id: 'ip', label: '出口 IP', status: 'info' as const, text: connected ? '检测中…' : '未接管' },
+                    { id: 'dns', label: 'DNS 接管', status: 'info' as const, text: connected ? '检测中…' : '未接管' },
+                    { id: 'webrtc', label: 'WebRTC', status: 'info' as const, text: connected ? '检测中…' : '未接管' },
+                  ]
+              ).map((row) => (
+                <div className={`protection-tile ${row.status}`} key={row.id}>
+                  <span className={`protection-dot ${row.status}`} />
+                  <span className="protection-name">{row.label}</span>
+                  <span className="protection-state">{row.text}</span>
                 </div>
               ))}
             </div>

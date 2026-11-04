@@ -71,10 +71,67 @@ fn unix_preflight() -> bool {
     true
 }
 
+
+#[cfg(target_os = "windows")]
+fn instance_running() -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::OpenMutexW;
+
+    let name: Vec<u16> = "Local\\PPClashInstance\0".encode_utf16().collect();
+    let handle = unsafe { OpenMutexW(0x0010_0000, 0, name.as_ptr() as *const u16) };
+    if handle.is_null() {
+        false
+    } else {
+        unsafe { let _ = CloseHandle(handle); }
+        true
+    }
+}
+
+/// Windows 默认以管理员模式启动：非提权进程先拉起 UAC，再退出自己。
+/// 返回 true 表示“已经在本进程继续”，false 表示应直接退出。
+#[cfg(target_os = "windows")]
+fn ensure_elevated() -> bool {
+    use std::os::windows::process::CommandExt;
+
+    if ppclash_lib::is_elevated() {
+        return true;
+    }
+    if instance_running() {
+        return false;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return true;
+    };
+    let ps = format!(
+        "Start-Process -FilePath '{}' -Verb RunAs",
+        exe.display()
+    );
+    let status = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &ps,
+        ])
+        .creation_flags(0x0800_0000)
+        .status();
+    match status {
+        Ok(s) if s.success() => false,
+        _ => true, // UAC 被取消时回退普通模式，至少让应用能打开
+    }
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
-    if !windows_preflight() {
-        return;
+    {
+        if !ensure_elevated() {
+            return;
+        }
+        if !windows_preflight() {
+            return;
+        }
     }
     #[cfg(not(target_os = "windows"))]
     if !unix_preflight() {

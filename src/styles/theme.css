@@ -5519,3 +5519,38 @@ body.tray-panel-window #root {
 .protection-sub.warn {
   color: var(--warning);
 }
+
+.leak-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.protection-lead-icon.bad {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+}
+
+.protection-tile.info .protection-state {
+  color: var(--text-3);
+}
+
+.protection-tile.warn .protection-state {
+  color: var(--warning);
+}
+
+.protection-tile.bad .protection-state {
+  color: var(--danger);
+}
+
+.protection-tile .protection-state {
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.protection-tile.info .protection-dot {
+  background: var(--text-3);
+}
+
+.protection-tile.warn .protection-dot {
+  background: var(--warning);
+}
