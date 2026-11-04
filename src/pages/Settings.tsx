@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Segmented, Select, Toggle } from '../components/ui';
-import { IconDownload, IconFolder, IconPalette, IconSliders } from '../components/icons';
+import { IconDownload, IconFolder, IconLog, IconPalette, IconSliders } from '../components/icons';
 import { formatTime } from '../core/format';
 import { useApp, type ThemeMode } from '../store/app';
 import { api, DATA_DIR, isTauri } from '../core/api';
@@ -81,6 +81,8 @@ export function SettingsPage() {
 
   const [proxyCustomOpen, setProxyCustomOpen] = useState(false);
   const [ghDraft, setGhDraft] = useState(settings.githubProxy);
+  const [diagBusy, setDiagBusy] = useState(false);
+  const notify = useApp((s) => s.notify);
   const [feedDraft, setFeedDraft] = useState(settings.updateFeedUrl);
 
   useEffect(() => {
@@ -289,6 +291,51 @@ export function SettingsPage() {
               {backups.length === 0 && (
                 <Row label="暂无备份" control={null} />
               )}
+            </Section>
+
+            <Section
+              title="诊断与日志"
+              desc="用于反馈问题和长时间运行观测"
+              icon={<IconLog size={15} />}
+            >
+              <Row
+                label="导出诊断包"
+                hint="包含 app.log / kernel.log / 脱敏状态 / 端口与系统信息，不包含订阅正文和密码"
+                control={
+                  <div className="row" style={{ gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={diagBusy}
+                      onClick={() => {
+                        setDiagBusy(true);
+                        void api
+                          .exportDiagnostics()
+                          .then(async (path) => {
+                            notify('success', `诊断包已导出：${path}`);
+                            await api.openDataDir('PPClash/diagnostics').catch(() => null);
+                          })
+                          .catch((e) => notify('error', `导出诊断包失败：${String(e)}`))
+                          .finally(() => setDiagBusy(false));
+                      }}
+                    >
+                      {diagBusy ? '导出中…' : '导出诊断包'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => void api.openDataDir('PPClash').catch(() => null)}
+                    >
+                      打开数据目录
+                    </button>
+                  </div>
+                }
+              />
+              <Row
+                label="日志内容"
+                hint="前端错误、内核启停和运行日志；诊断包会做敏感字段脱敏"
+                control={<span className="card-hint">app.log / kernel.log</span>}
+              />
             </Section>
 
             <Section

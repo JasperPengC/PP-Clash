@@ -7,6 +7,7 @@ import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
 import { countRealNodes, isInfoNode, parseSubscriptionMeta, type TrafficInfo } from '../core/subscription';
 import { useTheme } from './theme';
 import { isWindows } from '../core/platform';
+import { logEvent } from '../core/logger';
 
 export interface Profile {
   id: string;
@@ -492,6 +493,7 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   notify: (kind, text) => {
+    if (kind === 'error') logEvent('error', text);
     const cur = get().toast;
     // 同一条消息重复出现时不刷新，避免轮询失败把 toast 钉死
     if (cur && cur.kind === kind && cur.text === text) return;

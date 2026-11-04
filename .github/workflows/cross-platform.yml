@@ -56,5 +56,5 @@ jobs:
             "placeholder" | Out-File -Encoding utf8 version.txt
             Compress-Archive -Path version.txt -DestinationPath src-tauri/resources/kernel.zip
           }
-      - name: cargo build (Windows compile check)
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+      - name: cargo test (Windows)
+        run: cargo test --manifest-path src-tauri/Cargo.toml

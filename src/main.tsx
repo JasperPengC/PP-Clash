@@ -3,12 +3,14 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { TrayPanel } from './components/TrayPanel';
 import { initTheme } from './store/theme';
+import { installLogger } from './core/logger';
 import { useApp } from './store/app';
 import 'flag-icons/css/flag-icons.min.css';
 import './styles/theme.css';
 
 // 首帧之前定主题，避免深色系统上闪一下白屏
 initTheme();
+installLogger();
 
 const isTrayPanel = new URLSearchParams(window.location.search).get('panel') === 'tray';
 if (isTrayPanel) document.body.classList.add('tray-panel-window');

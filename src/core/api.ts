@@ -326,6 +326,13 @@ export const api = {
   /** Windows: 以管理员身份重启应用；其它平台直接重启。 */
   restartAsAdmin: () => call<void>('restart_as_admin'),
 
+  /** 追加一条前端诊断日志。 */
+  appendDiagnosticLog: (level: string, message: string) =>
+    call<void>('append_diagnostic_log', { level, message }),
+
+  /** 导出脱敏诊断包，返回 zip 路径。 */
+  exportDiagnostics: () => call<string>('export_diagnostics'),
+
   /** 查询出口 IP 的国家/地区。 */
   lookupIpCountry: (ip: string) =>
     call<{ country: string | null; country_code: string | null }>('lookup_ip_country_auto', {

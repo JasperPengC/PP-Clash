@@ -2,6 +2,7 @@ mod icons;
 mod kernel;
 mod leakcheck;
 mod platform;
+mod diagnostics;
 mod services;
 mod update;
 mod watchdog;
@@ -96,6 +97,8 @@ pub fn run() {
             prefs::open_external_url,
             prefs::is_elevated,
             prefs::restart_as_admin,
+            diagnostics::append_diagnostic_log,
+            diagnostics::export_diagnostics,
             services::probe_services,
             services::probe_services_auto,
             services::probe_service_auto,

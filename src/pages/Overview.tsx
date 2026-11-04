@@ -285,12 +285,14 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       if (alive) setEgressLoading(false);
     };
     void load();
+    const early = window.setTimeout(() => void load(), 4000);
     const t = window.setInterval(() => void load(), 60_000);
     return () => {
       alive = false;
+      window.clearTimeout(early);
       window.clearInterval(t);
     };
-  }, [connected, mixedPort, active]);
+  }, [connected, mixedPort, nodeName, active]);
 
   // 出口 IP 归属地
   useEffect(() => {
@@ -440,7 +442,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       { id: 'webrtc', label: 'WebRTC', ...webRtcRow },
     ]);
     setLeakPhase('done');
-  }, [connected, mixedPort, settings.dnsPort, tunEnabled]);
+  }, [connected, mixedPort, settings.dnsPort, tunEnabled, egress]);
 
   useEffect(() => {
     if (!active) return;
