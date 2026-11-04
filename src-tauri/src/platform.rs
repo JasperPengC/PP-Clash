@@ -68,6 +68,7 @@ pub fn system_bin() -> PathBuf {
 }
 
 /// 用户数据目录里的内核路径。
+#[allow(dead_code)]
 pub fn user_kernel_bin() -> Result<PathBuf, String> {
     Ok(data_dir()?.join("bin").join(kernel_binary_name()))
 }

@@ -7,7 +7,6 @@ use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-use tauri::Manager;
 use zip::write::SimpleFileOptions;
 
 use crate::resources;
@@ -185,4 +184,33 @@ pub async fn export_diagnostics(app: tauri::AppHandle) -> Result<String, String>
 
     zip.finish().map_err(|e| e.to_string())?;
     Ok(zip_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_sensitive_fields() {
+        let mut v = serde_json::json!({
+            "profiles": [{"name": "x", "url": "https://secret", "raw": "proxies: [x]"}],
+            "settings": {"authPass": "p", "authUser": "u"},
+            "nested": {"updateFeedUrl": "https://feed"}
+        });
+        redact(&mut v);
+        let text = serde_json::to_string(&v).unwrap();
+        assert!(!text.contains("secret"));
+        assert!(!text.contains("authPass\":\"p"));
+        assert!(text.contains("[redacted]"));
+    }
+
+    #[test]
+    fn tail_keeps_last_bytes() {
+        let dir = std::env::temp_dir().join(format!("ppclash-diag-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("x.log");
+        std::fs::write(&path, "0123456789").unwrap();
+        assert_eq!(tail_text(&path, 4), "6789");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

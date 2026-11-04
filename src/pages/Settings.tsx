@@ -345,7 +345,7 @@ export function SettingsPage() {
             >
               <Row
                 label="更新源"
-                hint="返回 { version, url, notes } 的 JSON；留空关闭"
+                hint="返回 { version, url, sha256, notes } 的 JSON；sha256 必填；留空关闭"
                 control={
                   <input
                     className="input input-mono"

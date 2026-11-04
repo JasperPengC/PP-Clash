@@ -1,4 +1,3 @@
-use std::process::Command;
 
 #[derive(serde::Serialize)]
 pub struct SysProxyState {

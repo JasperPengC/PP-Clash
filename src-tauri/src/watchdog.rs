@@ -39,6 +39,7 @@ fi
 rm -f "$PIDFILE"
 "#;
 
+#[cfg(target_os = "windows")]
 const WIN_SCRIPT: &str = r#"param([int]$AppPid, [string]$DataDir)
 while (Get-Process -Id $AppPid -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
 $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
@@ -62,11 +63,11 @@ Get-CimInstance Win32_Process -Filter "Name='mihomo.exe'" -ErrorAction SilentlyC
 Remove-Item "$DataDir\watchdog.pid" -Force -ErrorAction SilentlyContinue
 "#;
 
-fn pid_file(data: &PathBuf) -> PathBuf {
+fn pid_file(data: &std::path::Path) -> PathBuf {
     data.join("watchdog.pid")
 }
 
-fn stop_previous(data: &PathBuf) {
+fn stop_previous(data: &std::path::Path) {
     let Ok(text) = std::fs::read_to_string(pid_file(data)) else {
         return;
     };
@@ -108,6 +109,7 @@ pub fn clear_port() {
 }
 
 /// 以管理员身份重启前解除旧看门狗，避免它在新进程启动后误杀新内核。
+#[cfg(target_os = "windows")]
 pub fn stop_for_restart() {
     if let Ok(data) = resources::data_dir() {
         stop_previous(&data);
@@ -116,7 +118,7 @@ pub fn stop_for_restart() {
 }
 
 /// 启动（或替换）当前进程的看门狗。失败只记录，不影响主流程。
-pub fn start(app: &AppHandle) {
+pub fn start(_app: &AppHandle) {
     let Ok(data) = resources::data_dir() else {
         return;
     };

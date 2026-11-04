@@ -245,7 +245,7 @@ pub fn list_backups(data_dir: String) -> Result<Vec<BackupEntry>, String> {
             mtime_ms,
         });
     }
-    out.sort_by(|a, b| b.mtime_ms.cmp(&a.mtime_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.mtime_ms));
     Ok(out)
 }
 

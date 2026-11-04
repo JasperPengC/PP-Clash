@@ -1,7 +1,6 @@
 //! 进程图标：从 macOS .app 包里提取 64px PNG，返回 data URL 供前端使用。
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::resources;
 
@@ -112,10 +111,8 @@ pub async fn resolve_process_icon(process_path: String) -> Result<Option<String>
     app.hash(&mut hasher);
     let cache = data_dir()?.join("icons").join(format!("{:x}.png", hasher.finish()));
 
-    if !cache.is_file() {
-        if extract_png(&app, &cache).is_err() {
-            return Ok(None);
-        }
+    if !cache.is_file() && extract_png(&app, &cache).is_err() {
+        return Ok(None);
     }
 
     let bytes = std::fs::read(cache).map_err(|e| e.to_string())?;

@@ -129,6 +129,8 @@ pub fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 
     let panel_w = 320.0 * scale;
     let panel_h = 500.0 * scale;
+    #[cfg(not(target_os = "windows"))]
+    let _ = panel_h;
     let x = (rx + rw / 2.0 - panel_w / 2.0).clamp(8.0, (screen_w - panel_w - 8.0).max(8.0));
     let y = {
         #[cfg(target_os = "windows")]
@@ -425,9 +427,7 @@ fn menu_bar_is_dark(app: &AppHandle) -> bool {
     tray.with_inner_tray_icon(|inner| {
         use objc2::MainThreadMarker;
         use objc2_app_kit::NSAppearanceCustomization;
-        let Some(mtm) = MainThreadMarker::new() else {
-            return None;
-        };
+        let mtm = MainThreadMarker::new()?;
         let item = inner.ns_status_item()?;
         let button = item.button(mtm)?;
         let name = button.effectiveAppearance().name().to_string();
@@ -654,7 +654,6 @@ pub async fn tray_action(
             let flags = app.state::<AppFlags>();
             let sys = *flags.sys_proxy_enabled.lock().unwrap();
             let port = *flags.mixed_port.lock().unwrap();
-            drop(flags);
             if sys {
                 let _ = crate::sysproxy::set_system_proxy(false, "127.0.0.1".to_string(), port);
             }

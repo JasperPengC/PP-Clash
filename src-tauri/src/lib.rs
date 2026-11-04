@@ -200,7 +200,7 @@ pub fn run() {
             }
             if window.label() == "tray-panel" {
                 if let WindowEvent::Focused(false) = event {
-                    tray::hide_panel(&window.app_handle());
+                    tray::hide_panel(window.app_handle());
                 }
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();

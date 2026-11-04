@@ -123,15 +123,41 @@ fn ensure_elevated() -> bool {
     }
 }
 
+
+#[cfg(target_os = "windows")]
+fn bootstrap_log(message: &str) {
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let dir = std::path::PathBuf::from(appdata).join("PPClash");
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("bootstrap.log"))
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "[{}] {}", std::process::id(), message);
+        }
+    }
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
     {
+        bootstrap_log(&format!(
+            "main start elevated={} instance={}",
+            ppclash_lib::is_elevated(),
+            instance_running()
+        ));
         if !ensure_elevated() {
+            bootstrap_log("ensure_elevated -> exit");
             return;
         }
+        bootstrap_log("ensure_elevated -> continue");
         if !windows_preflight() {
+            bootstrap_log("windows_preflight -> exit");
             return;
         }
+        bootstrap_log("windows_preflight -> continue");
     }
     #[cfg(not(target_os = "windows"))]
     if !unix_preflight() {

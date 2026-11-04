@@ -6,7 +6,7 @@
 //! （setuid root，只装一次，之后 TUN 启停不再弹密码）。
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager};

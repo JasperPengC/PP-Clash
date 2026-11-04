@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::Manager;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::Mutex;
 
 use crate::resources;

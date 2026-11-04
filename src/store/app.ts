@@ -460,6 +460,10 @@ export const useApp = create<AppStore>((set, get) => ({
   downloadUpdate: async () => {
     const info = get().updateInfo;
     if (!info || get().downloadingUpdate) return;
+    if (!info.sha256) {
+      get().notify('error', '更新源未提供 sha256，出于安全考虑已拒绝下载');
+      return;
+    }
     set({ downloadingUpdate: true });
     try {
       const path = await api.downloadAppUpdate(info.url, info.sha256);
