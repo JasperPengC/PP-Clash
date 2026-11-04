@@ -5554,3 +5554,46 @@ body.tray-panel-window #root {
 .protection-tile.warn .protection-dot {
   background: var(--warning);
 }
+
+/* 所有页面顶部操作区统一 31px 控件高度，与 Windows 窗口按钮同一水平线 */
+.page-head {
+  align-items: flex-start;
+}
+
+.page-head .page-actions {
+  min-height: 31px;
+  align-items: center;
+}
+
+.page-head .page-actions .btn,
+.page-head .page-actions .icon-btn,
+.page-head .page-actions .seg,
+.page-head .page-actions .node-search,
+.page-head .page-actions .input {
+  height: 31px;
+}
+
+.page-head .page-actions .icon-btn {
+  width: 31px;
+}
+
+.page-head .page-actions .seg-btn {
+  height: 25px;
+}
+
+.proxy-head-tools {
+  align-items: center;
+}
+
+.proxy-head-tools .node-search {
+  height: 31px;
+}
+
+.proxy-head-tools .row {
+  height: 31px;
+}
+
+.proxy-head-tools .icon-btn {
+  width: 31px;
+  height: 31px;
+}
