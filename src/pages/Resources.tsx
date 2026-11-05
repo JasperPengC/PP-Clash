@@ -25,18 +25,6 @@ interface Provider {
   updatedAt?: string;
 }
 
-const FILE_INFO: Record<string, { label: string; note: string }> = {
-  'geosite.dat': { label: 'GeoSite 域名库', note: '域名分类规则' },
-  'geoip.metadb': { label: 'GeoIP 数据库', note: 'IP 归属地' },
-  'geoip.dat': { label: 'GeoIP 旧格式', note: '兼容旧规则' },
-  'country.mmdb': { label: 'Country 数据库', note: '国家 / 地区 IP' },
-  'ASN.mmdb': { label: 'ASN 数据库', note: '运营商 / ASN' },
-};
-
-function fileLabel(name: string) {
-  return FILE_INFO[name] ?? { label: name, note: '数据文件' };
-}
-
 function formatSize(bytes: number): string {
   if (!bytes) return '—';
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -272,11 +260,10 @@ export function ResourcesPage() {
   };
 
   const updateAllGeo = async () => {
-    const targets = files.filter((f) => !!f.name);
-    for (const file of targets) {
+    for (const item of GEO_SOURCE_INFO) {
       // 顺序更新，避免并发下载占满带宽
       // eslint-disable-next-line no-await-in-loop
-      await updateGeo(file.name);
+      await updateGeo(item.file);
     }
   };
 
@@ -366,31 +353,52 @@ export function ResourcesPage() {
                 </button>
               </div>
               <div className="geo-source-list">
-                {GEO_SOURCE_INFO.map((item) => (
-                  <div className="geo-source-row" key={item.key}>
-                    <div className="geo-source-label">
-                      <span>{item.label}</span>
-                      <span className="geo-source-file">{item.file}</span>
+                {GEO_SOURCE_INFO.map((item) => {
+                  const file = files.find((f) => f.name === item.file);
+                  return (
+                    <div className="geo-source-row" key={item.key}>
+                      <div className="geo-source-label">
+                        <span className="geo-source-title">{item.label}</span>
+                        <span className="geo-source-file">{item.file}</span>
+                      </div>
+                      <input
+                        className="input input-mono geo-source-input"
+                        value={urlDrafts[item.key]}
+                        onChange={(e) =>
+                          setUrlDrafts((prev) => ({ ...prev, [item.key]: e.target.value }))
+                        }
+                        onBlur={() => {
+                          const url = urlDrafts[item.key].trim();
+                          if (url === settings.geoUrls[item.key]) return;
+                          updateSettings({
+                            geoUrls: { ...settings.geoUrls, [item.key]: url },
+                          });
+                          notify('info', `${item.label} 在线源已保存`);
+                        }}
+                        spellCheck={false}
+                        title={urlDrafts[item.key]}
+                        aria-label={`${item.label} 在线源`}
+                      />
+                      <div className="geo-source-status">
+                        <span className="geo-source-size">
+                          {file ? formatSize(file.size) : '—'}
+                        </span>
+                        <Pill tone={file?.exists ? 'ok' : 'warn'}>
+                          {file?.exists ? '就绪' : '缺失'}
+                        </Pill>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={geoUpdating !== null}
+                        onClick={() => void updateGeo(item.file)}
+                      >
+                        {geoUpdating === item.file ? <Spinner small /> : null}
+                        更新
+                      </button>
                     </div>
-                    <input
-                      className="input input-mono geo-source-input"
-                      value={urlDrafts[item.key]}
-                      onChange={(e) =>
-                        setUrlDrafts((prev) => ({ ...prev, [item.key]: e.target.value }))
-                      }
-                      onBlur={() => {
-                        const url = urlDrafts[item.key].trim();
-                        if (url === settings.geoUrls[item.key]) return;
-                        updateSettings({
-                          geoUrls: { ...settings.geoUrls, [item.key]: url },
-                        });
-                        notify('info', `${item.label} 源已保存，重启内核后生效`);
-                      }}
-                      spellCheck={false}
-                      aria-label={`${item.label} 在线源`}
-                    />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="geo-options">
@@ -444,35 +452,6 @@ export function ResourcesPage() {
                 )}
               </div>
 
-              {files.length === 0 ? (
-                <div className="resource-empty">{loading ? '读取中…' : '未找到数据文件'}</div>
-              ) : (
-                <div className="resource-list">
-                  {files.map((f) => {
-                    const info = fileLabel(f.name);
-                    return (
-                      <div key={f.name} className="resource-file">
-                        <span className="resource-file-icon"><IconGlobe size={13} /></span>
-                        <span className="resource-file-main">
-                          <span className="resource-name">{info.label}</span>
-                          <span className="resource-file-note">{f.name} · {info.note}</span>
-                        </span>
-                        <span className="resource-size">{formatSize(f.size)}</span>
-                        <button
-                          type="button"
-                          className="btn btn-sm resource-update"
-                          disabled={geoUpdating !== null}
-                          onClick={() => void updateGeo(f.name)}
-                        >
-                          {geoUpdating === f.name ? <Spinner small /> : null}
-                          更新
-                        </button>
-                        <Pill tone={f.exists ? 'ok' : 'warn'}>{f.exists ? '就绪' : '缺失'}</Pill>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </section>
           )}
 

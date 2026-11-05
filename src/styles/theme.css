@@ -7486,3 +7486,106 @@ body.tray-panel-window #root {
   width: 13px;
   height: 13px;
 }
+
+/* 资源页 Geo 源：单行表格化，标签/文件/源/状态各占固定列 */
+.geo-source-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+
+.geo-source-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 100px 62px;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.geo-source-row:first-child {
+  border-top: 0;
+}
+
+.geo-source-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.geo-source-title {
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.geo-source-file {
+  color: var(--text-3);
+  font-size: 9px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.geo-source-input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  font-size: 10px;
+}
+
+.geo-source-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+}
+
+.geo-source-size {
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.geo-source-row .btn {
+  justify-self: end;
+}
+
+.geo-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.geo-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.geo-option > span {
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+
+.geo-interval {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.geo-interval .input {
+  width: 56px;
+  height: 28px;
+  font-size: 10px;
+}
+
+.geo-interval > span {
+  color: var(--text-3);
+  font-size: 9.5px;
+}
