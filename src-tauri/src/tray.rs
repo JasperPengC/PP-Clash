@@ -377,7 +377,13 @@ fn render_status_icon(
 
 async fn speed_rates(app: &AppHandle) -> Option<(f64, f64)> {
     let port = *app.state::<KernelState>().controller_port.lock().await;
-    let raw = mihomo::request(&base(port), "", "GET", "/connections", None)
+    let secret = app
+        .state::<AppFlags>()
+        .controller_secret
+        .lock()
+        .unwrap()
+        .clone();
+    let raw = mihomo::request(&base(port), &secret, "GET", "/connections", None)
         .await
         .ok()?;
     let v: Value = serde_json::from_str(&raw).ok()?;
