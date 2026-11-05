@@ -323,6 +323,10 @@ export const api = {
   checkAppUpdate: (feedUrl: string, currentVersion: string) =>
     call<AppUpdateInfo | null>('check_app_update', { feedUrl, currentVersion }),
 
+  /** 内置 GitHub Releases 更新检查。 */
+  checkGithubUpdate: (repo: string, currentVersion: string) =>
+    call<AppUpdateInfo | null>('check_github_update', { repo, currentVersion }),
+
   /** 用系统浏览器打开 http(s) 链接。 */
   openExternalUrl: (url: string) => call<void>('open_external_url', { url }),
 

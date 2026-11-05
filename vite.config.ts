@@ -1,11 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 // Tauri 需要一个固定端口，且不能在构建时清屏，否则 Rust 侧的日志会被吞掉。
 export default defineConfig({
   plugins: [react()],
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   // Tauri 用 tauri:// 自定义协议加载页面，绝对路径 /assets 会 404，必须用相对路径
   base: './',

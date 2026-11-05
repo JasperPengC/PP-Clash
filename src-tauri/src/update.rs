@@ -204,3 +204,130 @@ pub fn open_downloaded_update(path: String) -> Result<(), String> {
         Ok(())
     }
 }
+
+/// 内置 GitHub Releases 更新检查。
+///
+/// 只查最新正式 Release，按当前平台选择 dmg / exe / msi；
+/// 优先使用 GitHub 提供的 asset digest，其次读取发布里的 SHA256SUMS.txt。
+#[tauri::command]
+pub async fn check_github_update(
+    repo: String,
+    current_version: String,
+) -> Result<Option<UpdateInfo>, String> {
+    let repo = repo.trim();
+    if repo.is_empty()
+        || !repo
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))
+        || !repo.contains('/')
+    {
+        return Err("GitHub 仓库格式应为 owner/repo".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .user_agent("PP-Clash")
+        .build()
+        .map_err(|e| format!("创建更新客户端失败：{e}"))?;
+    let response = client
+        .get(format!("https://api.github.com/repos/{repo}/releases/latest"))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("连接 GitHub 失败：{e}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("GitHub 仓库或 Release 不存在：{repo}"));
+    }
+    if !response.status().is_success() {
+        return Err(format!("GitHub 返回 HTTP {}", response.status()));
+    }
+    let release_text = response
+        .text()
+        .await
+        .map_err(|e| format!("读取 GitHub Release 失败：{e}"))?;
+    let release: serde_json::Value = serde_json::from_str(&release_text)
+        .map_err(|e| format!("GitHub Release 格式错误：{e}"))?;
+    let tag = release
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Release 缺少 tag_name".to_string())?;
+    if !is_newer(tag, &current_version) {
+        return Ok(None);
+    }
+    let notes = release
+        .get("body")
+        .and_then(|v| v.as_str())
+        .map(|s| s.chars().take(600).collect::<String>());
+    let assets = release
+        .get("assets")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let target = if cfg!(target_os = "macos") {
+        ".dmg"
+    } else if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ".AppImage"
+    };
+    let asset = assets
+        .iter()
+        .filter_map(|a| {
+            let name = a.get("name")?.as_str()?;
+            let url = a.get("browser_download_url")?.as_str()?;
+            Some((name, url, a))
+        })
+        .filter(|(name, _, _)| name.to_ascii_lowercase().ends_with(&target.to_ascii_lowercase()))
+        .find(|(name, _, _)| {
+            !name.to_ascii_lowercase().contains("sha256")
+                && (target != ".exe" || name.to_ascii_lowercase().contains("setup"))
+        })
+        .or_else(|| {
+            assets
+                .iter()
+                .filter_map(|a| {
+                    let name = a.get("name")?.as_str()?;
+                    let url = a.get("browser_download_url")?.as_str()?;
+                    Some((name, url, a))
+                })
+                .find(|(name, _, _)| name.to_ascii_lowercase().ends_with(&target.to_ascii_lowercase()))
+        });
+    let Some((asset_name, url, asset)) = asset else {
+        return Err(format!("Release 里没有找到 {target} 安装包"));
+    };
+    let mut sha256 = asset
+        .get("digest")
+        .and_then(|v| v.as_str())
+        .and_then(|d| d.strip_prefix("sha256:"))
+        .map(|s| s.to_ascii_lowercase());
+    if sha256.is_none() {
+        // 兼容发布里附带的 SHA256SUMS.txt / checksums.txt
+        let checksum_url = assets.iter().find_map(|a| {
+            let name = a.get("name")?.as_str()?.to_ascii_lowercase();
+            if name == "sha256sums.txt" || name == "checksums.txt" || name == "sha256sum.txt" {
+                a.get("browser_download_url")?.as_str()
+            } else {
+                None
+            }
+        });
+        if let Some(checksum_url) = checksum_url {
+            if let Ok(resp) = client.get(checksum_url).send().await {
+                if let Ok(text) = resp.text().await {
+                    for line in text.lines() {
+                        let Some((hash, name)) = line.split_once("  ") else { continue };
+                        let name = name.trim().trim_start_matches('*');
+                        if name == asset_name && hash.len() == 64 {
+                            sha256 = Some(hash.to_ascii_lowercase());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(Some(UpdateInfo {
+        version: tag.trim_start_matches(['v', 'V']).to_string(),
+        notes,
+        url: url.to_string(),
+        sha256,
+    }))
+}

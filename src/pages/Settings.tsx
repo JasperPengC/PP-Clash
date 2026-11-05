@@ -5,6 +5,8 @@ import { IconDownload, IconFolder, IconLog, IconPalette, IconSliders } from '../
 import { formatTime } from '../core/format';
 import { useApp, type ThemeMode } from '../store/app';
 import { api, DATA_DIR, isTauri } from '../core/api';
+import { isWindows } from '../core/platform';
+import { APP_VERSION, UPDATE_REPO } from '../core/update';
 
 function Section({
   title,
@@ -83,15 +85,10 @@ export function SettingsPage() {
   const [ghDraft, setGhDraft] = useState(settings.githubProxy);
   const [diagBusy, setDiagBusy] = useState(false);
   const notify = useApp((s) => s.notify);
-  const [feedDraft, setFeedDraft] = useState(settings.updateFeedUrl);
 
   useEffect(() => {
     setGhDraft(settings.githubProxy);
   }, [settings.githubProxy]);
-
-  useEffect(() => {
-    setFeedDraft(settings.updateFeedUrl);
-  }, [settings.updateFeedUrl]);
 
   const isCustomProxy =
     settings.githubProxy !== '' &&
@@ -169,17 +166,6 @@ export function SettingsPage() {
                 }
               />
               <Row
-                label="托盘实时网速"
-                hint="显示上传 / 下载"
-                control={
-                  <Toggle
-                    on={settings.traySpeed}
-                    onChange={(v) => updateSettings({ traySpeed: v })}
-                    label="托盘实时网速"
-                  />
-                }
-              />
-              <Row
                 label="开机自启"
                 hint="登录后启动"
                 control={
@@ -190,15 +176,28 @@ export function SettingsPage() {
                   />
                 }
               />
+              {!isWindows && (
+                <Row
+                  label="关闭窗口后隐藏 Dock 图标"
+                  hint={settings.closeToTray ? '菜单栏保持常驻' : '先开启关窗到托盘'}
+                  control={
+                    <Toggle
+                      on={settings.hideDockOnClose}
+                      disabled={!settings.closeToTray}
+                      onChange={(v) => updateSettings({ hideDockOnClose: v })}
+                      label="关闭窗口后隐藏 Dock 图标"
+                    />
+                  }
+                />
+              )}
               <Row
-                label="关闭窗口后隐藏 Dock 图标"
-                hint={settings.closeToTray ? '菜单栏保持常驻' : '先开启关窗到托盘'}
+                label="托盘实时网速"
+                hint="显示上传 / 下载"
                 control={
                   <Toggle
-                    on={settings.hideDockOnClose}
-                    disabled={!settings.closeToTray}
-                    onChange={(v) => updateSettings({ hideDockOnClose: v })}
-                    label="关闭窗口后隐藏 Dock 图标"
+                    on={settings.traySpeed}
+                    onChange={(v) => updateSettings({ traySpeed: v })}
+                    label="托盘实时网速"
                   />
                 }
               />
@@ -211,6 +210,23 @@ export function SettingsPage() {
                     onChange={(v) => updateSettings({ closeToTray: v })}
                     label="关窗最小化到托盘"
                   />
+                }
+              />
+              <Row
+                label="版本"
+                hint="当前安装版本"
+                control={
+                  <div className="row" style={{ gap: 8 }}>
+                    <span className="version-text">v{APP_VERSION}</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={checkingUpdate}
+                      onClick={() => void checkUpdate(false)}
+                    >
+                      {checkingUpdate ? '检查中…' : updateInfo ? `新版本 ${updateInfo.version}` : '检查更新'}
+                    </button>
+                  </div>
                 }
               />
             </Section>
@@ -340,31 +356,22 @@ export function SettingsPage() {
 
             <Section
               title="应用更新"
-              desc="只检查并提示，不自动下载"
+              desc="只检查 GitHub Releases，不自动安装"
               icon={<IconDownload size={15} />}
             >
               <Row
+                label="当前版本"
+                hint={`v${APP_VERSION}`}
+                control={<span className="version-text">v{APP_VERSION}</span>}
+              />
+              <Row
                 label="更新源"
-                hint="返回 { version, url, sha256, notes } 的 JSON；sha256 必填；留空关闭"
-                control={
-                  <input
-                    className="input input-mono"
-                    style={{ width: 220 }}
-                    value={feedDraft}
-                    onChange={(e) => setFeedDraft(e.target.value)}
-                    onBlur={() => {
-                      const v = feedDraft.trim();
-                      if (v !== settings.updateFeedUrl) updateSettings({ updateFeedUrl: v });
-                    }}
-                    placeholder="https://example.com/ppclash.json"
-                    spellCheck={false}
-                    aria-label="应用更新源"
-                  />
-                }
+                hint="内置 GitHub Releases；发布使用 dmg / NSIS"
+                control={<span className="card-hint input-mono">{UPDATE_REPO}</span>}
               />
               <Row
                 label="启动时检查"
-                hint="只在配置了更新源时生效"
+                hint="静默检查，发现新版本才提示"
                 control={
                   <Toggle
                     on={settings.updateCheckOnLaunch}
@@ -378,15 +385,15 @@ export function SettingsPage() {
                 hint={
                   updateInfo
                     ? `发现新版本 ${updateInfo.version}`
-                    : settings.updateFeedUrl.trim()
-                      ? '手动检查一次'
-                      : '先填写更新源'
+                    : checkingUpdate
+                      ? '正在检查 GitHub Releases'
+                      : '手动检查一次'
                 }
                 control={
                   <button
                     type="button"
                     className="btn btn-sm"
-                    disabled={checkingUpdate || !settings.updateFeedUrl.trim()}
+                    disabled={checkingUpdate}
                     onClick={() => void checkUpdate(false)}
                   >
                     {checkingUpdate ? '检查中…' : '检查'}
@@ -433,7 +440,7 @@ export function SettingsPage() {
           </div>
 
           <div className="settings-about">
-            PP Clash 0.1.0 · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
+            PP Clash v{APP_VERSION} · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
           </div>
         </div>
       </div>

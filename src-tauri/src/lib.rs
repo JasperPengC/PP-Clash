@@ -111,6 +111,7 @@ pub fn run() {
             leakcheck::leak_check_ip,
             leakcheck::leak_check_dns,
             update::check_app_update,
+            update::check_github_update,
             update::download_app_update,
             update::open_downloaded_update,
         ])

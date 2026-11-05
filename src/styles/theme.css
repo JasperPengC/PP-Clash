@@ -6364,3 +6364,464 @@ body.tray-panel-window #root {
   flex-direction: row;
   flex-wrap: wrap;
 }
+
+/* 资源页：标签页 + 可筛选提供者列表 */
+.resources-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.resource-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  align-self: flex-start;
+}
+
+.resource-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.resource-tab:hover {
+  color: var(--text);
+}
+
+.resource-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
+}
+
+.resource-tab-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: 9px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.resource-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
+.resource-search input {
+  width: 120px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.resource-empty {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.resource-provider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 74px 64px 88px 62px;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.resource-provider:last-child {
+  border-bottom: 0;
+}
+
+.resource-provider .resource-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-provider .resource-meta,
+.resource-provider .resource-time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.resource-provider .btn {
+  justify-self: end;
+}
+
+.resource-update-all {
+  margin-top: 12px;
+}
+
+.version-text {
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-version {
+  margin-top: auto;
+  padding: 12px 18px 10px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* 内核页：版本概览 + 双列设置，参考桌面工具的分组节奏 */
+.kernel-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 18px;
+}
+
+.kernel-summary-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.kernel-summary-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  color: var(--text-2);
+}
+
+.kernel-summary-text {
+  min-width: 0;
+}
+
+.kernel-summary-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.kernel-summary-sub {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kernel-summary-metrics {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex: none;
+}
+
+.kernel-summary-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kernel-summary-metrics span {
+  color: var(--text-3);
+  font-size: 9px;
+}
+
+.kernel-summary-metrics strong {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.kernel-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.kernel-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.kernel-grid .card {
+  min-width: 0;
+}
+
+.kernel-network {
+  width: 100%;
+}
+
+@media (max-width: 980px) {
+  .kernel-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kernel-summary {
+    flex-wrap: wrap;
+  }
+
+  .kernel-summary-actions {
+    margin-left: auto;
+  }
+}
+
+/* 概览统一字号/固定信息槽，避免数据长短导致卡片抖动 */
+.dash {
+  --ov-label: 10px;
+  --ov-meta: 11px;
+  --ov-body: 12px;
+}
+
+.dash > .card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dash .stat-number {
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash .stat-meta {
+  min-height: 14px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash .hero-uptime {
+  min-width: 56px;
+  text-align: center;
+}
+
+.dash .hero-node-delay {
+  min-width: 48px;
+  text-align: right;
+}
+
+.dash .hero-meta-value {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash .hero-country-inline {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash .hero-session {
+  font-variant-numeric: tabular-nums;
+}
+
+.dash .service-name {
+  font-size: var(--ov-label);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash .service-latency {
+  min-width: 44px;
+  text-align: right;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dash .group-node {
+  min-height: 34px;
+}
+
+.dash .group-node-name {
+  min-width: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash .group-node-delay {
+  min-width: 46px;
+  text-align: right;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash .protection-tile {
+  min-width: 0;
+}
+
+.dash .protection-name {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+}
+
+.dash .protection-state {
+  min-width: 0;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash .service-title,
+.dash .group-title,
+.dash .protection-title {
+  font-size: 13px;
+}
+
+.dash .service-sub,
+.dash .protection-sub {
+  font-size: 9.5px;
+}
+
+/* 参考 Clash Party：内核设置采用单列设置卡，避免两列高度不一致留下空白 */
+.kernel-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 概览主卡：恢复三列摘要，只做统一字号/固定列宽/基线对齐 */
+.hero-stats {
+  display: grid !important;
+  grid-template-columns: 0.85fr 1.4fr 1.2fr;
+  align-items: start;
+  gap: 20px;
+  margin-top: 15px;
+  padding: 0;
+  border: 0;
+}
+
+.hero-metric {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.hero-metric .hero-stat-label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.hero-metric-value {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hero-metric-value small {
+  margin-left: 2px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-weight: 500;
+}
+
+.hero-egress-line {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hero-egress {
+  display: block;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-country-inline {
+  flex: none;
+  color: var(--text-3);
+  font-size: 9.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.hero-session {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hero-session .hero-up {
+  color: var(--up);
+}
+
+.hero-session .hero-down {
+  color: var(--down);
+}
+
+/* 上一轮遗留的 meta 行不再使用 */
+.hero-meta,
+.hero-meta-item,
+.hero-meta-label,
+.hero-meta-value,
+.hero-meta-end {
+  display: none !important;
+}
+
+.hero-metric {
+  display: block !important;
+}
+
+.hero-egress-line {
+  display: flex !important;
+}

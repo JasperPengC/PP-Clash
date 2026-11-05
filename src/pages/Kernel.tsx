@@ -10,14 +10,16 @@ function Section({
   desc,
   icon,
   children,
+  className = '',
 }: {
   title: string;
   desc?: string;
   icon?: ReactNode;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="card">
+    <section className={`card ${className}`.trim()}>
       <div className="section-head">
         {icon && <span className="icon-tile">{icon}</span>}
         <div className="section-head-text">
@@ -263,16 +265,46 @@ export function KernelPage() {
             {info?.running ? '运行中' : '未运行'}
           </div>
         </div>
-        <div className="page-actions">
-          <button type="button" className="btn" disabled={!running} onClick={() => void restart()}>
-            <IconRefresh size={13} />
-            重启内核
-          </button>
-        </div>
       </header>
 
       <div className="page-scroll">
         <div className="page-inner kernel-page">
+          <section className="card kernel-summary">
+            <div className="kernel-summary-main">
+              <span className="kernel-summary-icon"><IconChip size={18} /></span>
+              <div className="kernel-summary-text">
+                <div className="kernel-summary-title">
+                  mihomo {shortVersion(info?.version ?? info?.bundledVersion ?? undefined)}
+                </div>
+                <div className="kernel-summary-sub">
+                  {info?.running ? '运行中' : '未运行'}
+                  {info?.pid ? ` · PID ${info.pid}` : ''}
+                  {info?.binary ? ` · ${info.binary}` : ''}
+                </div>
+              </div>
+            </div>
+            <div className="kernel-summary-metrics">
+              <div>
+                <span>内存</span>
+                <strong>{info?.rssKb ? `${(info.rssKb / 1024).toFixed(0)} MB` : '—'}</strong>
+              </div>
+              <div>
+                <span>内置版本</span>
+                <strong>{shortVersion(info?.bundledVersion)}</strong>
+              </div>
+            </div>
+            <div className="kernel-summary-actions">
+              <button type="button" className="btn" disabled={!running} onClick={() => void restart()}>
+                <IconRefresh size={13} />重启
+              </button>
+              <button type="button" className="btn btn-primary" disabled={downloading} onClick={() => void downloadLatest()}>
+                {downloading ? <Spinner small /> : null}
+                {downloading ? '下载中…' : '下载最新'}
+              </button>
+            </div>
+          </section>
+
+          <div className="kernel-grid">
           <Section
             title="版本管理"
             desc="内置与已下载版本"
@@ -293,42 +325,9 @@ export function KernelPage() {
                 />
               }
             />
-            <Row
-              label="下载最新版"
-              hint="使用设置里的下载代理"
-              control={
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={downloading}
-                  onClick={() => void downloadLatest()}
-                >
-                  {downloading ? <Spinner small /> : null}
-                  {downloading ? '下载中…' : '下载最新版'}
-                </button>
-              }
-            />
           </Section>
 
-          <Section title="内核状态" desc="" icon={<IconChip size={15} />}>
-            <div className="kernel-stats">
-              <div className="kernel-stat">
-                <span className="kernel-stat-label">版本</span>
-                <span className="kernel-stat-value">
-                  {shortVersion(info?.version ?? info?.bundledVersion ?? undefined)}
-                </span>
-              </div>
-              <div className="kernel-stat">
-                <span className="kernel-stat-label">内存</span>
-                <span className="kernel-stat-value">
-                  {info?.rssKb ? `${(info.rssKb / 1024).toFixed(0)} MB` : '—'}
-                </span>
-              </div>
-              <div className="kernel-stat">
-                <span className="kernel-stat-label">状态</span>
-                <span className="kernel-stat-value">{info?.running ? '运行中' : '未运行'}</span>
-              </div>
-            </div>
+          <Section title="运行位置" desc="内核路径与数据目录" icon={<IconFolder size={15} />}>
             <Row
               label="自定义内核路径"
               hint="留空使用内置"
@@ -417,7 +416,32 @@ export function KernelPage() {
             />
           </Section>
 
+
           <Section
+            title="内置资源"
+            desc="内核与 Geo 数据"
+            icon={<IconGlobe size={15} />}
+          >
+            <Row
+              label="内置内核版本"
+              hint=""
+              control={<span className="card-hint">{shortVersion(info?.bundledVersion)}</span>}
+            />
+            <Row
+              label="重新解压"
+              hint="重新解压内置内核与 Geo"
+              control={
+                <button type="button" className="btn" disabled={reinstalling} onClick={() => void reinstall()}>
+                  {reinstalling ? <Spinner small /> : null}
+                  重新解压
+                </button>
+              }
+            />
+          </Section>
+          </div>
+
+          <Section
+            className="kernel-network"
             title="网络"
             desc={running ? '改端口重启内核' : '端口、出站模式与局域网'}
             icon={<IconGlobe size={15} />}
@@ -565,27 +589,7 @@ export function KernelPage() {
             />
           </Section>
 
-          <Section
-            title="内置资源"
-            desc="内核与 Geo 数据"
-            icon={<IconGlobe size={15} />}
-          >
-            <Row
-              label="内置内核版本"
-              hint=""
-              control={<span className="card-hint">{shortVersion(info?.bundledVersion)}</span>}
-            />
-            <Row
-              label="重新解压"
-              hint="重新解压内置内核与 Geo"
-              control={
-                <button type="button" className="btn" disabled={reinstalling} onClick={() => void reinstall()}>
-                  {reinstalling ? <Spinner small /> : null}
-                  重新解压
-                </button>
-              }
-            />
-          </Section>
+
         </div>
       </div>
     </>

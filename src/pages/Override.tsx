@@ -20,6 +20,30 @@ config["log-level"] = "debug";
 return config;
 `;
 
+function validateOverride(file: OverrideFile): string | null {
+  const text = file.text.trim();
+  if (!text) return null;
+  if (file.mode === 'js') {
+    try {
+      // 只做语法检查，不执行脚本；真正执行仍在 Worker 沙箱里。
+      // eslint-disable-next-line no-new-func
+      new Function('config', `${text}\n;return config;`);
+      return null;
+    } catch (e) {
+      return `JS 语法错误：${(e as Error).message}`;
+    }
+  }
+  try {
+    const parsed = yaml.load(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return 'YAML 顶层需要是一个对象（键值对）';
+    }
+    return null;
+  } catch (e) {
+    return `YAML 语法错误：${(e as Error).message}`;
+  }
+}
+
 function newOverride(index: number): OverrideFile {
   return {
     id: `override-${Date.now()}-${index}`,
@@ -74,6 +98,16 @@ export function OverridePage() {
   };
 
   const apply = async (nextFiles: OverrideFile[], note: string) => {
+    for (const file of nextFiles) {
+      if (!file.enabled) continue;
+      const problem = validateOverride(file);
+      if (problem) {
+        setError(`${file.name}：${problem}`);
+        notify('error', `覆写「${file.name}」语法检查失败`);
+        return;
+      }
+    }
+    setError(null);
     updateSettings({ overrides: nextFiles });
     const st = useApp.getState();
     await st.applyConfig();
@@ -88,16 +122,17 @@ export function OverridePage() {
     if (!selected) return;
     const finalName = name.trim() || selected.name;
 
-    if (text.trim() && mode === 'yaml') {
-      try {
-        const parsed = yaml.load(text);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-          throw new Error('顶层需要是一个对象（键值对）');
-        }
-      } catch (e) {
-        setError((e as Error).message);
-        return;
-      }
+    const candidate: OverrideFile = {
+      ...selected,
+      name: finalName,
+      mode,
+      enabled,
+      text,
+    };
+    const problem = validateOverride(candidate);
+    if (problem) {
+      setError(problem);
+      return;
     }
 
     setError(null);

@@ -8,6 +8,7 @@ import { countRealNodes, isInfoNode, parseSubscriptionMeta, type TrafficInfo } f
 import { useTheme } from './theme';
 import { isWindows } from '../core/platform';
 import { logEvent } from '../core/logger';
+import { APP_VERSION, UPDATE_REPO } from '../core/update';
 
 export interface Profile {
   id: string;
@@ -445,11 +446,10 @@ export const useApp = create<AppStore>((set, get) => ({
   dataDir: '',
 
   checkUpdate: async (silent = false) => {
-    const url = get().settings.updateFeedUrl.trim();
-    if (!isTauri || !url || get().checkingUpdate) return;
+    if (!isTauri || get().checkingUpdate) return;
     set({ checkingUpdate: true });
     try {
-      const info = await api.checkAppUpdate(url, '0.1.0');
+      const info = await api.checkGithubUpdate(UPDATE_REPO, APP_VERSION);
       set({ updateInfo: info, checkingUpdate: false });
       if (!silent) {
         if (info) get().notify('info', `发现新版本 ${info.version}`);
@@ -722,7 +722,7 @@ export const useApp = create<AppStore>((set, get) => ({
       }
 
       await pushTray(get());
-      if (settings.updateCheckOnLaunch && settings.updateFeedUrl.trim()) {
+      if (settings.updateCheckOnLaunch) {
         window.setTimeout(() => void get().checkUpdate(true), 1200);
       }
     } catch (e) {

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useApp } from '../store/app';
+import { APP_VERSION } from '../core/update';
 import { BrandCat } from './BrandCat';
 import {
   IconActivity,
@@ -119,6 +120,7 @@ export function Sidebar({
       <nav className="sidebar-nav" aria-label="设置">
         {renderItem('settings')}
       </nav>
+      <div className="sidebar-version">v{APP_VERSION}</div>
     </aside>
   );
 }

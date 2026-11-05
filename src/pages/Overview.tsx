@@ -567,12 +567,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                       '未接管流量'
                     )}
                   </div>
-                  {connected && heroDelay != null && heroDelay > 0 && (
-                    <span className="hero-node-delay">
-                      {heroDelay}
-                      <small>ms</small>
-                    </span>
-                  )}
                 </div>
 
                 <div className="hero-group-text">
@@ -581,22 +575,37 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
               </div>
             </div>
 
-            <div className="hero-meta">
-              <div className="hero-meta-item">
-                <span className="hero-meta-label">出口</span>
-                <span className="hero-meta-value">
-                  {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
-                </span>
-                {connected && egressCountry && (
-                  <span className="hero-country-inline">· {egressCountry}</span>
-                )}
+            <div className="hero-stats">
+              <div className="hero-metric">
+                <div className="hero-stat-label">延迟</div>
+                <div className="hero-metric-value">
+                  {connected && heroDelay != null && heroDelay > 0 ? (
+                    <>
+                      {heroDelay}
+                      <small>ms</small>
+                    </>
+                  ) : (
+                    '—'
+                  )}
+                </div>
               </div>
-              <div className="hero-meta-item hero-meta-end">
-                <span className="hero-meta-label">本次</span>
-                <span className="hero-session">
+              <div className="hero-metric">
+                <div className="hero-stat-label">出口地址</div>
+                <div className="hero-egress-line">
+                  <span className="hero-metric-value hero-egress">
+                    {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
+                  </span>
+                  {connected && egressCountry && (
+                    <span className="hero-country-inline">{egressCountry}</span>
+                  )}
+                </div>
+              </div>
+              <div className="hero-metric">
+                <div className="hero-stat-label">本次会话</div>
+                <div className="hero-session">
                   <span className="hero-up">↑ {formatBytes(upTotal)}</span>
                   <span className="hero-down">↓ {formatBytes(downTotal)}</span>
-                </span>
+                </div>
               </div>
             </div>
 
