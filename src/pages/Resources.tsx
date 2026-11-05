@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { EmptyState, Pill, Spinner } from '../components/ui';
+import { EmptyState, Pill, Segmented, Spinner, Toggle } from '../components/ui';
 import {
   IconFolder,
   IconGlobe,
@@ -48,6 +48,30 @@ function providerTime(value?: string): string {
   const ms = new Date(value).getTime();
   return Number.isNaN(ms) ? '—' : formatTime(ms);
 }
+
+const GEO_FILE_KEY: Record<string, keyof typeof DEFAULT_GEO_URLS> = {
+  'geoip.dat': 'geoip',
+  'geosite.dat': 'geosite',
+  'geoip.metadb': 'mmdb',
+  'ASN.mmdb': 'asn',
+  'country.mmdb': 'country',
+};
+
+const DEFAULT_GEO_URLS = {
+  geoip: '',
+  geosite: '',
+  mmdb: '',
+  asn: '',
+  country: '',
+};
+
+const GEO_SOURCE_INFO: Array<{ key: keyof typeof DEFAULT_GEO_URLS; label: string; file: string }> = [
+  { key: 'geoip', label: 'GeoIP 数据库', file: 'geoip.dat' },
+  { key: 'geosite', label: 'GeoSite 数据库', file: 'geosite.dat' },
+  { key: 'mmdb', label: 'MMDB 数据库', file: 'geoip.metadb' },
+  { key: 'asn', label: 'ASN 数据库', file: 'ASN.mmdb' },
+  { key: 'country', label: 'Country 数据库', file: 'country.mmdb' },
+];
 
 type Tab = 'geo' | 'rules' | 'proxies';
 
@@ -125,6 +149,7 @@ export function ResourcesPage() {
   const connected = useApp((s) => s.kernelPhase === 'running');
   const notify = useApp((s) => s.notify);
   const settings = useApp((s) => s.settings);
+  const updateSettings = useApp((s) => s.updateSettings);
 
   const [files, setFiles] = useState<ResourceFile[]>([]);
   const [rules, setRules] = useState<Provider[]>([]);
@@ -134,6 +159,7 @@ export function ResourcesPage() {
   const [reinstallConfirm, setReinstallConfirm] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
   const [geoUpdating, setGeoUpdating] = useState<string | null>(null);
+  const [urlDrafts, setUrlDrafts] = useState(settings.geoUrls);
   const [tab, setTab] = useState<Tab>('geo');
   const [query, setQuery] = useState('');
 
@@ -229,7 +255,13 @@ export function ResourcesPage() {
         settings.githubProxy && settings.githubProxy !== 'auto'
           ? settings.githubProxy
           : undefined;
-      await api.downloadGeoResource(name, proxyUrl, mirrorPrefix);
+      const key = GEO_FILE_KEY[name];
+      const sourceUrl = key ? settings.geoUrls[key] : '';
+      if (!sourceUrl) {
+        notify('error', `${name} 没有配置在线源`);
+        return;
+      }
+      await api.downloadGeoResource(name, sourceUrl, proxyUrl, mirrorPrefix);
       await load();
       notify('success', `${name} 已更新，重启内核后生效`);
     } catch (e) {
@@ -311,7 +343,7 @@ export function ResourcesPage() {
                 <span className="icon-tile"><IconGlobe size={15} /></span>
                 <div className="section-head-text">
                   <div className="section-title">内置数据</div>
-                  <div className="section-desc">GeoIP / GeoSite / ASN · MetaCubeX 内置在线源</div>
+                  <div className="section-desc">内置源来自 MetaCubeX；在线更新会覆盖内置文件</div>
                 </div>
                 <div className="spacer" />
                 <button
@@ -330,9 +362,88 @@ export function ResourcesPage() {
                   onClick={() => void reinstall()}
                 >
                   {reinstalling ? <Spinner small /> : null}
-                  {reinstallConfirm ? '确认重新解压' : '重新解压'}
+                  {reinstallConfirm ? '确认恢复内置' : '恢复内置 Geo'}
                 </button>
               </div>
+              <div className="geo-source-list">
+                {GEO_SOURCE_INFO.map((item) => (
+                  <div className="geo-source-row" key={item.key}>
+                    <div className="geo-source-label">
+                      <span>{item.label}</span>
+                      <span className="geo-source-file">{item.file}</span>
+                    </div>
+                    <input
+                      className="input input-mono geo-source-input"
+                      value={urlDrafts[item.key]}
+                      onChange={(e) =>
+                        setUrlDrafts((prev) => ({ ...prev, [item.key]: e.target.value }))
+                      }
+                      onBlur={() => {
+                        const url = urlDrafts[item.key].trim();
+                        if (url === settings.geoUrls[item.key]) return;
+                        updateSettings({
+                          geoUrls: { ...settings.geoUrls, [item.key]: url },
+                        });
+                        notify('info', `${item.label} 源已保存，重启内核后生效`);
+                      }}
+                      spellCheck={false}
+                      aria-label={`${item.label} 在线源`}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="geo-options">
+                <div className="geo-option">
+                  <span>GeoData 模式</span>
+                  <Segmented
+                    ariaLabel="GeoData 模式"
+                    options={[
+                      { value: 'db', label: 'db' },
+                      { value: 'dat', label: 'dat' },
+                    ]}
+                    value={settings.geoDataMode}
+                    onChange={(v) => {
+                      updateSettings({ geoDataMode: v as 'db' | 'dat' });
+                      notify('info', 'GeoData 模式已保存，重启内核后生效');
+                    }}
+                  />
+                </div>
+                <div className="geo-option">
+                  <span>自动更新</span>
+                  <Toggle
+                    on={settings.geoAutoUpdate}
+                    onChange={(v) => {
+                      updateSettings({ geoAutoUpdate: v });
+                      notify('info', 'Geo 自动更新已保存');
+                    }}
+                    label="自动更新 Geo 数据"
+                  />
+                </div>
+                {settings.geoAutoUpdate && (
+                  <div className="geo-option">
+                    <span>更新间隔</span>
+                    <div className="geo-interval">
+                      <input
+                        className="input input-mono"
+                        type="number"
+                        min={1}
+                        max={720}
+                        value={settings.geoUpdateInterval}
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          if (Number.isInteger(n) && n >= 1 && n <= 720) {
+                            updateSettings({ geoUpdateInterval: n });
+                          }
+                        }}
+                        aria-label="Geo 更新间隔小时"
+                      />
+                      <span>小时</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {files.length === 0 ? (
                 <div className="resource-empty">{loading ? '读取中…' : '未找到数据文件'}</div>
               ) : (

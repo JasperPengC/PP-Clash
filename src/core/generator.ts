@@ -15,6 +15,16 @@ export interface RuntimeOptions {
   mixedPort: number;
   controllerPort: number;
   controllerSecret: string;
+  geoDataMode?: 'db' | 'dat';
+  geoAutoUpdate?: boolean;
+  geoUpdateInterval?: number;
+  geoUrls?: {
+    geoip?: string;
+    geosite?: string;
+    mmdb?: string;
+    asn?: string;
+    country?: string;
+  };
   tunEnabled: boolean;
   mode: 'rule' | 'global' | 'direct';
   /** 允许局域网连接；默认关闭。 */
@@ -182,6 +192,19 @@ export async function generateConfig(
     'log-level': 'warning',
     'external-controller': `127.0.0.1:${runtime.controllerPort}`,
     ...(runtime.controllerSecret ? { secret: runtime.controllerSecret } : {}),
+    'geodata-mode': runtime.geoDataMode === 'dat',
+    'geo-auto-update': runtime.geoAutoUpdate ?? false,
+    'geo-update-interval': runtime.geoUpdateInterval ?? 24,
+    ...(runtime.geoUrls
+      ? {
+          'geox-url': {
+            geoip: runtime.geoUrls.geoip,
+            geosite: runtime.geoUrls.geosite,
+            mmdb: runtime.geoUrls.mmdb,
+            asn: runtime.geoUrls.asn,
+          },
+        }
+      : {}),
 
     // 安全策略负责的子系统
     dns: buildDns(policy, runtime.dnsPort ?? 1053),

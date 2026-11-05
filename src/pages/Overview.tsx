@@ -464,6 +464,18 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     return () => window.clearTimeout(t);
   }, [connected, runLeakCheck, active]);
 
+  const egressCountryLabel = useMemo(() => {
+    if (!egressCountry) return null;
+    if (egressCountry.code) {
+      try {
+        return new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(egressCountry.code) ?? egressCountry.name;
+      } catch {
+        /* fall through */
+      }
+    }
+    return egressCountry.name;
+  }, [egressCountry]);
+
   const leakHasBad = leakRows.some((r) => r.status === 'bad');
   const leakHasWarn = leakRows.some((r) => r.status === 'warn');
 
@@ -515,6 +527,8 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     heroDelay == null ? 'idle' : heroDelay < 120 ? 'good' : heroDelay < 260 ? 'warn' : 'bad';
   const gaugeProgress =
     heroDelay == null ? 0 : Math.max(0.08, Math.min(1, 1 - heroDelay / 420));
+  const gaugeNumberSize =
+    heroDelay == null ? 18 : heroDelay >= 1000 ? 12 : heroDelay >= 100 ? 16 : 18;
 
   const onSelectNode = (name: string) => {
     if (!connected || !displayGroup) {
@@ -589,7 +603,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                     />
                   </svg>
                   <div className="hero-gauge-text">
-                    <strong>{heroDelay ?? '—'}</strong>
+                    <strong style={{ fontSize: gaugeNumberSize }}>{heroDelay ?? '—'}</strong>
                     <span>{heroDelay != null ? 'ms' : '延迟'}</span>
                   </div>
                 </div>
@@ -602,8 +616,8 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                 <span className="hero-exit-value">
                   {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
                 </span>
-                {connected && egressCountry && (
-                  <span className="hero-country-inline">· {egressCountry.name ?? egressCountry.code}</span>
+                {connected && egressCountryLabel && (
+                  <span className="hero-country-inline">· {egressCountryLabel}</span>
                 )}
               </div>
               <div className="hero-session">

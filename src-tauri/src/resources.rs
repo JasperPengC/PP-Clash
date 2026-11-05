@@ -525,6 +525,7 @@ const GEO_ONLINE: [(&str, &str); 5] = [
 #[tauri::command]
 pub async fn download_geo_resource(
     name: String,
+    url: String,
     proxy_url: Option<String>,
     mirror_prefix: Option<String>,
 ) -> Result<u64, String> {
@@ -532,7 +533,11 @@ pub async fn download_geo_resource(
         .iter()
         .find(|(file, _)| *file == name)
         .ok_or_else(|| format!("不支持的 Geo 文件：{name}"))?;
-    let mut url = allowed.1.to_string();
+    let _ = allowed;
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("Geo 下载地址必须是 http(s) 链接".to_string());
+    }
+    let mut url = url;
     if let Some(mirror) = mirror_prefix.as_deref().filter(|m| !m.trim().is_empty()) {
         url = format!("{}/{}", mirror.trim_end_matches('/'), url);
     }

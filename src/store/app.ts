@@ -99,6 +99,19 @@ export interface AppSettings {
   dnsPort: number;
   /** DNS 服务器：自动（安全策略）/ 预设 DoH / 自定义。 */
   dnsNameserver: DnsNameserverMode;
+  /** Geo 数据模式：db 使用 metadb，dat 使用旧 dat 文件。 */
+  geoDataMode: 'db' | 'dat';
+  /** 内核按 interval 自动更新 Geo 数据。 */
+  geoAutoUpdate: boolean;
+  geoUpdateInterval: number;
+  /** 内置在线 Geo 源；资源页可直接编辑。 */
+  geoUrls: {
+    geoip: string;
+    geosite: string;
+    mmdb: string;
+    asn: string;
+    country: string;
+  };
   dnsCustom: string;
   /** 嗅探：从握手提取域名。 */
   snifferEnabled: boolean;
@@ -153,6 +166,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dnsPort: 1053,
   dnsNameserver: 'auto',
   dnsCustom: '',
+  geoDataMode: 'db',
+  geoAutoUpdate: false,
+  geoUpdateInterval: 24,
+  geoUrls: {
+    geoip: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat',
+    geosite: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat',
+    mmdb: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb',
+    asn: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb',
+    country: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb',
+  },
   snifferEnabled: false,
   snifferOverrideDestination: false,
   autoUpdate: true,
@@ -387,6 +410,10 @@ const runtimeOf = (s: AppStore) => ({
   authPass: s.settings.authPass,
   dnsNameserver: s.settings.dnsNameserver,
   dnsCustom: s.settings.dnsCustom,
+  geoDataMode: s.settings.geoDataMode,
+  geoAutoUpdate: s.settings.geoAutoUpdate,
+  geoUpdateInterval: s.settings.geoUpdateInterval,
+  geoUrls: s.settings.geoUrls,
   snifferEnabled: s.settings.snifferEnabled,
   snifferOverrideDestination: s.settings.snifferOverrideDestination,
   customRules: s.settings.customRules,
@@ -580,6 +607,15 @@ export const useApp = create<AppStore>((set, get) => ({
         updateIntervalHours: p.updateIntervalHours ?? null,
       }));
 
+      settings.geoUrls = {
+        ...DEFAULT_SETTINGS.geoUrls,
+        ...(settings.geoUrls ?? {}),
+      };
+      if (!settings.geoUrls.geoip) settings.geoUrls.geoip = DEFAULT_SETTINGS.geoUrls.geoip;
+      if (!settings.geoUrls.geosite) settings.geoUrls.geosite = DEFAULT_SETTINGS.geoUrls.geosite;
+      if (!settings.geoUrls.mmdb) settings.geoUrls.mmdb = DEFAULT_SETTINGS.geoUrls.mmdb;
+      if (!settings.geoUrls.asn) settings.geoUrls.asn = DEFAULT_SETTINGS.geoUrls.asn;
+      if (!settings.geoUrls.country) settings.geoUrls.country = DEFAULT_SETTINGS.geoUrls.country;
       if (!settings.controllerSecret.trim()) {
         const bytes = new Uint8Array(18);
         crypto.getRandomValues(bytes);
@@ -992,6 +1028,10 @@ export const useApp = create<AppStore>((set, get) => ({
           authPass: settings.authPass,
           dnsNameserver: settings.dnsNameserver,
           dnsCustom: settings.dnsCustom,
+          geoDataMode: settings.geoDataMode,
+          geoAutoUpdate: settings.geoAutoUpdate,
+          geoUpdateInterval: settings.geoUpdateInterval,
+          geoUrls: settings.geoUrls,
           snifferEnabled: settings.snifferEnabled,
           snifferOverrideDestination: settings.snifferOverrideDestination,
         },
