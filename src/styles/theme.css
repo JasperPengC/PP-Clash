@@ -7914,3 +7914,13 @@ body.tray-panel-window .tp-root {
 .sidebar-brand .version-badge:hover::after {
   transform: translateX(-50%) translateY(0);
 }
+
+.ip-quality-heading {
+  width: 150px;
+}
+
+.ip-quality-sub.error {
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

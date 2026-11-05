@@ -79,6 +79,8 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     score: number;
   } | null>(null);
   const [ipQualityLoading, setIpQualityLoading] = useState(false);
+  const [ipQualityError, setIpQualityError] = useState<string | null>(null);
+  const [ipQualityAt, setIpQualityAt] = useState<number | null>(null);
   const [leakPhase, setLeakPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [leakRows, setLeakRows] = useState<
     Array<{ id: string; label: string; status: 'ok' | 'warn' | 'bad' | 'info'; text: string }>
@@ -346,14 +348,18 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const loadIpQuality = useCallback(async () => {
     if (!connected || !egress) {
       setIpQuality(null);
+      setIpQualityError(null);
+      setIpQualityAt(null);
       return;
     }
     setIpQualityLoading(true);
+    setIpQualityError(null);
     try {
       const q = await api.checkIpQuality(egress);
       setIpQuality(q);
-    } catch {
-      setIpQuality(null);
+      setIpQualityAt(Date.now());
+    } catch (e) {
+      setIpQualityError(e instanceof Error ? e.message : String(e));
     } finally {
       setIpQualityLoading(false);
     }
@@ -1056,7 +1062,15 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
               <span className="icon-tile ip-quality-icon"><IconActivity size={15} /></span>
               <div className="ip-quality-heading">
                 <div className="ip-quality-title">IP 质量</div>
-                <div className="ip-quality-sub">出口 IP 属性与风险</div>
+                <div className={`ip-quality-sub${ipQualityError ? ' error' : ''}`} title={ipQualityError ?? undefined}>
+                  {ipQualityLoading
+                    ? '检测中…'
+                    : ipQualityError
+                      ? '检测失败，点右侧重试'
+                      : ipQuality
+                        ? `${ipQuality.ip}${ipQualityAt ? ` · ${formatTime(ipQualityAt)}` : ''}`
+                        : '连接后检测'}
+                </div>
               </div>
               <div className="ip-quality-metrics">
                 <span className="ip-quality-metric">
