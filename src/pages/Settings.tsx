@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Segmented, Select, Spinner, Toggle } from '../components/ui';
+import { Segmented, Select, Toggle } from '../components/ui';
 import { IconDownload, IconFolder, IconLog, IconPalette, IconSliders } from '../components/icons';
 import { formatTime } from '../core/format';
 import { useApp, type ThemeMode } from '../store/app';
 import { api, DATA_DIR, isTauri } from '../core/api';
 import { isWindows } from '../core/platform';
 import { APP_VERSION, UPDATE_REPO } from '../core/update';
+import { VersionBadge } from '../components/VersionBadge';
 
 function Section({
   title,
@@ -215,24 +216,7 @@ export function SettingsPage() {
               <Row
                 label="版本"
                 hint="GitHub Releases · 点击检查更新"
-                control={
-                  <button
-                    type="button"
-                    className={`version-pill${updateInfo ? ' has-update' : ''}`}
-                    disabled={checkingUpdate}
-                    onClick={() => void checkUpdate(false)}
-                    title="点击检查更新"
-                  >
-                    {checkingUpdate ? (
-                      <Spinner small />
-                    ) : (
-                      <span>v{APP_VERSION}</span>
-                    )}
-                    <span className="version-pill-action">
-                      {updateInfo ? `发现 ${updateInfo.version}` : '检查更新'}
-                    </span>
-                  </button>
-                }
+                control={<VersionBadge />}
               />
             </Section>
 
@@ -445,13 +429,9 @@ export function SettingsPage() {
           </div>
 
           <div className="settings-about">
-            <button
-              type="button"
-              className="settings-about-link"
-              onClick={() => void checkUpdate(false)}
-            >
-              PP Clash v{APP_VERSION} · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
-            </button>
+            <div className="settings-about-line">
+              PP Clash <VersionBadge /> · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
+            </div>
           </div>
         </div>
       </div>

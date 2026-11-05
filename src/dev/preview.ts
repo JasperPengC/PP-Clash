@@ -124,8 +124,8 @@ export function applyPreviewIfRequested() {
       ? {
           kernelPhase: 'running' as const,
           connectedAt: Date.now() - 1000 * 60 * 42,
-          sysProxyEnabled: true,
-          tunEnabled: false,
+          sysProxyEnabled: false,
+          tunEnabled: true,
           groups: [
             {
               name: '🚀 节点选择',

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useApp } from '../store/app';
-import { APP_VERSION } from '../core/update';
+import { VersionBadge } from './VersionBadge';
 import { BrandCat } from './BrandCat';
 import {
   IconActivity,
@@ -120,14 +120,9 @@ export function Sidebar({
       <nav className="sidebar-nav" aria-label="设置">
         {renderItem('settings')}
       </nav>
-      <button
-        type="button"
-        className="sidebar-version"
-        onClick={() => window.dispatchEvent(new Event('ppclash:check-update'))}
-        title="检查更新"
-      >
-        v{APP_VERSION}
-      </button>
+      <div className="sidebar-version">
+        <VersionBadge />
+      </div>
     </aside>
   );
 }

@@ -293,7 +293,7 @@ function previewCall(cmd: string, args?: Record<string, unknown>): unknown {
     case 'tray_snapshot':
       return {
         running: true,
-        sysProxy: true,
+        sysProxy: false,
         tun: true,
         mode: 'rule',
         node: '🇯🇵 东京 01',

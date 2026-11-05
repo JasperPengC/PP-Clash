@@ -7780,3 +7780,119 @@ body.tray-panel-window .tp-root {
   max-width: 100%;
   margin: 0 auto;
 }
+
+/* 版本号：默认纯文本，悬浮变胶囊 + tooltip */
+.version-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 5px;
+  margin: 0 -5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.version-badge:hover {
+  background: var(--surface-2);
+  border-color: var(--border-soft);
+  color: var(--text-2);
+}
+
+.version-badge::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%) translateY(2px);
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 10;
+}
+
+.version-badge:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.version-badge.has-update {
+  color: var(--accent);
+}
+
+.version-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.sidebar-version {
+  padding: 6px 18px 10px;
+}
+
+.settings-about-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.sidebar-version .version-badge {
+  margin-left: 0;
+}
+
+/* 侧栏版本固定右下角；默认纯数字，悬浮才变胶囊 */
+.sidebar-version {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: auto;
+  padding: 8px 18px 10px;
+}
+
+/* 连接列表底部留一点余量，最后一行不贴边 */
+.conn-list {
+  padding-bottom: 6px;
+}
+
+/* 连接列表始终显示细滚动条，避免内容被截断却看不出还能滚 */
+.conn-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.conn-list::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+}
+
+.conn-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.conn-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
