@@ -97,6 +97,7 @@ export function Sidebar({
       <div className="sidebar-brand">
         <BrandCat size={30} className="brand-cat" />
         <span className="brand-name">PP Clash</span>
+        <VersionBadge className="brand-version" />
       </div>
 
       <div className="sidebar-label">导航</div>
@@ -120,9 +121,6 @@ export function Sidebar({
       <nav className="sidebar-nav" aria-label="设置">
         {renderItem('settings')}
       </nav>
-      <div className="sidebar-version">
-        <VersionBadge />
-      </div>
     </aside>
   );
 }

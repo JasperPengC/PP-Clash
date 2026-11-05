@@ -7896,3 +7896,21 @@ body.tray-panel-window .tp-root {
   border: 2px solid transparent;
   background-clip: padding-box;
 }
+
+/* 版本号跟在品牌名旁边 */
+.sidebar-brand .brand-version {
+  margin-left: -2px;
+  align-self: center;
+  margin-top: 2px;
+  font-size: 9px;
+}
+
+.sidebar-brand .version-badge::after {
+  top: calc(100% + 7px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.sidebar-brand .version-badge:hover::after {
+  transform: translateX(-50%) translateY(0);
+}
