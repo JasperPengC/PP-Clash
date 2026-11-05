@@ -214,7 +214,7 @@ export function SettingsPage() {
               />
               <Row
                 label="版本"
-                hint={`v${APP_VERSION} · GitHub Releases`}
+                hint="GitHub Releases · 点击检查更新"
                 control={
                   <button
                     type="button"
