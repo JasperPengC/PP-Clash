@@ -105,6 +105,7 @@ pub fn run() {
             services::probe_service_auto,
             services::lookup_ip_country,
             services::lookup_ip_country_auto,
+            tray::traffic_rates,
             tray::sync_tray,
             tray::set_tray_flags,
             tray::tray_snapshot,

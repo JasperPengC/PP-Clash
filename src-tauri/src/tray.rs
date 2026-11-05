@@ -400,6 +400,13 @@ async fn speed_rates(app: &AppHandle) -> Option<(f64, f64)> {
 
     let now = Instant::now();
     let mut guard = speed_state().lock().ok()?;
+    if let Some((_, _, last_at)) = *guard {
+        // 面板/托盘/菜单栏可能在同一秒内多次刷新，短时间重复采样会产生尖刺；
+        // 800ms 内复用上一份速率，保证三处显示一致。
+        if now.duration_since(last_at) < std::time::Duration::from_millis(800) {
+            return last_rates().lock().ok().map(|v| *v);
+        }
+    }
     let rates = if let Some((last_up, last_down, last_at)) = *guard {
         let dt = now.duration_since(last_at).as_secs_f64().max(0.2);
         (
@@ -541,6 +548,12 @@ pub async fn rebuild(app: &AppHandle) -> Result<(), String> {
 /// 1s 心跳：图标 / 速率。
 pub async fn tick(app: &AppHandle) -> Result<(), String> {
     update_indicator(app).await
+}
+
+/// 前端概览读取与托盘/面板完全相同的速率缓存。
+#[tauri::command]
+pub fn traffic_rates() -> Result<(f64, f64), String> {
+    last_rates().lock().map(|v| *v).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

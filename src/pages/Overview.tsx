@@ -167,7 +167,10 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
 
     const tick = async () => {
       try {
-        const c: any = await api.mihomo('GET', '/connections');
+        const [c, trayRates] = await Promise.all([
+          api.mihomo('GET', '/connections') as Promise<any>,
+          api.trafficRates().catch(() => null),
+        ]);
         // mihomo 的 /connections 用 uploadTotal / downloadTotal，兼容旧字段名
         const u = c?.uploadTotal ?? c?.uploadTraffic ?? 0;
         const d = c?.downloadTotal ?? c?.downloadTraffic ?? 0;
@@ -175,8 +178,11 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
         if (prev.current) {
           const dt = (ts - prev.current.ts) / 1000;
           if (dt > 0) {
-            const ur = Math.max(0, (u - prev.current.up) / dt);
-            const dr = Math.max(0, (d - prev.current.down) / dt);
+            const ownUp = Math.max(0, (u - prev.current.up) / dt);
+            const ownDown = Math.max(0, (d - prev.current.down) / dt);
+            // 概览与菜单栏/小面板共用 Rust 缓存的速率，避免各自计时导致数字不一致。
+            const ur = trayRates && Number.isFinite(trayRates[0]) ? trayRates[0] : ownUp;
+            const dr = trayRates && Number.isFinite(trayRates[1]) ? trayRates[1] : ownDown;
             if (alive) {
               setUp((p) => [...p.slice(1), ur]);
               setDown((p) => [...p.slice(1), dr]);

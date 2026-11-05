@@ -336,6 +336,9 @@ export const api = {
   /** Windows: 以管理员身份重启应用；其它平台直接重启。 */
   restartAsAdmin: () => call<void>('restart_as_admin'),
 
+  /** 读取托盘/菜单栏同一份实时速率缓存。 */
+  trafficRates: () => call<[number, number]>('traffic_rates'),
+
   /** 追加一条前端诊断日志。 */
   appendDiagnosticLog: (level: string, message: string) =>
     call<void>('append_diagnostic_log', { level, message }),
