@@ -7091,3 +7091,144 @@ body.tray-panel-window #root {
   min-width: 0;
   text-align: left;
 }
+
+/* 概览主卡：紧凑两行 + 底部单行摘要，消除空白 */
+.hero-card {
+  padding: 16px 20px 15px;
+}
+
+.hero-top {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  padding-right: 84px;
+}
+
+.hero-main {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.hero-mode-tag {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.hero-status-row {
+  gap: 7px;
+}
+
+.hero-node-row {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 0;
+  margin-top: 9px;
+}
+
+.hero-node-row .hero-node {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.hero-group-inline {
+  flex: none;
+  max-width: 150px;
+  color: var(--text-3);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-group-inline::before {
+  content: '·';
+  margin-right: 7px;
+  color: var(--text-3);
+}
+
+.hero-inline-stats {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 15px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+.hero-inline-stats .hero-metric {
+  display: inline-flex !important;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.hero-inline-stats .hero-metric-label {
+  flex: none;
+  margin: 0;
+  font-size: 9.5px;
+}
+
+.hero-inline-stats .hero-metric-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hero-inline-stats .hero-metric-exit {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-inline-stats .hero-egress {
+  display: inline-block;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-inline-stats .hero-session {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 停用上一版仪表/三列/底部结构 */
+.hero-side,
+.hero-gauge,
+.hero-bottom,
+.hero-stats {
+  display: none !important;
+}
+
+.hero-inline-stats .hero-session {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.hero-inline-stats .hero-session .hero-metric-label {
+  margin-right: 1px;
+}
+
+.hero-inline-stats .hero-session span {
+  display: inline;
+  width: auto;
+  text-align: left;
+  white-space: nowrap;
+}

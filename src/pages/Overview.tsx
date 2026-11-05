@@ -510,10 +510,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const selectedNodeDelay = displayGroup?.nodes.find((n) => n.name === groupNow)?.delay;
   const heroDelay =
     connected && latency != null && latency > 0 ? latency : selectedNodeDelay ?? null;
-  const heroQuality =
-    heroDelay == null ? 'idle' : heroDelay < 120 ? 'good' : heroDelay < 260 ? 'warn' : 'bad';
-  const gaugeProgress =
-    heroDelay == null ? 0 : Math.max(0.08, Math.min(1, 1 - heroDelay / 420));
 
   const onSelectNode = (name: string) => {
     if (!connected || !displayGroup) {
@@ -549,6 +545,11 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
           {/* 连接主卡 */}
           <section className={`card hero-card span-6${connected ? ' on' : ' disconnected'}`}>
             <div className="hero-top">
+              <div className="hero-mode-tag">
+                <Pill tone={connected && (tunEnabled || sysProxyEnabled) ? 'accent' : 'muted'}>
+                  {takeoverLabel}
+                </Pill>
+              </div>
               <div className="hero-main">
                 <div className="hero-status-row">
                   <span className={`status-dot${connected ? ' on' : failed ? ' warn' : ''}`} />
@@ -566,50 +567,38 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                       '未接管流量'
                     )}
                   </div>
+                  {connected && displayGroup?.name && (
+                    <span className="hero-group-inline">{displayGroup.name}</span>
+                  )}
                 </div>
 
-                <div className="hero-group-text">
-                  {connected ? displayGroup?.name ?? '未分组' : desc}
-                </div>
-              </div>
-              <div className="hero-side">
-                <Pill tone={connected && (tunEnabled || sysProxyEnabled) ? 'accent' : 'muted'}>
-                  {takeoverLabel}
-                </Pill>
-                {connected && <div className={`hero-gauge ${heroQuality}`}>
-                  <svg viewBox="0 0 64 64" aria-hidden="true">
-                    <circle className="hero-gauge-track" cx="32" cy="32" r="26" />
-                    <circle
-                      className="hero-gauge-value"
-                      cx="32"
-                      cy="32"
-                      r="26"
-                      pathLength="100"
-                      strokeDasharray={`${(gaugeProgress * 100).toFixed(0)} 100`}
-                    />
-                  </svg>
-                  <div className="hero-gauge-text">
-                    <strong>{heroDelay ?? '—'}</strong>
-                    <span>{heroDelay != null ? 'ms' : '延迟'}</span>
-                  </div>
-                </div>}
+                {!connected && <div className="hero-sub">{desc}</div>}
               </div>
             </div>
 
-            <div className="hero-bottom">
-              <div className="hero-exit">
-                <span className="hero-bottom-label">出口</span>
-                <span className="hero-exit-value">
+            <div className="hero-inline-stats">
+              <span className="hero-metric">
+                <span className="hero-metric-label">延迟</span>
+                <span className="hero-metric-value">
+                  {connected && heroDelay != null && heroDelay > 0 ? (
+                    <>{heroDelay}<small>ms</small></>
+                  ) : '—'}
+                </span>
+              </span>
+              <span className="hero-metric hero-metric-exit">
+                <span className="hero-metric-label">出口</span>
+                <span className="hero-metric-value hero-egress">
                   {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
                 </span>
                 {connected && egressCountry && (
                   <span className="hero-country-inline">· {egressCountry}</span>
                 )}
-              </div>
-              <div className="hero-session">
+              </span>
+              <span className="hero-session">
+                <span className="hero-metric-label">本次</span>
                 <span className="hero-up">↑ {formatBytes(upTotal)}</span>
                 <span className="hero-down">↓ {formatBytes(downTotal)}</span>
-              </div>
+              </span>
             </div>
 
             {!activeProfile && (
