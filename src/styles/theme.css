@@ -7232,3 +7232,166 @@ body.tray-panel-window #root {
   text-align: left;
   white-space: nowrap;
 }
+
+/* 方案 2：大节点身份 + 延迟仪表，不要代理模式 tag */
+.hero-card {
+  padding: 18px 20px 16px;
+}
+
+.hero-top {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 16px;
+  padding-right: 0;
+}
+
+.hero-main {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.hero-gauge {
+  display: block !important;
+  position: relative;
+  flex: none;
+  width: 66px;
+  height: 66px;
+  margin-left: auto;
+}
+
+.hero-gauge svg {
+  position: absolute;
+  inset: 0;
+  width: 66px;
+  height: 66px;
+  transform: rotate(-90deg);
+}
+
+.hero-gauge-track,
+.hero-gauge-value {
+  fill: none;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+}
+
+.hero-gauge-track {
+  stroke: var(--border-soft);
+}
+
+.hero-gauge-value {
+  stroke: var(--success);
+}
+
+.hero-gauge.warn .hero-gauge-value {
+  stroke: var(--warning);
+}
+
+.hero-gauge.bad .hero-gauge-value {
+  stroke: var(--danger);
+}
+
+.hero-gauge.idle .hero-gauge-value {
+  stroke: var(--text-3);
+}
+
+.hero-gauge-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-gauge-text strong {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.hero-gauge-text span {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 8px;
+}
+
+.hero-node-row {
+  margin-top: 9px;
+}
+
+.hero-node-row .hero-node {
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.hero-group-text {
+  margin-left: 0;
+  margin-top: 3px;
+  font-size: 10.5px;
+}
+
+.hero-bottom {
+  display: flex !important;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.hero-exit {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hero-bottom-label {
+  color: var(--text-3);
+  font-size: 9.5px;
+}
+
+.hero-exit-value {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero-country-inline {
+  color: var(--text-3);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.hero-bottom .hero-session {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hero-inline-stats,
+.hero-inline-stats .hero-metric,
+.hero-side,
+.hero-stats,
+.hero-mode-tag {
+  display: none !important;
+}
+
+.hero-bottom .hero-session {
+  flex-direction: row;
+  align-items: baseline;
+}
