@@ -249,6 +249,13 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
+  // 侧栏版本号/关于入口点击检查更新
+  useEffect(() => {
+    const handle = () => void useApp.getState().checkUpdate(false);
+    window.addEventListener('ppclash:check-update', handle);
+    return () => window.removeEventListener('ppclash:check-update', handle);
+  }, []);
+
   // 内核心跳：mihomo 可能自己退出（配置/端口/数据问题），
   // 前端不能一直显示「已连接」，否则用户会以为代理在跑但实际全网不通。
   useEffect(() => {

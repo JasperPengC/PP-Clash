@@ -120,7 +120,14 @@ export function Sidebar({
       <nav className="sidebar-nav" aria-label="设置">
         {renderItem('settings')}
       </nav>
-      <div className="sidebar-version">v{APP_VERSION}</div>
+      <button
+        type="button"
+        className="sidebar-version"
+        onClick={() => window.dispatchEvent(new Event('ppclash:check-update'))}
+        title="检查更新"
+      >
+        v{APP_VERSION}
+      </button>
     </aside>
   );
 }

@@ -7692,3 +7692,84 @@ body.tray-panel-window #root {
   height: 140px;
   min-height: 140px;
 }
+
+/* IP 质量：用信号曲线图标区别于普通数据/网络图标 */
+.ip-quality-icon {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+/* 实时流量与当前分组严格同高 */
+.chart-card,
+.group-card {
+  height: 140px;
+  min-height: 140px;
+}
+
+.chart-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card .chart {
+  flex: 1;
+  height: auto;
+  min-height: 58px;
+}
+
+.sidebar-version {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-3);
+}
+
+.sidebar-version:hover {
+  color: var(--text-2);
+}
+
+.version-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.version-pill:hover {
+  border-color: var(--accent);
+}
+
+.version-pill.has-update {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.version-pill-action {
+  color: var(--text-3);
+  font-size: 9px;
+}
+
+.version-pill.has-update .version-pill-action {
+  color: var(--accent);
+}
+
+.settings-about-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-about-link:hover {
+  color: var(--text-2);
+}

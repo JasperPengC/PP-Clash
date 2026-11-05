@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Segmented, Select, Toggle } from '../components/ui';
+import { Segmented, Select, Spinner, Toggle } from '../components/ui';
 import { IconDownload, IconFolder, IconLog, IconPalette, IconSliders } from '../components/icons';
 import { formatTime } from '../core/format';
 import { useApp, type ThemeMode } from '../store/app';
@@ -214,19 +214,24 @@ export function SettingsPage() {
               />
               <Row
                 label="版本"
-                hint="当前安装版本"
+                hint={`v${APP_VERSION} · GitHub Releases`}
                 control={
-                  <div className="row" style={{ gap: 8 }}>
-                    <span className="version-text">v{APP_VERSION}</span>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={checkingUpdate}
-                      onClick={() => void checkUpdate(false)}
-                    >
-                      {checkingUpdate ? '检查中…' : updateInfo ? `新版本 ${updateInfo.version}` : '检查更新'}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className={`version-pill${updateInfo ? ' has-update' : ''}`}
+                    disabled={checkingUpdate}
+                    onClick={() => void checkUpdate(false)}
+                    title="点击检查更新"
+                  >
+                    {checkingUpdate ? (
+                      <Spinner small />
+                    ) : (
+                      <span>v{APP_VERSION}</span>
+                    )}
+                    <span className="version-pill-action">
+                      {updateInfo ? `发现 ${updateInfo.version}` : '检查更新'}
+                    </span>
+                  </button>
                 }
               />
             </Section>
@@ -440,7 +445,13 @@ export function SettingsPage() {
           </div>
 
           <div className="settings-about">
-            PP Clash v{APP_VERSION} · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
+            <button
+              type="button"
+              className="settings-about-link"
+              onClick={() => void checkUpdate(false)}
+            >
+              PP Clash v{APP_VERSION} · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
+            </button>
           </div>
         </div>
       </div>

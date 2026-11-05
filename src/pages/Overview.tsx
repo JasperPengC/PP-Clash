@@ -3,6 +3,7 @@ import { NodeName } from '../components/NodeName';
 import { MiniSparkline, RouteTrafficChart } from '../components/visuals';
 import { navigate, Pill, Segmented, Select, Spinner, Toggle } from '../components/ui';
 import {
+  IconActivity,
   IconBolt,
   IconCheck,
   IconChevronRight,
@@ -1052,7 +1053,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
           {/* IP 质量 */}
           <section className="card ip-quality-card span-12">
             <div className="ip-quality-inner">
-              <span className="icon-tile"><IconGlobe size={15} /></span>
+              <span className="icon-tile ip-quality-icon"><IconActivity size={15} /></span>
               <div className="ip-quality-heading">
                 <div className="ip-quality-title">IP 质量</div>
                 <div className="ip-quality-sub">出口 IP 属性与风险</div>
