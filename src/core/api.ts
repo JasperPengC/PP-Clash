@@ -346,6 +346,24 @@ export const api = {
   /** 导出脱敏诊断包，返回 zip 路径。 */
   exportDiagnostics: () => call<string>('export_diagnostics'),
 
+  /** 查询出口 IP 的类型 / 风险 / ASN / 地区。 */
+  checkIpQuality: (ip: string) =>
+    call<{
+      ip: string;
+      country: string | null;
+      region: string | null;
+      city: string | null;
+      isp: string | null;
+      org: string | null;
+      asn: string | null;
+      hosting: boolean;
+      proxy: boolean;
+      mobile: boolean;
+      kind: string;
+      risk: string;
+      score: number;
+    }>('check_ip_quality_auto', { ip }),
+
   /** 查询出口 IP 的国家/地区。 */
   lookupIpCountry: (ip: string) =>
     call<{ country: string | null; country_code: string | null }>('lookup_ip_country_auto', {

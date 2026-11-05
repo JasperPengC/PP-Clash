@@ -100,6 +100,7 @@ pub fn run() {
             prefs::restart_as_admin,
             diagnostics::append_diagnostic_log,
             diagnostics::export_diagnostics,
+            services::check_ip_quality_auto,
             services::probe_services,
             services::probe_services_auto,
             services::probe_service_auto,

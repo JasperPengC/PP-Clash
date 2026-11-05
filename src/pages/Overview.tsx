@@ -65,6 +65,19 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const serviceProbeRunning = useRef(false);
   const [egressCountry, setEgressCountry] = useState<{ name: string | null; code: string | null } | null>(null);
   const [egressLoading, setEgressLoading] = useState(false);
+  const [ipQuality, setIpQuality] = useState<{
+    ip: string;
+    country: string | null;
+    region: string | null;
+    city: string | null;
+    isp: string | null;
+    org: string | null;
+    asn: string | null;
+    kind: string;
+    risk: string;
+    score: number;
+  } | null>(null);
+  const [ipQualityLoading, setIpQualityLoading] = useState(false);
   const [leakPhase, setLeakPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [leakRows, setLeakRows] = useState<
     Array<{ id: string; label: string; status: 'ok' | 'warn' | 'bad' | 'info'; text: string }>
@@ -327,6 +340,29 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       alive = false;
     };
   }, [connected, egress, mixedPort, active]);
+
+  // IP 质量：只使用公开元数据，基于出口 IP 查询类型/风险/ASN。
+  const loadIpQuality = useCallback(async () => {
+    if (!connected || !egress) {
+      setIpQuality(null);
+      return;
+    }
+    setIpQualityLoading(true);
+    try {
+      const q = await api.checkIpQuality(egress);
+      setIpQuality(q);
+    } catch {
+      setIpQuality(null);
+    } finally {
+      setIpQualityLoading(false);
+    }
+  }, [connected, egress]);
+
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setTimeout(() => void loadIpQuality(), 1200);
+    return () => window.clearTimeout(timer);
+  }, [active, loadIpQuality]);
 
   // 运行时长计时
   useEffect(() => {
@@ -1010,6 +1046,51 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          {/* IP 质量 */}
+          <section className="card ip-quality-card span-12">
+            <div className="ip-quality-inner">
+              <span className="icon-tile"><IconGlobe size={15} /></span>
+              <div className="ip-quality-heading">
+                <div className="ip-quality-title">IP 质量</div>
+                <div className="ip-quality-sub">出口 IP 属性与风险</div>
+              </div>
+              <div className="ip-quality-metrics">
+                <span className="ip-quality-metric">
+                  <span>类型</span>
+                  <strong>{ipQuality?.kind ?? '—'}</strong>
+                </span>
+                <span className="ip-quality-metric">
+                  <span>风险</span>
+                  <strong className={`ip-risk ${ipQuality?.risk === '高' ? 'bad' : ipQuality?.risk === '中' ? 'warn' : ''}`}>
+                    {ipQuality?.risk ?? '—'}
+                  </strong>
+                </span>
+                <span className="ip-quality-metric">
+                  <span>纯净度</span>
+                  <strong>{ipQuality ? `${ipQuality.score}/100` : '—'}</strong>
+                </span>
+                <span className="ip-quality-metric">
+                  <span>ASN</span>
+                  <strong>{ipQuality?.asn ?? '—'}</strong>
+                </span>
+                <span className="ip-quality-metric">
+                  <span>运营商</span>
+                  <strong>{ipQuality?.isp ?? ipQuality?.org ?? '—'}</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                title="重新检测 IP 质量"
+                aria-label="重新检测 IP 质量"
+                disabled={!connected || ipQualityLoading}
+                onClick={() => void loadIpQuality()}
+              >
+                {ipQualityLoading ? <Spinner small /> : <IconRefresh size={13} />}
+              </button>
             </div>
           </section>
 

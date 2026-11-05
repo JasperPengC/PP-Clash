@@ -195,3 +195,161 @@ async fn probe_with(proxy_port: Option<u16>) -> Result<Vec<ServiceProbe>, String
     ])
 }
 
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IpQuality {
+    pub ip: String,
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
+    pub isp: Option<String>,
+    pub org: Option<String>,
+    pub asn: Option<String>,
+    pub hosting: bool,
+    pub proxy: bool,
+    pub mobile: bool,
+    pub kind: String,
+    pub risk: String,
+    pub score: u8,
+}
+
+/// 出口 IP 质量：IP 类型 / 代理标记 / 机房标记 / ASN / 地区。
+///
+/// 只使用公开的 IP 元数据，不做密钥依赖的服务；风险等级是按 hosting/proxy/mobile
+/// 标记派生，不冒充黑名单或欺诈分。
+#[tauri::command]
+pub async fn check_ip_quality_auto(
+    app: tauri::AppHandle,
+    ip: String,
+) -> Result<IpQuality, String> {
+    let flags = app.state::<crate::prefs::AppFlags>();
+    let port = *flags.mixed_port.lock().unwrap();
+    let tun = *flags.tun_enabled.lock().unwrap();
+    lookup_ip_quality(ip, if tun { 0 } else { port }).await
+}
+
+pub async fn lookup_ip_quality(ip: String, mixed_port: u16) -> Result<IpQuality, String> {
+    if ip.is_empty()
+        || !ip
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() || c == '.' || c == ':')
+    {
+        return Err("IP 地址格式不正确".to_string());
+    }
+    let mut builder = reqwest::Client::builder()
+        .timeout(Duration::from_secs(6))
+        .user_agent("PPClash/1.0 ip quality");
+    builder = if mixed_port > 0 {
+        builder.proxy(
+            reqwest::Proxy::all(format!("http://127.0.0.1:{mixed_port}"))
+                .map_err(|e| format!("代理配置失败：{e}"))?,
+        )
+    } else {
+        builder.no_proxy()
+    };
+    let client = builder
+        .build()
+        .map_err(|e| format!("创建 IP 查询客户端失败：{e}"))?;
+    let url = format!(
+        "http://ip-api.com/json/{ip}?fields=status,country,regionName,city,isp,org,as,asname,proxy,hosting,mobile,query"
+    );
+    let mut out = IpQuality {
+        ip: ip.clone(),
+        country: None,
+        region: None,
+        city: None,
+        isp: None,
+        org: None,
+        asn: None,
+        hosting: false,
+        proxy: false,
+        mobile: false,
+        kind: "未知".to_string(),
+        risk: "未知".to_string(),
+        score: 0,
+    };
+    if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(text) = resp.text().await {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                if v.get("status").and_then(|x| x.as_str()) == Some("success") {
+                    out.country = v.get("country").and_then(|x| x.as_str()).map(str::to_string);
+                    out.region = v.get("regionName").and_then(|x| x.as_str()).map(str::to_string);
+                    out.city = v.get("city").and_then(|x| x.as_str()).map(str::to_string);
+                    out.isp = v.get("isp").and_then(|x| x.as_str()).map(str::to_string);
+                    out.org = v.get("org").and_then(|x| x.as_str()).map(str::to_string);
+                    out.asn = v
+                        .get("as")
+                        .or_else(|| v.get("asname"))
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                    out.hosting = v.get("hosting").and_then(|x| x.as_bool()).unwrap_or(false);
+                    out.proxy = v.get("proxy").and_then(|x| x.as_bool()).unwrap_or(false);
+                    out.mobile = v.get("mobile").and_then(|x| x.as_bool()).unwrap_or(false);
+                }
+            }
+        }
+    }
+    if out.country.is_none() {
+        // ip-api 失败时用 ipwho.is 补基础归属；没有 proxy/hosting 标记，风险保持未知。
+        if let Ok(resp) = client
+            .get(format!("https://ipwho.is/{ip}"))
+            .send()
+            .await
+        {
+            if let Ok(text) = resp.text().await {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                    out.country = v.get("country").and_then(|x| x.as_str()).map(str::to_string);
+                    out.region = v.get("region").and_then(|x| x.as_str()).map(str::to_string);
+                    out.city = v.get("city").and_then(|x| x.as_str()).map(str::to_string);
+                    out.asn = v
+                        .get("connection")
+                        .and_then(|c| c.get("asn"))
+                        .map(|x| format!("AS{}", x.as_u64().unwrap_or(0)));
+                    out.org = v
+                        .get("connection")
+                        .and_then(|c| c.get("org"))
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                    out.isp = v
+                        .get("connection")
+                        .and_then(|c| c.get("isp"))
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                }
+            }
+        }
+    }
+    out.kind = if out.proxy {
+        "代理出口".to_string()
+    } else if out.hosting {
+        "机房 IP".to_string()
+    } else if out.mobile {
+        "移动网络".to_string()
+    } else if out.country.is_some() {
+        "住宅网络".to_string()
+    } else {
+        "未知".to_string()
+    };
+    out.risk = if out.proxy {
+        "高".to_string()
+    } else if out.hosting {
+        "中".to_string()
+    } else if out.country.is_some() {
+        "低".to_string()
+    } else {
+        "未知".to_string()
+    };
+    let mut score: i32 = 100;
+    if out.hosting {
+        score -= 28;
+    }
+    if out.proxy {
+        score -= 40;
+    }
+    if out.mobile {
+        score -= 5;
+    }
+    out.score = score.clamp(0, 100) as u8;
+    Ok(out)
+}

@@ -7589,3 +7589,106 @@ body.tray-panel-window #root {
   color: var(--text-3);
   font-size: 9.5px;
 }
+
+/* 概览：IP 质量摘要卡，放在服务连通下面 */
+.ip-quality-card {
+  padding: 10px 14px;
+}
+
+.ip-quality-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ip-quality-heading {
+  flex: none;
+  width: 86px;
+}
+
+.ip-quality-title {
+  font-size: 12px;
+  font-weight: 620;
+  color: var(--text);
+}
+
+.ip-quality-sub {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.ip-quality-metrics {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ip-quality-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ip-quality-metric > span {
+  color: var(--text-3);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.ip-quality-metric strong {
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ip-quality-metric .ip-risk.warn {
+  color: var(--warning);
+}
+
+.ip-quality-metric .ip-risk.bad {
+  color: var(--danger);
+}
+
+.ip-quality-card .icon-tile {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.ip-quality-card .icon-tile svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 为 IP 质量卡留出默认高度：当前分组略收 */
+.group-card {
+  height: 148px;
+  min-height: 148px;
+}
+
+.ip-quality-card .icon-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.ip-quality-card .icon-tile svg {
+  width: 17px;
+  height: 17px;
+}
+
+.group-card {
+  height: 140px;
+  min-height: 140px;
+}
