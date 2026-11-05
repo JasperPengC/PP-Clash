@@ -40,11 +40,11 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)
-          mv "$DMG" "src-tauri/target/release/bundle/dmg/PPClash-${VERSION}-macos-universal.dmg"
+          mv "$DMG" "src-tauri/target/release/bundle/dmg/PP_Clash-${VERSION}-macos-universal.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: src-tauri/target/release/bundle/dmg/PPClash-*-macos-universal.dmg
+          path: src-tauri/target/release/bundle/dmg/PP_Clash-*-macos-universal.dmg
 
   windows:
     runs-on: windows-latest
@@ -75,11 +75,11 @@ jobs:
         run: |
           $version = node -p "require('./package.json').version"
           $file = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
-          Rename-Item $file.FullName "PPClash-$version-windows-amd64-setup.exe"
+          Rename-Item $file.FullName "PP_Clash-$version-windows-amd64-setup.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
-          path: src-tauri/target/release/bundle/nsis/PPClash-*-windows-amd64-setup.exe
+          path: src-tauri/target/release/bundle/nsis/PP_Clash-*-windows-amd64-setup.exe
 
   publish:
     needs: [macos, windows]
