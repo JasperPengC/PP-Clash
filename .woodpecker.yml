@@ -11,8 +11,9 @@ steps:
       - ./scripts/ci.sh scan
 
   rust:
-    image: node:20
+    image: rust:1.77
     commands:
+      - apt-get update -qq && apt-get install -y -qq nodejs npm python3
       - ./scripts/ci.sh install
       - ./scripts/ci.sh build-web
       - ./scripts/ci.sh check-rust
