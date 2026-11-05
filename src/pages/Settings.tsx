@@ -1,0 +1,460 @@
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Segmented, Select, Spinner, Toggle } from '../components/ui';
+import { IconDownload, IconFolder, IconLog, IconPalette, IconSliders } from '../components/icons';
+import { formatTime } from '../core/format';
+import { useApp, type ThemeMode } from '../store/app';
+import { api, DATA_DIR, isTauri } from '../core/api';
+import { isWindows } from '../core/platform';
+import { APP_VERSION, UPDATE_REPO } from '../core/update';
+
+function Section({
+  title,
+  desc,
+  icon,
+  children,
+}: {
+  title: string;
+  desc?: string;
+  icon?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="card">
+      <div className="section-head">
+        {icon && <span className="icon-tile">{icon}</span>}
+        <div className="section-head-text">
+          <div className="section-title">{title}</div>
+          {desc && <div className="section-desc">{desc}</div>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Row({
+  label,
+  hint,
+  control,
+}: {
+  label: string;
+  hint?: string;
+  control: ReactNode;
+}) {
+  return (
+    <div className="field-row">
+      <div className="field-main">
+        <div className="field-label">{label}</div>
+        {hint && <div className="field-hint">{hint}</div>}
+      </div>
+      <div className="field-control">{control}</div>
+    </div>
+  );
+}
+
+const GH_PRESETS = [
+  { value: 'auto', label: '自动（优先代理）' },
+  { value: '', label: '直连' },
+  { value: 'https://gh-proxy.org/', label: 'gh-proxy.org' },
+  { value: 'https://ghfast.top/', label: 'ghfast.top' },
+  { value: 'https://down.clashparty.org/', label: 'down.clashparty.org' },
+  { value: 'https://download.mihomo.party/', label: 'download.mihomo.party' },
+];
+
+const THEMES: Array<{ value: ThemeMode; label: string }> = [
+  { value: 'system', label: '跟随系统' },
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+];
+
+/** 数字端口：回车 / 失焦才提交，避免边打字边重启内核。 */
+export function SettingsPage() {
+  const settings = useApp((s) => s.settings);
+  const updateSettings = useApp((s) => s.updateSettings);
+  const checkingUpdate = useApp((s) => s.checkingUpdate);
+  const checkUpdate = useApp((s) => s.checkUpdate);
+  const updateInfo = useApp((s) => s.updateInfo);
+
+  const [restoreConfirm, setRestoreConfirm] = useState<string | null>(null);
+  const [backups, setBackups] = useState<
+    Array<{ name: string; size: number; mtimeMs: number }>
+  >([]);
+
+  const [proxyCustomOpen, setProxyCustomOpen] = useState(false);
+  const [ghDraft, setGhDraft] = useState(settings.githubProxy);
+  const [diagBusy, setDiagBusy] = useState(false);
+  const notify = useApp((s) => s.notify);
+
+  useEffect(() => {
+    setGhDraft(settings.githubProxy);
+  }, [settings.githubProxy]);
+
+  const isCustomProxy =
+    settings.githubProxy !== '' &&
+    settings.githubProxy !== 'auto' &&
+    !GH_PRESETS.some((p) => p.value === settings.githubProxy);
+  const proxySelectValue = isCustomProxy ? '__custom__' : settings.githubProxy;
+  const proxyOptions = [
+    ...GH_PRESETS,
+    { value: '__custom__', label: isCustomProxy ? '自定义' : '自定义…' },
+  ];
+
+  const loadBackups = async () => {
+    if (!isTauri) return;
+    try {
+      setBackups(await api.listBackups(DATA_DIR));
+    } catch {
+      /* 忽略 */
+    }
+  };
+
+  useEffect(() => {
+    void loadBackups();
+  }, []);
+
+  const doBackup = async () => {
+    const notify = useApp.getState().notify;
+    try {
+      const path = await api.backupAppState(DATA_DIR);
+      notify('success', `已备份到 ${path.split(/[\\/]/).pop()}`);
+      await loadBackups();
+    } catch (e) {
+      notify('error', `备份失败：${String(e)}`);
+    }
+  };
+
+  const doRestore = async (name: string) => {
+    const notify = useApp.getState().notify;
+    if (restoreConfirm !== name) {
+      setRestoreConfirm(name);
+      window.setTimeout(() => setRestoreConfirm((cur) => (cur === name ? null : cur)), 3000);
+      return;
+    }
+    setRestoreConfirm(null);
+    try {
+      await api.restoreBackup(DATA_DIR, name);
+      notify('success', '已恢复，正在重新加载');
+      window.setTimeout(() => location.reload(), 900);
+    } catch (e) {
+      notify('error', `恢复失败：${String(e)}`);
+    }
+  };
+
+  return (
+    <>
+      <header className="page-head">
+        <div className="page-heading">
+          <h1 className="page-title">设置</h1>
+          <div className="page-sub">通用、下载、备份、进阶</div>
+        </div>
+      </header>
+
+      <div className="page-scroll">
+        <div className="page-inner">
+          <div className="settings-page">
+            <Section title="通用" desc="主题、启动与关窗行为" icon={<IconPalette size={15} />}>
+              <Row
+                label="主题"
+                hint="跟随系统"
+                control={
+                  <Segmented
+                    options={THEMES}
+                    value={settings.theme}
+                    onChange={(v) => updateSettings({ theme: v })}
+                  />
+                }
+              />
+              <Row
+                label="开机自启"
+                hint="登录后启动"
+                control={
+                  <Toggle
+                    on={settings.launchAtLogin}
+                    onChange={(v) => updateSettings({ launchAtLogin: v })}
+                    label="开机自启"
+                  />
+                }
+              />
+              {!isWindows && (
+                <Row
+                  label="关闭窗口后隐藏 Dock 图标"
+                  hint={settings.closeToTray ? '菜单栏保持常驻' : '先开启关窗到托盘'}
+                  control={
+                    <Toggle
+                      on={settings.hideDockOnClose}
+                      disabled={!settings.closeToTray}
+                      onChange={(v) => updateSettings({ hideDockOnClose: v })}
+                      label="关闭窗口后隐藏 Dock 图标"
+                    />
+                  }
+                />
+              )}
+              <Row
+                label="托盘实时网速"
+                hint="显示上传 / 下载"
+                control={
+                  <Toggle
+                    on={settings.traySpeed}
+                    onChange={(v) => updateSettings({ traySpeed: v })}
+                    label="托盘实时网速"
+                  />
+                }
+              />
+              <Row
+                label="关窗最小化到托盘"
+                hint="关闭则退出；托盘仍可操作"
+                control={
+                  <Toggle
+                    on={settings.closeToTray}
+                    onChange={(v) => updateSettings({ closeToTray: v })}
+                    label="关窗最小化到托盘"
+                  />
+                }
+              />
+              <Row
+                label="版本"
+                hint="GitHub Releases · 点击检查更新"
+                control={
+                  <button
+                    type="button"
+                    className={`version-pill${updateInfo ? ' has-update' : ''}`}
+                    disabled={checkingUpdate}
+                    onClick={() => void checkUpdate(false)}
+                    title="点击检查更新"
+                  >
+                    {checkingUpdate ? (
+                      <Spinner small />
+                    ) : (
+                      <span>v{APP_VERSION}</span>
+                    )}
+                    <span className="version-pill-action">
+                      {updateInfo ? `发现 ${updateInfo.version}` : '检查更新'}
+                    </span>
+                  </button>
+                }
+              />
+            </Section>
+
+            <Section
+              title="下载"
+              desc="下载内核 / 资源时使用的 GitHub 代理"
+              icon={<IconDownload size={15} />}
+            >
+              <Row
+                label="GitHub 下载代理"
+                hint="自动优先本机代理"
+                control={
+                  <Select
+                    value={proxySelectValue}
+                    options={proxyOptions}
+                    ariaLabel="GitHub 下载代理"
+                    onChange={(v) => {
+                      if (v === '__custom__') {
+                        setProxyCustomOpen(true);
+                        return;
+                      }
+                      setProxyCustomOpen(false);
+                      updateSettings({ githubProxy: v });
+                    }}
+                  />
+                }
+              />
+              {(isCustomProxy || proxyCustomOpen) && (
+                <Row
+                  label="自定义前缀"
+                  hint="下载链接前缀"
+                  control={
+                    <input
+                      className="input"
+                      style={{ width: 240 }}
+                      value={ghDraft}
+                      onChange={(e) => setGhDraft(e.target.value)}
+                      placeholder="https://your-proxy.example/"
+                      spellCheck={false}
+                      aria-label="自定义 GitHub 下载代理"
+                      onBlur={() => {
+                        const v = ghDraft.trim();
+                        if (v !== settings.githubProxy) updateSettings({ githubProxy: v });
+                      }}
+                    />
+                  }
+                />
+              )}
+            </Section>
+
+            <Section title="备份与恢复" desc="保存/恢复订阅与设置" icon={<IconFolder size={15} />}>
+              <Row
+                label="立即备份"
+                hint="保存到 backups/"
+                control={
+                  <button type="button" className="btn" onClick={() => void doBackup()}>
+                    备份
+                  </button>
+                }
+              />
+              {backups.slice(0, 3).map((b) => (
+                <Row
+                  key={b.name}
+                  label={formatTime(b.mtimeMs)}
+                  hint={`${(b.size / 1024).toFixed(1)} KB`}
+                  control={
+                    <button
+                      type="button"
+                      className={`btn btn-sm${restoreConfirm === b.name ? ' btn-danger' : ''}`}
+                      onClick={() => void doRestore(b.name)}
+                    >
+                      {restoreConfirm === b.name ? '确认恢复' : '恢复'}
+                    </button>
+                  }
+                />
+              ))}
+              {backups.length === 0 && (
+                <Row label="暂无备份" control={null} />
+              )}
+            </Section>
+
+            <Section
+              title="诊断与日志"
+              desc="用于反馈问题和长时间运行观测"
+              icon={<IconLog size={15} />}
+            >
+              <Row
+                label="导出诊断包"
+                hint="包含 app.log / kernel.log / 脱敏状态 / 端口与系统信息，不包含订阅正文和密码"
+                control={
+                  <div className="row" style={{ gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={diagBusy}
+                      onClick={() => {
+                        setDiagBusy(true);
+                        void api
+                          .exportDiagnostics()
+                          .then(async (path) => {
+                            notify('success', `诊断包已导出：${path}`);
+                            await api.openDataDir('PPClash/diagnostics').catch(() => null);
+                          })
+                          .catch((e) => notify('error', `导出诊断包失败：${String(e)}`))
+                          .finally(() => setDiagBusy(false));
+                      }}
+                    >
+                      {diagBusy ? '导出中…' : '导出诊断包'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => void api.openDataDir('PPClash').catch(() => null)}
+                    >
+                      打开数据目录
+                    </button>
+                  </div>
+                }
+              />
+              <Row
+                label="日志内容"
+                hint="前端错误、内核启停和运行日志；诊断包会做敏感字段脱敏"
+                control={<span className="card-hint">app.log / kernel.log</span>}
+              />
+            </Section>
+
+            <Section
+              title="应用更新"
+              desc="只检查 GitHub Releases，不自动安装"
+              icon={<IconDownload size={15} />}
+            >
+              <Row
+                label="当前版本"
+                hint={`v${APP_VERSION}`}
+                control={<span className="version-text">v{APP_VERSION}</span>}
+              />
+              <Row
+                label="更新源"
+                hint="内置 GitHub Releases；发布使用 dmg / NSIS"
+                control={<span className="card-hint input-mono">{UPDATE_REPO}</span>}
+              />
+              <Row
+                label="启动时检查"
+                hint="静默检查，发现新版本才提示"
+                control={
+                  <Toggle
+                    on={settings.updateCheckOnLaunch}
+                    onChange={(v) => updateSettings({ updateCheckOnLaunch: v })}
+                    label="启动时检查更新"
+                  />
+                }
+              />
+              <Row
+                label="检查更新"
+                hint={
+                  updateInfo
+                    ? `发现新版本 ${updateInfo.version}`
+                    : checkingUpdate
+                      ? '正在检查 GitHub Releases'
+                      : '手动检查一次'
+                }
+                control={
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={checkingUpdate}
+                    onClick={() => void checkUpdate(false)}
+                  >
+                    {checkingUpdate ? '检查中…' : '检查'}
+                  </button>
+                }
+              />
+            </Section>
+
+            <Section title="进阶" desc="默认隐藏" icon={<IconSliders size={15} />}>
+              <Row
+                label="显示进阶功能"
+                hint="显示高级页面"
+                control={
+                  <Toggle
+                    on={settings.advancedMode}
+                    onChange={(v) => updateSettings({ advancedMode: v })}
+                    label="显示进阶功能"
+                  />
+                }
+              />
+              <Row
+                label="节点不可用自动切换"
+                hint="探测当前节点，失败时切换到同组可用节点"
+                control={
+                  <Toggle
+                    on={settings.autoFailover}
+                    onChange={(v) => updateSettings({ autoFailover: v })}
+                    label="节点不可用自动切换"
+                  />
+                }
+              />
+              <Row
+                label="订阅自动更新"
+                hint="各订阅单独设置"
+                control={
+                  <Toggle
+                    on={settings.autoUpdate}
+                    onChange={(v) => updateSettings({ autoUpdate: v })}
+                    label="订阅自动更新"
+                  />
+                }
+              />
+            </Section>
+          </div>
+
+          <div className="settings-about">
+            <button
+              type="button"
+              className="settings-about-link"
+              onClick={() => void checkUpdate(false)}
+            >
+              PP Clash v{APP_VERSION} · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

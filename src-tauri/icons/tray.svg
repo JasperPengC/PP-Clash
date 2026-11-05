@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="192 186 640 640" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    托盘模板图标（macOS Template Image）：纯黑 + 透明，五官为镂空。
+    lib.rs 里 icon_as_template(true)，系统自动适配明暗菜单栏：
+    暗色菜单栏渲染白色、亮色菜单栏渲染黑色，无需应用自己检测主题。
+    viewBox 收紧到猫头内容（四周留 60/1024 光学边距），保证 22pt 下占位合理。
+  -->
+  <defs>
+    <mask id="holes">
+      <path d="M512 376 C540 376 566 380 588 390 C616 362 640 306 676 252 C688 246 700 252 704 268 C712 296 728 368 746 428 C758 472 772 516 772 572 C772 648 676 756 512 756 C348 756 252 648 252 572 C252 516 266 472 278 428 C296 368 312 296 320 268 C324 252 336 246 348 252 C384 306 408 362 436 390 C458 380 484 376 512 376 Z" fill="#fff"/>
+      <circle cx="413" cy="545" r="34" fill="#000"/>
+      <circle cx="611" cy="545" r="34" fill="#000"/>
+      <circle cx="424" cy="534" r="11" fill="#fff"/>
+      <circle cx="622" cy="534" r="11" fill="#fff"/>
+      <path d="M488 606 L536 606 L512 638 Z" fill="#000" stroke="#000" stroke-width="16" stroke-linejoin="round"/>
+      <g fill="none" stroke="#000" stroke-width="12" stroke-linecap="round">
+        <path d="M512 648 L512 660"/><path d="M482 660 A15 15 0 0 0 512 660"/><path d="M512 660 A15 15 0 0 0 542 660"/>
+      </g>
+      <g fill="none" stroke="#000" stroke-width="10" stroke-linecap="round">
+        <path d="M298 588 Q338 598 374 595"/><path d="M288 628 Q332 638 370 633"/><path d="M297 667 Q337 676 371 669"/>
+        <path d="M726 588 Q686 598 650 595"/><path d="M736 628 Q692 638 654 633"/><path d="M727 667 Q687 676 653 669"/>
+      </g>
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" fill="#000000" mask="url(#holes)"/>
+</svg>

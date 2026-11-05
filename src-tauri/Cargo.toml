@@ -1,0 +1,40 @@
+[package]
+name = "ppclash"
+version = "0.1.0"
+description = "防泄漏开箱即用的 Clash 客户端"
+license = "AGPL-3.0-only"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[lib]
+name = "ppclash_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "custom-protocol", "image-png", "macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "time", "sync", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tauri-plugin-dialog = "2"
+dirs = "5"
+zip = "2"
+sha2 = "0.10"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSStatusItem", "NSStatusBarButton"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Networking_WinInet", "Win32_System_Threading", "Win32_Security", "Win32_Graphics_Dwm", "Win32_UI_Controls"] }
