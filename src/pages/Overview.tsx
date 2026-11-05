@@ -466,7 +466,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
 
   const leakHasBad = leakRows.some((r) => r.status === 'bad');
   const leakHasWarn = leakRows.some((r) => r.status === 'warn');
-  const leakTone = leakPhase !== 'done' ? 'muted' : leakHasBad ? 'bad' : leakHasWarn ? 'warn' : 'ok';
 
   const quota = activeProfile?.userinfo ?? null;
   const quotaUsed = quota ? quota.upload + quota.download : 0;
@@ -997,29 +996,20 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
           {/* 泄露检查 */}
           <section className="card protection-card span-12">
             <div className="protection-head">
-              <span
-                className={`protection-lead-icon ${
-                  leakPhase !== 'done' ? '' : leakHasBad ? 'bad' : leakHasWarn ? 'warn' : 'ok'
-                }`}
-              >
+              <span className="protection-lead-icon">
                 <IconSecurity size={15} />
               </span>
               <div className="protection-heading">
                 <div className="protection-title">
                   泄露检查
-                  {leakPhase === 'done' && (
-                    <Pill tone={leakTone === 'ok' ? 'ok' : leakTone === 'bad' ? 'bad' : leakTone === 'warn' ? 'warn' : 'muted'}>
-                      {leakHasBad ? '有泄漏风险' : leakHasWarn ? '部分未通过' : '通过'}
-                    </Pill>
-                  )}
                 </div>
-                <div className={`protection-sub${sysProxyEnabled && !tunEnabled ? ' warn' : ''}`}>
+                <div className={`protection-sub${sysProxyEnabled && !tunEnabled ? ' warn' : leakPhase === 'done' && leakHasBad ? ' danger' : ''}`}>
                   {sysProxyEnabled && !tunEnabled
                     ? '系统代理不接管 UDP / WebRTC / DNS，建议开启 TUN'
                     : leakPhase === 'running'
                       ? '正在实测出口 / DNS / WebRTC…'
                       : leakPhase === 'done'
-                        ? '出口 IP · DNS 接管 · WebRTC'
+                        ? `出口 IP · DNS 接管 · WebRTC · ${leakHasBad ? '有泄漏风险' : leakHasWarn ? '部分未通过' : '通过'}`
                         : '接管后自动检测'}
                 </div>
               </div>

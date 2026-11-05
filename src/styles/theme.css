@@ -7399,3 +7399,46 @@ body.tray-panel-window #root {
 .hero-country-inline {
   display: inline !important;
 }
+
+/* 泄露检查：固定头部高度，图标/状态不随检测阶段改变布局 */
+.protection-head {
+  min-height: 30px;
+  align-items: center;
+}
+
+.protection-lead-icon {
+  width: 26px;
+  height: 26px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  transition: none;
+}
+
+.protection-title {
+  min-height: 16px;
+  line-height: 16px;
+}
+
+.protection-sub {
+  min-height: 12px;
+  line-height: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.protection-sub.danger {
+  color: var(--danger);
+}
+
+/* 资源在线更新操作 */
+.resource-file .resource-size {
+  min-width: 60px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.resource-file .resource-update {
+  flex: none;
+  min-width: 48px;
+}

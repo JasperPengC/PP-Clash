@@ -124,6 +124,7 @@ function ProviderList({
 export function ResourcesPage() {
   const connected = useApp((s) => s.kernelPhase === 'running');
   const notify = useApp((s) => s.notify);
+  const settings = useApp((s) => s.settings);
 
   const [files, setFiles] = useState<ResourceFile[]>([]);
   const [rules, setRules] = useState<Provider[]>([]);
@@ -132,6 +133,7 @@ export function ResourcesPage() {
   const [reinstalling, setReinstalling] = useState(false);
   const [reinstallConfirm, setReinstallConfirm] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [geoUpdating, setGeoUpdating] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('geo');
   const [query, setQuery] = useState('');
 
@@ -216,6 +218,36 @@ export function ResourcesPage() {
     }
   };
 
+  const updateGeo = async (name: string) => {
+    setGeoUpdating(name);
+    try {
+      const proxyUrl =
+        settings.githubProxy === 'auto' && connected
+          ? `http://127.0.0.1:${settings.mixedPort}`
+          : undefined;
+      const mirrorPrefix =
+        settings.githubProxy && settings.githubProxy !== 'auto'
+          ? settings.githubProxy
+          : undefined;
+      await api.downloadGeoResource(name, proxyUrl, mirrorPrefix);
+      await load();
+      notify('success', `${name} 已更新，重启内核后生效`);
+    } catch (e) {
+      notify('error', `更新 ${name} 失败：${String(e)}`);
+    } finally {
+      setGeoUpdating(null);
+    }
+  };
+
+  const updateAllGeo = async () => {
+    const targets = files.filter((f) => !!f.name);
+    for (const file of targets) {
+      // 顺序更新，避免并发下载占满带宽
+      // eslint-disable-next-line no-await-in-loop
+      await updateGeo(file.name);
+    }
+  };
+
   const ready = files.filter((f) => f.exists).length;
   const tabs: Array<{ value: Tab; label: string; count?: number }> = [
     { value: 'geo', label: '内置数据' },
@@ -279,9 +311,18 @@ export function ResourcesPage() {
                 <span className="icon-tile"><IconGlobe size={15} /></span>
                 <div className="section-head-text">
                   <div className="section-title">内置数据</div>
-                  <div className="section-desc">GeoIP / GeoSite / ASN，随内核释放</div>
+                  <div className="section-desc">GeoIP / GeoSite / ASN · MetaCubeX 内置在线源</div>
                 </div>
                 <div className="spacer" />
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={geoUpdating !== null || files.length === 0}
+                  onClick={() => void updateAllGeo()}
+                >
+                  {geoUpdating ? <Spinner small /> : <IconRefresh size={13} />}
+                  在线更新
+                </button>
                 <button
                   type="button"
                   className={`btn${reinstallConfirm ? ' danger' : ''}`}
@@ -306,6 +347,15 @@ export function ResourcesPage() {
                           <span className="resource-file-note">{f.name} · {info.note}</span>
                         </span>
                         <span className="resource-size">{formatSize(f.size)}</span>
+                        <button
+                          type="button"
+                          className="btn btn-sm resource-update"
+                          disabled={geoUpdating !== null}
+                          onClick={() => void updateGeo(f.name)}
+                        >
+                          {geoUpdating === f.name ? <Spinner small /> : null}
+                          更新
+                        </button>
                         <Pill tone={f.exists ? 'ok' : 'warn'}>{f.exists ? '就绪' : '缺失'}</Pill>
                       </div>
                     );

@@ -68,6 +68,7 @@ pub fn run() {
             resources::list_kernel_versions,
             resources::list_resource_files,
             resources::download_kernel_version,
+            resources::download_geo_resource,
             resources::system_helper_info,
             resources::install_system_helper,
             resources::uninstall_system_helper,

@@ -497,3 +497,73 @@ mod tests {
         assert!(text.contains(&version.version));
     }
 }
+
+const GEO_ONLINE: [(&str, &str); 5] = [
+    (
+        "geosite.dat",
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat",
+    ),
+    (
+        "geoip.dat",
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat",
+    ),
+    (
+        "geoip.metadb",
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb",
+    ),
+    (
+        "country.mmdb",
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb",
+    ),
+    (
+        "ASN.mmdb",
+        "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb",
+    ),
+];
+
+/// 直接从内置 MetaCubeX 在线源下载 Geo 数据，不走内核。
+#[tauri::command]
+pub async fn download_geo_resource(
+    name: String,
+    proxy_url: Option<String>,
+    mirror_prefix: Option<String>,
+) -> Result<u64, String> {
+    let allowed = GEO_ONLINE
+        .iter()
+        .find(|(file, _)| *file == name)
+        .ok_or_else(|| format!("不支持的 Geo 文件：{name}"))?;
+    let mut url = allowed.1.to_string();
+    if let Some(mirror) = mirror_prefix.as_deref().filter(|m| !m.trim().is_empty()) {
+        url = format!("{}/{}", mirror.trim_end_matches('/'), url);
+    }
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .user_agent("PPClash/0.1 geo");
+    if let Some(proxy) = proxy_url.as_deref().filter(|p| !p.trim().is_empty()) {
+        builder = builder
+            .proxy(reqwest::Proxy::all(proxy).map_err(|e| format!("代理配置失败：{e}"))?);
+    }
+    let client = builder
+        .build()
+        .map_err(|e| format!("创建下载客户端失败：{e}"))?;
+    let bytes = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("下载 {name} 失败：{e}"))?
+        .error_for_status()
+        .map_err(|e| format!("下载 {name} 失败：{e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("读取 {name} 失败：{e}"))?;
+    if bytes.len() < 100_000 {
+        return Err(format!("{name} 下载内容异常（文件过小）"));
+    }
+    let dir = data_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建数据目录失败：{e}"))?;
+    let dest = dir.join(&name);
+    let tmp = dir.join(format!(".{name}.download"));
+    std::fs::write(&tmp, &bytes).map_err(|e| format!("写入 {name} 失败：{e}"))?;
+    std::fs::rename(&tmp, &dest).map_err(|e| format!("替换 {name} 失败：{e}"))?;
+    Ok(bytes.len() as u64)
+}

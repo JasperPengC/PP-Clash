@@ -420,6 +420,10 @@ export const api = {
   downloadKernelVersion: (proxyUrl?: string, mirrorPrefix?: string) =>
     call<KernelVersionInfo>('download_kernel_version', { proxyUrl, mirrorPrefix }),
 
+  /** 从内置 MetaCubeX 在线源更新单个 Geo 文件。 */
+  downloadGeoResource: (name: string, proxyUrl?: string, mirrorPrefix?: string) =>
+    call<number>('download_geo_resource', { name, proxyUrl, mirrorPrefix }),
+
   /** 内核版本 / 内存 / 路径。 */
   kernelInfo: () => call<KernelInfo>('kernel_info'),
 
