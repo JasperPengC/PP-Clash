@@ -7442,3 +7442,47 @@ body.tray-panel-window #root {
   flex: none;
   min-width: 48px;
 }
+
+/* 卡片头部图标统一：图标盒略高于标题+副标题，服务/防护/统计卡一致 */
+.icon-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.icon-tile svg {
+  width: 17px;
+  height: 17px;
+}
+
+.service-lead-icon,
+.protection-lead-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.service-lead-icon svg,
+.protection-lead-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* 泄露检查图标固定使用品牌蓝，不随检测状态变灰/变色 */
+.protection-lead-icon,
+.protection-lead-icon.ok,
+.protection-lead-icon.warn,
+.protection-lead-icon.bad {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.service-logo {
+  width: 22px;
+  height: 22px;
+}
+
+.service-logo svg {
+  width: 13px;
+  height: 13px;
+}
