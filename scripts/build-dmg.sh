@@ -25,7 +25,7 @@ ln -s /Applications "$STAGE/PP Clash/Applications"
 
 OUT_DIR="src-tauri/target/release/bundle/dmg"
 mkdir -p "$OUT_DIR"
-OUT="$OUT_DIR/PP Clash_${VERSION}_${ARCH}.dmg"
+OUT="$OUT_DIR/PPClash-${VERSION}-macos-${ARCH}.dmg"
 rm -f "$OUT"
 echo "▸ 生成 DMG：$OUT"
 hdiutil create -volname "PP Clash" -srcfolder "$STAGE/PP Clash" -ov -format UDZO "$OUT"

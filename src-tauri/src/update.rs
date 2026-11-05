@@ -303,7 +303,7 @@ pub async fn check_github_update(
         // 兼容发布里附带的 SHA256SUMS.txt / checksums.txt
         let checksum_url = assets.iter().find_map(|a| {
             let name = a.get("name")?.as_str()?.to_ascii_lowercase();
-            if name == "sha256sums.txt" || name == "checksums.txt" || name == "sha256sum.txt" {
+            if name == "sha256sums" || name == "sha256sums.txt" || name == "checksums.txt" || name == "sha256sum.txt" {
                 a.get("browser_download_url")?.as_str()
             } else {
                 None
