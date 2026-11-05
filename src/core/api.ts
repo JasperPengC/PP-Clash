@@ -308,6 +308,9 @@ function previewCall(cmd: string, args?: Record<string, unknown>): unknown {
           { name: '🇭🇰 香港 01', delay: 36 },
           { name: '🇸🇬 新加坡 01', delay: 96 },
           { name: '🇺🇸 洛杉矶 01', delay: 168 },
+          { name: '🇨🇳 台北 01', delay: 52 },
+          { name: '🇰🇷 首尔 01', delay: 74 },
+          { name: '🇬🇧 伦敦 01', delay: 196 },
         ],
         profiles: [
           { id: 'preview-profile', name: 'Example Air' },
