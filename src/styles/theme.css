@@ -6873,3 +6873,76 @@ body.tray-panel-window #root {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/* 节点身份：用统一国旗徽标替代行内小旗，形成主卡的视觉锚点 */
+.hero-node-row {
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.hero-flag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+
+.hero-flag .fi {
+  width: 22px;
+  height: 16px;
+  border-radius: 3px;
+  background-size: cover;
+}
+
+.hero-flag-fallback {
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hero-node-row .hero-node {
+  flex: 1;
+  min-width: 0;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.hero-group-text {
+  margin-left: 44px;
+  margin-top: 2px;
+}
+
+.hero-flag .fi {
+  width: 26px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  background-size: cover;
+  background-position: center;
+}
+
+/* 回退国旗徽标，保留行内真实国旗 */
+.hero-flag {
+  display: none !important;
+}
+
+.hero-node-row {
+  align-items: baseline;
+  gap: 0;
+  margin-top: 7px;
+}
+
+.hero-node-row .hero-node {
+  font-size: 19px;
+}
+
+.hero-group-text {
+  margin-left: 0;
+}
