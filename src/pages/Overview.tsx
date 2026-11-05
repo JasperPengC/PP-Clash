@@ -63,7 +63,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   >({});
   const [servicesLoading, setServicesLoading] = useState(false);
   const serviceProbeRunning = useRef(false);
-  const [egressCountry, setEgressCountry] = useState<string | null>(null);
+  const [egressCountry, setEgressCountry] = useState<{ name: string | null; code: string | null } | null>(null);
   const [egressLoading, setEgressLoading] = useState(false);
   const [leakPhase, setLeakPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [leakRows, setLeakRows] = useState<
@@ -294,24 +294,33 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     };
   }, [connected, mixedPort, nodeName, active]);
 
-  // 出口 IP 归属地
+  // 出口 IP 归属地：多个 GeoIP 源由后端兜底，前端再重试两轮。
   useEffect(() => {
-    if (!active) return;
-    if (!connected || !egress) {
+    if (!active || !connected || !egress) {
       setEgressCountry(null);
       return;
     }
     let alive = true;
-    void api
-      .lookupIpCountry(egress)
-      .then((r) => {
-        if (alive) setEgressCountry(r.country);
-      })
-      .catch(() => undefined);
+    const load = async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const r = await api.lookupIpCountry(egress);
+          if (!alive) return;
+          if (r.country || r.country_code) {
+            setEgressCountry({ name: r.country, code: r.country_code });
+            return;
+          }
+        } catch {
+          /* next attempt */
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 700 * (attempt + 1)));
+      }
+    };
+    void load();
     return () => {
       alive = false;
     };
-  }, [connected, egress, mixedPort]);
+  }, [connected, egress, mixedPort, active]);
 
   // 运行时长计时
   useEffect(() => {
@@ -595,7 +604,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                   {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
                 </span>
                 {connected && egressCountry && (
-                  <span className="hero-country-inline">· {egressCountry}</span>
+                  <span className="hero-country-inline">· {egressCountry.name ?? egressCountry.code}</span>
                 )}
               </div>
               <div className="hero-session">

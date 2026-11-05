@@ -7395,3 +7395,7 @@ body.tray-panel-window #root {
   flex-direction: row;
   align-items: baseline;
 }
+
+.hero-country-inline {
+  display: inline !important;
+}

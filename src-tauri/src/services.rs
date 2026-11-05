@@ -53,22 +53,35 @@ pub async fn lookup_ip_country(ip: String, mixed_port: u16) -> Result<IpCountry,
     let client = builder
         .build()
         .map_err(|e| format!("查询客户端创建失败：{e}"))?;
-    let url = format!("https://ipwho.is/{ip}");
-    let Ok(resp) = client.get(url).send().await else {
-        return Ok(IpCountry { country: None, country_code: None });
-    };
-    let Ok(text) = resp.text().await else {
-        return Ok(IpCountry { country: None, country_code: None });
-    };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return Ok(IpCountry { country: None, country_code: None });
-    };
-    Ok(IpCountry {
-        country: v.get("country").and_then(|x| x.as_str()).map(str::to_string),
-        country_code: v
+    // 多个轻量 GeoIP 源依次兜底；单个服务被限流/被墙时不至于整块地区信息消失。
+    let providers = [
+        format!("https://ipwho.is/{ip}"),
+        format!("https://ipapi.co/{ip}/json/"),
+        format!("https://api.ip.sb/geoip/{ip}"),
+    ];
+    for url in providers {
+        let Ok(resp) = client.get(&url).send().await else { continue };
+        if !resp.status().is_success() {
+            continue;
+        }
+        let Ok(text) = resp.text().await else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let country = v
+            .get("country")
+            .or_else(|| v.get("country_name"))
+            .and_then(|x| x.as_str())
+            .map(str::to_string);
+        let code = v
             .get("country_code")
             .and_then(|x| x.as_str())
-            .map(str::to_string),
+            .map(str::to_string);
+        if country.is_some() || code.is_some() {
+            return Ok(IpCountry { country, country_code: code });
+        }
+    }
+    Ok(IpCountry {
+        country: None,
+        country_code: None,
     })
 }
 
