@@ -11,6 +11,15 @@ import {
   type SecurityPolicy,
 } from './security';
 
+/** GitHub 登录/API/资源域名。登录态对出口 IP 很敏感，切节点时保持固定出口。 */
+export const STABLE_EGRESS_GROUP = 'GitHub 固定出口';
+export const STABLE_EGRESS_DOMAINS = [
+  'github.com',
+  'githubusercontent.com',
+  'githubassets.com',
+  'githubapp.com',
+] as const;
+
 export interface RuntimeOptions {
   mixedPort: number;
   controllerPort: number;
@@ -48,6 +57,12 @@ export interface RuntimeOptions {
   customRules?: import('../store/app').CustomRule[];
   /** 当前实际使用的节点名；供 MATCH/当前节点与覆写占位符使用。 */
   currentNode?: string;
+  /** GitHub 等登录敏感站点固定出口，避免节点切换导致 IP 频繁变化。 */
+  stableEgress?: {
+    enabled: boolean;
+    node: string;
+    domains: readonly string[];
+  };
 }
 
 export interface RuleEditState {
@@ -175,6 +190,32 @@ export async function generateConfig(
 
   const guardRules = buildGuardRules(policy);
 
+  // 把 GitHub 域名固定到一个节点：主选择组怎么切都不影响 GitHub 的出口 IP。
+  const stable = runtime.stableEgress;
+  const proxyNames = new Set(
+    proxies.map((p) => String(asDict(p).name ?? '')).filter(Boolean)
+  );
+  const stableNode =
+    stable?.enabled && stable.node && proxyNames.has(stable.node)
+      ? stable.node
+      : '';
+  const stableGroupName = STABLE_EGRESS_GROUP;
+  const hasStableGroup = groups.some(
+    (g) => String(asDict(g).name ?? '') === stableGroupName
+  );
+  if (stableNode && !hasStableGroup) {
+    groups.push({
+      name: stableGroupName,
+      type: 'select',
+      proxies: [stableNode],
+    });
+  }
+  const stableRules = stableNode
+    ? (stable?.domains ?? STABLE_EGRESS_DOMAINS).map(
+        (domain) => `DOMAIN-SUFFIX,${domain},${stableGroupName}`
+      )
+    : [];
+
   let config: Dict = {
     // 安全策略负责的顶层字段
     ...buildTopLevel(policy),
@@ -216,8 +257,9 @@ export async function generateConfig(
     ...(groups.length ? { 'proxy-groups': groups } : {}),
     ...(Object.keys(providers).length ? { 'proxy-providers': providers } : {}),
 
-    // 防泄漏规则永远排在订阅规则前面
+    // 登录敏感站点的固定出口优先，其次才是防护与订阅规则
     rules: [
+      ...stableRules,
       ...guardRules,
       ...(runtime.customRules ?? [])
         .filter((r) => r.enabled)

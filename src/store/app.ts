@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api, DATA_DIR, isTauri, setMihomoBase, setMihomoSecret } from '../core/api';
-import { generateConfig, type ConfigStats, type RuleEditState } from '../core/generator';
+import { generateConfig, type ConfigStats, type RuleEditState, STABLE_EGRESS_DOMAINS } from '../core/generator';
 import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
 import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
@@ -126,6 +126,10 @@ export interface AppSettings {
   githubProxy: string;
   /** 自定义规则（插在防护规则之后、订阅规则之前）。 */
   customRules: CustomRule[];
+  /** GitHub 等登录敏感站点固定出口，避免切换节点导致出口 IP 频繁变化。 */
+  egressGuard: boolean;
+  /** 固定出口节点名；空字符串表示首次连接后自动取当前节点。 */
+  egressGuardNode: string;
   /** 应用更新 feed；留空关闭检查。 */
   updateFeedUrl: string;
   /** 启动时自动检查应用更新。 */
@@ -180,6 +184,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   snifferOverrideDestination: false,
   autoUpdate: true,
   autoFailover: true,
+  egressGuard: true,
+  egressGuardNode: '',
   overrides: [],
   githubProxy: '',
   customRules: [],
@@ -418,6 +424,11 @@ const runtimeOf = (s: AppStore) => ({
   snifferOverrideDestination: s.settings.snifferOverrideDestination,
   customRules: s.settings.customRules,
   currentNode: resolveActiveNode(s.groups, s.groups[0]?.now ?? ''),
+  stableEgress: {
+    enabled: s.settings.egressGuard,
+    node: s.settings.egressGuardNode,
+    domains: STABLE_EGRESS_DOMAINS,
+  },
 });
 
 const overrideOf = (s: AppStore) =>
@@ -998,7 +1009,7 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   applyConfig: async () => {
-    const { activeId, profiles, policy, tunEnabled, settings } = get();
+    const { activeId, profiles, policy } = get();
     const profile = profiles.find((p) => p.id === activeId);
     if (!profile) return;
 
@@ -1012,29 +1023,7 @@ export const useApp = create<AppStore>((set, get) => ({
       const { config, audit, stats } = await generateConfig(
         profile.raw,
         policy,
-        {
-          mixedPort: settings.mixedPort,
-          controllerPort: settings.controllerPort,
-          controllerSecret: settings.controllerSecret,
-          tunEnabled,
-          mode: settings.mode,
-          allowLan: settings.allowLan,
-          dnsPort: settings.dnsPort,
-          socksPort: settings.socksPort,
-          httpPort: settings.httpPort,
-          redirPort: settings.redirPort,
-          bindAddress: settings.bindAddress,
-          authUser: settings.authUser,
-          authPass: settings.authPass,
-          dnsNameserver: settings.dnsNameserver,
-          dnsCustom: settings.dnsCustom,
-          geoDataMode: settings.geoDataMode,
-          geoAutoUpdate: settings.geoAutoUpdate,
-          geoUpdateInterval: settings.geoUpdateInterval,
-          geoUrls: settings.geoUrls,
-          snifferEnabled: settings.snifferEnabled,
-          snifferOverrideDestination: settings.snifferOverrideDestination,
-        },
+        runtimeOf(get()),
         overrideOf(get()),
         profile.ruleEdits
       );
@@ -1286,7 +1275,25 @@ export const useApp = create<AppStore>((set, get) => ({
     if (!isTauri) return;
     try {
       const raw = await api.mihomo('GET', '/proxies');
-      set({ groups: parseGroups(raw) });
+      const groups = parseGroups(raw);
+      set({ groups });
+      // 打开了固定出口但还没记录节点时，用当前实际节点初始化一次；
+      // 之后再切节点，GitHub 仍走这个节点。
+      const settings = get().settings;
+      const available = new Set(groups.flatMap((g) => g.nodes.map((n) => n.name)));
+      if (
+        settings.egressGuard &&
+        (!settings.egressGuardNode || !available.has(settings.egressGuardNode))
+      ) {
+        // 订阅更新后旧节点可能已经消失；自动改用当前实际节点并重新生成配置，
+        // 否则固定出口规则会被跳过，用户以为启用了但其实没生效。
+        const node = resolveActiveNode(groups, groups[0]?.now ?? '');
+        if (node && node !== settings.egressGuardNode) {
+          set({ settings: { ...settings, egressGuardNode: node } });
+          void persist(get());
+          if (get().kernelPhase === 'running') void get().applyConfig();
+        }
+      }
     } catch (e) {
       if (!quiet) get().notify('error', `读取节点失败：${errorText(e)}`);
     }
@@ -1445,6 +1452,10 @@ export const useApp = create<AppStore>((set, get) => ({
 
   updateSettings: (patch) => {
     const next: AppSettings = { ...get().settings, ...patch };
+    if (patch.egressGuard === true && !next.egressGuardNode) {
+      const node = resolveActiveNode(get().groups, get().groups[0]?.now ?? '');
+      if (node) next.egressGuardNode = node;
+    }
     set({ settings: next });
 
     // 主题即时生效

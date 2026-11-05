@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Segmented, Select, Toggle } from '../components/ui';
 import { IconDownload, IconFolder, IconLog, IconPalette, IconSliders } from '../components/icons';
 import { formatTime } from '../core/format';
-import { useApp, type ThemeMode } from '../store/app';
+import { resolveActiveNode, useApp, type ThemeMode } from '../store/app';
 import { api, DATA_DIR, isTauri } from '../core/api';
 import { isWindows } from '../core/platform';
 import { APP_VERSION, UPDATE_REPO } from '../core/update';
@@ -72,7 +72,16 @@ const THEMES: Array<{ value: ThemeMode; label: string }> = [
 /** 数字端口：回车 / 失焦才提交，避免边打字边重启内核。 */
 export function SettingsPage() {
   const settings = useApp((s) => s.settings);
+  const groups = useApp((s) => s.groups);
   const updateSettings = useApp((s) => s.updateSettings);
+  const activeNode = resolveActiveNode(groups, groups[0]?.now ?? '');
+  const egressNodes = useMemo(
+    () =>
+      Array.from(new Set(groups.flatMap((g) => g.nodes.map((n) => n.name)))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [groups]
+  );
   const checkingUpdate = useApp((s) => s.checkingUpdate);
   const checkUpdate = useApp((s) => s.checkUpdate);
   const updateInfo = useApp((s) => s.updateInfo);
@@ -213,6 +222,51 @@ export function SettingsPage() {
                   />
                 }
               />
+              <Row
+                label="GitHub 固定出口"
+                hint="切换节点时 GitHub 仍走同一个 IP，降低账号风控与封禁风险"
+                control={
+                  <Toggle
+                    on={settings.egressGuard}
+                    label="GitHub 固定出口"
+                    onChange={(on) => {
+                      updateSettings({
+                        egressGuard: on,
+                        egressGuardNode: on
+                          ? settings.egressGuardNode || activeNode
+                          : settings.egressGuardNode,
+                      });
+                      void useApp.getState().applyConfig();
+                      notify('info', on ? 'GitHub 流量已固定到当前节点' : 'GitHub 已跟随节点切换');
+                    }}
+                  />
+                }
+              />
+              {settings.egressGuard && (
+                <Row
+                  label="固定节点"
+                  hint={
+                    egressNodes.length
+                      ? '仅影响 GitHub / GitHub API 与资源域名'
+                      : '连接内核后选择节点'
+                  }
+                  control={
+                    <Select
+                      value={settings.egressGuardNode || activeNode}
+                      options={[
+                        { value: '', label: '自动（首次连接节点）' },
+                        ...egressNodes.map((n) => ({ value: n, label: n })),
+                      ]}
+                      ariaLabel="GitHub 固定出口节点"
+                      onChange={(v) => {
+                        updateSettings({ egressGuardNode: v });
+                        void useApp.getState().applyConfig();
+                        notify('info', v ? 'GitHub 固定出口已更新' : 'GitHub 将使用首次连接的节点');
+                      }}
+                    />
+                  }
+                />
+              )}
               <Row
                 label="版本"
                 hint="GitHub Releases · 点击检查更新"

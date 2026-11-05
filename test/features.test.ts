@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateConfig } from '../src/core/generator';
+import { generateConfig, STABLE_EGRESS_DOMAINS, STABLE_EGRESS_GROUP } from '../src/core/generator';
 import { DEFAULT_POLICY } from '../src/core/security';
 
 const RAW = `proxies:
@@ -28,7 +28,7 @@ describe('运行参数与覆写', () => {
   });
 
   it('局域网开关写进 allow-lan', async () => {
-    const out = await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, allowLan: true });
+    const out = await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, allowLan: true, authUser: 'demo', authPass: 'demo' });
     const cfg = JSON.parse(out.config);
     expect(cfg['allow-lan']).toBe(true);
   });
@@ -208,5 +208,30 @@ rules:
       'a.example.com',
       'b.example.com',
     ]);
+  });
+});
+
+describe('GitHub 固定出口', () => {
+  it('启用后给 GitHub 域名加固定节点组，并排在规则最前面', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
+      ...RUNTIME,
+      stableEgress: { enabled: true, node: 'NodeA', domains: STABLE_EGRESS_DOMAINS },
+    });
+    const cfg = JSON.parse(out.config);
+    const group = cfg['proxy-groups'].find((g: { name: string }) => g.name === STABLE_EGRESS_GROUP);
+    expect(group).toMatchObject({ type: 'select', proxies: ['NodeA'] });
+    expect(cfg.rules.slice(0, STABLE_EGRESS_DOMAINS.length)).toEqual(
+      STABLE_EGRESS_DOMAINS.map((d) => `DOMAIN-SUFFIX,${d},${STABLE_EGRESS_GROUP}`)
+    );
+  });
+
+  it('节点不存在时跳过固定组，不生成坏配置', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
+      ...RUNTIME,
+      stableEgress: { enabled: true, node: 'Missing', domains: STABLE_EGRESS_DOMAINS },
+    });
+    const cfg = JSON.parse(out.config);
+    expect(cfg.rules.some((r: string) => r.includes(STABLE_EGRESS_GROUP))).toBe(false);
+    expect(cfg['proxy-groups'].some((g: { name: string }) => g.name === STABLE_EGRESS_GROUP)).toBe(false);
   });
 });
