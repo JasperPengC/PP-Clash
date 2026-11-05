@@ -212,7 +212,7 @@ async fn fetch_group_info(port: u16, secret: &str) -> Option<(String, String, Ve
         }
         let now = info.get("now").and_then(|x| x.as_str())?.to_string();
 
-        // 沿 now 一直解析到真正的叶子节点（例如 一毛机场 -> 自动选择 -> 美国圣何塞02）
+        // 沿 now 一直解析到真正的叶子节点（例如 Example Air -> 自动选择 -> 美国圣何塞02）
         let mut actual = now.clone();
         for _ in 0..8 {
             let Some(info) = proxies.get(&actual) else { break };

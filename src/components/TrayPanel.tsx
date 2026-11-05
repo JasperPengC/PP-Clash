@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NodeName } from './NodeName';
-import { api, isTauri, setMihomoBase, setMihomoSecret, type TraySnapshot } from '../core/api';
+import { api, isTauri, previewMode, setMihomoBase, setMihomoSecret, type TraySnapshot } from '../core/api';
 import { formatSpeed } from '../core/format';
 import { Segmented, Toggle } from './ui';
 import {
@@ -33,11 +33,11 @@ export function TrayPanel() {
   const [pending, setPending] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isTauri) return;
+    if (!isTauri && !previewMode) return;
     let alive = true;
     const load = () => {
       // 面板隐藏时不做无意义轮询
-      if (!document.hasFocus()) return;
+      if (!previewMode && !document.hasFocus()) return;
       void api
         .traySnapshot()
         .then((v) => {

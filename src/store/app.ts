@@ -346,7 +346,7 @@ function parseGroups(raw: any): ProxyGroup[] {
 }
 
 /**
- * 分组里选中的可能还是另一个分组（例如「一毛机场」的当前项是「自动选择」）。
+ * 分组里选中的可能还是另一个分组（例如「Example Air」的当前项是「自动选择」）。
  * 一直往下追到真实节点，只用于展示；切换/选中判断仍然用原始 now。
  */
 export function resolveEffectiveGroup(groups: ProxyGroup[], name: string): ProxyGroup | undefined {
@@ -784,7 +784,7 @@ export const useApp = create<AppStore>((set, get) => ({
       const id = crypto.randomUUID();
       const profile: Profile = {
         id,
-        // 机场在响应头里给的真名优先（如「一毛机场」），拿不到才用域名
+        // 机场在响应头里给的真名优先（如「Example Air」），拿不到才用域名
         name: meta.name ?? nameFromUrl(url),
         url,
         raw: payload.raw,

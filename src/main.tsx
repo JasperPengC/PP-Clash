@@ -12,7 +12,11 @@ import './styles/theme.css';
 initTheme();
 installLogger();
 
-const isTrayPanel = new URLSearchParams(window.location.search).get('panel') === 'tray';
+const params = new URLSearchParams(window.location.search);
+const isTrayPanel = params.get('panel') === 'tray';
+if (import.meta.env.DEV && params.get('theme') === 'light') {
+  document.documentElement.dataset.theme = 'light';
+}
 if (isTrayPanel) document.body.classList.add('tray-panel-window');
 
 // 水合：从磁盘恢复订阅 / 策略 / 设置。必须在渲染前尽量早执行

@@ -10,9 +10,9 @@ import { DEFAULT_SETTINGS, useApp } from '../store/app';
  */
 
 const NODES = [
-  { name: '🇯🇵 东京 01 · IPLC', type: 'Trojan', delay: 42 },
+  { name: '🇯🇵 东京 01', type: 'Trojan', delay: 42 },
   { name: '🇯🇵 东京 02', type: 'Trojan', delay: 68 },
-  { name: '🇭🇰 香港 01 · 中转', type: 'VLESS', delay: 36 },
+  { name: '🇭🇰 香港 01', type: 'VLESS', delay: 36 },
   { name: '🇭🇰 香港 02', type: 'VLESS', delay: 55 },
   { name: '🇸🇬 新加坡 01', type: 'Hysteria2', delay: 96 },
   { name: '🇺🇸 洛杉矶 01', type: 'Shadowsocks', delay: 168 },
@@ -24,9 +24,9 @@ const NODES = [
 const PREVIEW_RAW = `mixed-port: 7890
 mode: rule
 proxies:
-  - {name: "🇯🇵 东京 01 · IPLC", type: trojan, server: jp1.example.com, port: 443, password: p1, sni: jp1.example.com, skip-cert-verify: true}
+  - {name: "🇯🇵 东京 01", type: trojan, server: jp1.example.com, port: 443, password: p1, sni: jp1.example.com, skip-cert-verify: true}
   - {name: "🇯🇵 东京 02", type: trojan, server: jp2.example.com, port: 443, password: p2, sni: jp2.example.com, skip-cert-verify: true}
-  - {name: "🇭🇰 香港 01 · 中转", type: vless, server: hk1.example.com, port: 443, uuid: u1, network: ws, tls: true}
+  - {name: "🇭🇰 香港 01", type: vless, server: hk1.example.com, port: 443, uuid: u1, network: ws, tls: true}
   - {name: "🇭🇰 香港 02", type: vless, server: hk2.example.com, port: 443, uuid: u2, network: ws, tls: true}
   - {name: "🇸🇬 新加坡 01", type: hysteria2, server: sg1.example.com, port: 443, password: p3}
   - {name: "🇺🇸 洛杉矶 01", type: ss, server: us1.example.com, port: 8388, cipher: aes-256-gcm, password: p4}
@@ -35,15 +35,15 @@ proxies:
   - {name: "剩余流量：1.91 TB", type: hysteria2, server: info.example.com, port: 443, password: info1}
   - {name: "套餐到期：2027-03-16", type: hysteria2, server: info.example.com, port: 443, password: info2}
 proxy-groups:
-  - {name: "🚀 节点选择", type: select, proxies: ["♻️ 自动选择", "🇯🇵 东京 01 · IPLC", "🇯🇵 东京 02", "🇭🇰 香港 01 · 中转", "🇭🇰 香港 02", "🇸🇬 新加坡 01", "🇺🇸 洛杉矶 01", "🇺🇸 西雅图 01", "🇩🇪 法兰克福 01"]}
-  - {name: "♻️ 自动选择", type: url-test, url: "https://www.gstatic.com/generate_204", interval: 300, proxies: ["🇯🇵 东京 01 · IPLC", "🇭🇰 香港 01 · 中转", "🇸🇬 新加坡 01"]}
+  - {name: "🚀 节点选择", type: select, proxies: ["♻️ 自动选择", "🇯🇵 东京 01", "🇯🇵 东京 02", "🇭🇰 香港 01", "🇭🇰 香港 02", "🇸🇬 新加坡 01", "🇺🇸 洛杉矶 01", "🇺🇸 西雅图 01", "🇩🇪 法兰克福 01"]}
+  - {name: "♻️ 自动选择", type: url-test, url: "https://www.gstatic.com/generate_204", interval: 300, proxies: ["🇯🇵 东京 01", "🇭🇰 香港 01", "🇸🇬 新加坡 01"]}
   - {name: "🌍 国外媒体", type: select, proxies: ["🚀 节点选择", "🇯🇵 东京 02", "🇭🇰 香港 02"]}
 `;
 
 const PREVIEW_PROFILE = {
   id: 'preview-profile',
-  name: '一毛机场',
-  url: 'https://ymjc.example.com/api/v1/client/subscribe?token=preview',
+  name: 'Example Air',
+  url: 'https://example.com/subscribe?token=demo',
   raw: PREVIEW_RAW,
   updatedAt: Date.now() - 1000 * 60 * 42,
   userinfo: {
@@ -84,6 +84,9 @@ export function applyPreviewIfRequested() {
   if (!previewMode) return;
   const mode = new URLSearchParams(window.location.search).get('preview');
   const connected = mode !== 'ready';
+  if (new URLSearchParams(window.location.search).get('theme') === 'light') {
+    document.documentElement.dataset.theme = 'light';
+  }
 
   useApp.setState({
     settings: {

@@ -12,9 +12,9 @@ describe('订阅响应头解析', () => {
   it('从 content-disposition 读出中文订阅名', async () => {
     const meta = parseSubscriptionMeta({
       contentDisposition:
-        "attachment;filename*=UTF-8''%E4%B8%80%E6%AF%9B%E6%9C%BA%E5%9C%BA",
+        "attachment;filename*=UTF-8''Example%20Air",
     });
-    expect(meta.name).toBe('一毛机场');
+    expect(meta.name).toBe('Example Air');
   });
 
   it('订阅名会去掉 .yaml 之类的文件名后缀', async () => {
@@ -25,8 +25,8 @@ describe('订阅响应头解析', () => {
   });
 
   it('profile-title 支持 base64: 前缀', async () => {
-    const meta = parseSubscriptionMeta({ profileTitle: 'base64:5LiA5q+b5py65Zy6' });
-    expect(meta.name).toBe('一毛机场');
+    const meta = parseSubscriptionMeta({ profileTitle: 'base64:RXhhbXBsZSBBaXI=' });
+    expect(meta.name).toBe('Example Air');
   });
 
   it('解析 subscription-userinfo 的已用 / 总量 / 到期时间', async () => {

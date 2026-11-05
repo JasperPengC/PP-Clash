@@ -7773,3 +7773,10 @@ body.tray-panel-window #root {
 .settings-about-link:hover {
   color: var(--text-2);
 }
+
+/* 浏览器预览面板时把 320px 面板居中，便于截图；实际 Tauri 面板窗口本身就是 320 */
+body.tray-panel-window .tp-root {
+  width: 320px;
+  max-width: 100%;
+  margin: 0 auto;
+}

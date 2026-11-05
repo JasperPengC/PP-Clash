@@ -164,34 +164,37 @@ function previewMihomo(method: string, path: string): unknown {
     };
   }
   if (path.startsWith('/connections') && method === 'GET') {
+    previewTick += 1;
+    const elapsed = Math.max(1, (Date.now() - previewT0) / 1000);
+    const pulse = 1 + 0.35 * Math.sin(previewTick / 2.4);
     return {
-      uploadTotal: 1_234_567,
-      downloadTotal: 45_678_901,
+      uploadTotal: Math.round(elapsed * 185_000 * pulse),
+      downloadTotal: Math.round(elapsed * 2_450_000 * pulse),
       connections: [
         {
           id: 'preview-1',
-          upload: 12_345,
-          download: 4_567_890,
+          upload: Math.round(elapsed * 90_000 * pulse),
+          download: Math.round(elapsed * 1_900_000 * pulse),
           start: new Date(Date.now() - 42_000).toISOString(),
-          chains: ['🚀 节点选择', '🇯🇵 东京 01 · IPLC'],
+          chains: ['🚀 节点选择', '🇯🇵 东京 01'],
           rule: 'DOMAIN-SUFFIX',
           rulePayload: 'youtube.com',
           metadata: { network: 'tcp', host: 'www.youtube.com', destinationPort: 443 },
         },
         {
           id: 'preview-2',
-          upload: 3_456,
-          download: 234_567,
+          upload: Math.round(elapsed * 35_000 * pulse),
+          download: Math.round(elapsed * 430_000 * pulse),
           start: new Date(Date.now() - 12_000).toISOString(),
-          chains: ['🚀 节点选择', '🇭🇰 香港 01 · 中转'],
+          chains: ['🚀 节点选择', '🇭🇰 香港 01'],
           rule: 'DOMAIN-SUFFIX',
           rulePayload: 'github.com',
           metadata: { network: 'tcp', host: 'github.com', destinationPort: 443 },
         },
         {
           id: 'preview-3',
-          upload: 890,
-          download: 12_345,
+          upload: Math.round(elapsed * 4_000 * pulse),
+          download: Math.round(elapsed * 22_000 * pulse),
           start: new Date(Date.now() - 5_000).toISOString(),
           chains: ['DIRECT'],
           rule: 'GEOIP',
@@ -286,6 +289,55 @@ function previewCall(cmd: string, args?: Record<string, unknown>): unknown {
         rssKb: 96_000,
         binary: '/Users/preview/Library/Application Support/PPClash/bin/mihomo',
         bundledVersion: 'v1.19.32',
+      };
+    case 'tray_snapshot':
+      return {
+        running: true,
+        sysProxy: true,
+        tun: true,
+        mode: 'rule',
+        node: '🇯🇵 东京 01',
+        group: '自动选择',
+        up: 185_000,
+        down: 2_450_000,
+        showSpeed: true,
+        controllerPort: 9090,
+        controllerSecret: 'preview',
+        nodes: [
+          { name: '🇯🇵 东京 01', delay: 42 },
+          { name: '🇭🇰 香港 01', delay: 36 },
+          { name: '🇸🇬 新加坡 01', delay: 96 },
+          { name: '🇺🇸 洛杉矶 01', delay: 168 },
+        ],
+        profiles: [
+          { id: 'preview-profile', name: 'Example Air' },
+          { id: 'preview-backup', name: 'Demo Backup' },
+        ],
+        activeProfile: 'preview-profile',
+      };
+    case 'traffic_rates':
+      return [185_000, 2_450_000];
+    case 'check_ip_quality_auto':
+      return {
+        ip: '203.0.113.42',
+        country: '日本',
+        region: '东京都',
+        city: '东京',
+        isp: 'Example Hosting K.K.',
+        org: 'Example Hosting K.K.',
+        asn: 'AS64500 Example Hosting',
+        hosting: true,
+        proxy: false,
+        mobile: false,
+        kind: '机房 IP',
+        risk: '中',
+        score: 72,
+      };
+    case 'probe_service_auto':
+      return {
+        id: String(args?.id ?? 'google'),
+        ok: true,
+        latency_ms: 180 + Math.round(Math.random() * 260),
       };
     case 'read_kernel_log':
       return [

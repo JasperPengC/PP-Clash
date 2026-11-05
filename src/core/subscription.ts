@@ -5,7 +5,7 @@ import yaml from 'js-yaml';
  *
  * 机场通常在响应头里下发：
  *   profile-title: 订阅名（可能是 base64:xxx）
- *   content-disposition: attachment;filename*=UTF-8''一毛机场
+ *   content-disposition: attachment;filename*=UTF-8''Example%20Air
  *   subscription-userinfo: upload=…; download=…; total=…; expire=…
  * 这些是「订阅叫什么、还剩多少流量」的唯一可靠来源，比从节点名里猜靠谱。
  */
