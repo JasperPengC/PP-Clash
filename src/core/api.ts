@@ -426,9 +426,10 @@ export const api = {
     }),
 
   /** 并发探测单个服务：前端可以逐项渲染。 */
-  probeService: (id: string) =>
+  probeService: (id: string, egressNode?: string | null) =>
     call<{ id: string; ok: boolean; latency_ms: number | null }>('probe_service_auto', {
       id,
+      egressNode: egressNode ?? null,
     }),
 
   /** 通过 mihomo mixed 端口探测常用服务连通性。 */

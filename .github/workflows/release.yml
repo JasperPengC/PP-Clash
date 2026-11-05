@@ -20,8 +20,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - name: Install deps
-        run: npm ci
       - name: Fetch bundled kernel
         env:
           KERNEL_ZIP_URL: ${{ vars.KERNEL_ZIP_URL }}
@@ -32,15 +30,8 @@ jobs:
           fi
           mkdir -p src-tauri/resources
           curl -fL "$KERNEL_ZIP_URL" -o src-tauri/resources/kernel.zip
-      - name: Build universal app (ad-hoc)
-        run: UNIVERSAL=1 ./scripts/bundle.sh
-      - name: Build DMG
-        run: UNIVERSAL=1 ./scripts/build-dmg.sh
-      - name: Normalize DMG name
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)
-          mv "$DMG" "src-tauri/target/release/bundle/dmg/PP_Clash-${VERSION}-macos-universal.dmg"
+      - name: Build and package
+        run: ./scripts/ci.sh build-macos-release
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
@@ -55,8 +46,6 @@ jobs:
           node-version: 20
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install deps
-        run: npm ci
       - name: Fetch Windows kernel
         shell: pwsh
         env:
@@ -69,13 +58,8 @@ jobs:
           New-Item -ItemType Directory -Force src-tauri/resources | Out-Null
           Invoke-WebRequest -Uri $url -OutFile src-tauri/resources/kernel.zip
       - name: Build NSIS installer
-        run: npm run tauri build
-      - name: Normalize installer name
-        shell: pwsh
-        run: |
-          $version = node -p "require('./package.json').version"
-          $file = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
-          Rename-Item $file.FullName "PP_Clash-$version-windows-amd64-setup.exe"
+        shell: bash
+        run: ./scripts/ci.sh build-windows-release
       - uses: actions/upload-artifact@v4
         with:
           name: windows-nsis

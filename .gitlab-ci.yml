@@ -1,0 +1,39 @@
+# GitLab 只做一层薄壳：checkout + 工具链由 runner 提供，构建逻辑统一走 scripts/ci.sh。
+stages: [verify, build]
+
+variables:
+  GIT_DEPTH: '1'
+
+verify:web:
+  stage: verify
+  script:
+    - ./scripts/ci.sh install
+    - ./scripts/ci.sh check-web
+    - ./scripts/ci.sh scan
+
+verify:rust:
+  stage: verify
+  script:
+    - ./scripts/ci.sh install
+    - ./scripts/ci.sh build-web
+    - ./scripts/ci.sh check-rust
+
+build:macos:
+  stage: build
+  tags: [macos]
+  script:
+    - ./scripts/ci.sh build-macos
+  artifacts:
+    paths:
+      - src-tauri/target/release/bundle/macos/PP Clash.app
+    expire_in: 7 days
+
+build:windows:
+  stage: build
+  tags: [windows]
+  script:
+    - ./scripts/ci.sh build-windows
+  artifacts:
+    paths:
+      - src-tauri/target/release/bundle/nsis/*.exe
+    expire_in: 7 days

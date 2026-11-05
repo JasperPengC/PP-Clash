@@ -36,21 +36,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - name: Install frontend deps
-        run: npm ci
-      - name: Type check
-        run: npx tsc --noEmit
-      - name: Frontend tests
-        run: npx vitest run
-      - name: Build frontend
-        run: npm run build
       - uses: dtolnay/rust-toolchain@stable
-      - name: Prepare compile-only resource placeholder
-        run: |
-          mkdir -p src-tauri/resources
-          [ -f src-tauri/resources/kernel.zip ] || {
-            printf 'placeholder\n' > /tmp/version.txt
-            (cd /tmp && zip -q "$GITHUB_WORKSPACE/src-tauri/resources/kernel.zip" version.txt)
-          }
+      - name: Install dependencies
+        run: ./scripts/ci.sh install
+      - name: Frontend checks
+        run: ./scripts/ci.sh check-web
       - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: ./scripts/ci.sh check-rust
+      - name: Secret scan
+        run: ./scripts/ci.sh scan

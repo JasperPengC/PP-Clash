@@ -7924,3 +7924,15 @@ body.tray-panel-window .tp-root {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 服务连通：GitHub 走固定出口时明确标出来 */
+.service-fixed {
+  margin-left: 4px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 7.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+}

@@ -60,3 +60,19 @@ src-tauri/resources/kernel.zip
 
 # runtime observability samples
 observability/
+
+# 凭据 / 证书：公开仓库默认不接收
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.mobileprovision
+*.keystore
+*.jks
+*.ovpn
+secrets/

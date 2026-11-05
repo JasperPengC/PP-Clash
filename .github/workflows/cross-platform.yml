@@ -15,17 +15,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - name: Install deps
-        run: npm ci
-      - name: Prepare kernel resource placeholder
-        run: |
-          mkdir -p src-tauri/resources
-          [ -f src-tauri/resources/kernel.zip ] || {
-            printf 'placeholder\n' > /tmp/version.txt
-            (cd /tmp && zip -q "$GITHUB_WORKSPACE/src-tauri/resources/kernel.zip" version.txt)
-          }
       - name: Build universal app
-        run: UNIVERSAL=1 ./scripts/bundle.sh
+        run: ./scripts/ci.sh build-macos
       - uses: actions/upload-artifact@v4
         with:
           name: PP-Clash-macos-universal
@@ -42,17 +33,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - name: Install deps
-        run: npm ci
-      - name: Build frontend
-        run: npm run build
-      - name: Prepare kernel resource placeholder
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force src-tauri/resources | Out-Null
-          if (-not (Test-Path src-tauri/resources/kernel.zip)) {
-            "placeholder" | Out-File -Encoding utf8 version.txt
-            Compress-Archive -Path version.txt -DestinationPath src-tauri/resources/kernel.zip
-          }
-      - name: cargo test (Windows)
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Install dependencies
+        shell: bash
+        run: ./scripts/ci.sh install
+      - name: Frontend build
+        shell: bash
+        run: ./scripts/ci.sh build-web
+      - name: Rust tests (Windows)
+        shell: bash
+        run: ./scripts/ci.sh check-rust

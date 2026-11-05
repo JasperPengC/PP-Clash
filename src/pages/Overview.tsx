@@ -389,6 +389,8 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const peakUp = Math.max(...up);
   const peakDown = Math.max(...down);
 
+  const stableGithubNode = settings.egressGuard ? settings.egressGuardNode : '';
+
   const runServiceProbe = useCallback(async () => {
     if (!connected || serviceProbeRunning.current) return;
     serviceProbeRunning.current = true;
@@ -397,7 +399,11 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     await Promise.all(
       SERVICES.map(async ({ id }) => {
         try {
-          const row = await api.probeService(id);
+          // GitHub 走了固定出口时，连通性测试也必须测这个节点，而不是当前主节点。
+          const row = await api.probeService(
+            id,
+            id === 'github' && stableGithubNode ? stableGithubNode : null
+          );
           setServiceMap((prev) => ({ ...prev, [id]: row }));
         } catch {
           /* 单个失败保留旧结果 */
@@ -406,7 +412,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     );
     serviceProbeRunning.current = false;
     setServicesLoading(false);
-  }, [connected]);
+  }, [connected, stableGithubNode]);
 
   useEffect(() => {
     if (!active) return;
@@ -1026,7 +1032,15 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                       ? 'pending'
                       : 'bad';
                 return (
-                  <div className={`service-tile ${state}`} key={id}>
+                  <div
+                    className={`service-tile ${state}`}
+                    key={id}
+                    title={
+                      id === 'github' && stableGithubNode
+                        ? `GitHub 连通性测试使用固定出口：${stableGithubNode}`
+                        : undefined
+                    }
+                  >
                     <span
                       className="service-logo"
                       style={{ color: mono ? 'var(--text-1)' : `#${icon.hex}` }}
@@ -1036,7 +1050,12 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                       </svg>
                     </span>
                     <div className="service-info">
-                      <span className="service-name">{name}</span>
+                      <span className="service-name">
+                        {name}
+                        {id === 'github' && stableGithubNode && (
+                          <span className="service-fixed">固定</span>
+                        )}
+                      </span>
                       <span className="service-latency">
                         {!connected
                           ? '未接管'

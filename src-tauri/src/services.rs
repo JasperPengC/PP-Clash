@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::Manager;
 
+use crate::kernel::KernelState;
+use crate::mihomo;
+
 #[derive(Debug, Serialize)]
 pub struct ServiceProbe {
     pub id: String,
@@ -119,12 +122,68 @@ async fn probe_single(proxy_port: Option<u16>, id: &str, url: &str) -> ServicePr
     }
 }
 
+fn pct_encode(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.as_bytes() {
+        let ch = *byte as char;
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '~') {
+            out.push(ch);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// GitHub 固定出口：直接用控制器测那个节点到 github.com 的延迟。
+/// 不依赖当前 mixed-port 的规则命中，保证服务连通和设置里的固定出口是同一个节点。
+async fn probe_github_via_fixed_node(
+    app: &tauri::AppHandle,
+    node: &str,
+) -> Option<ServiceProbe> {
+    let state = app.state::<KernelState>();
+    let port = *state.controller_port.lock().await;
+    let secret = app
+        .state::<crate::prefs::AppFlags>()
+        .controller_secret
+        .lock()
+        .unwrap()
+        .clone();
+    let path = format!(
+        "/proxies/{}/delay?url={}&timeout=5000",
+        pct_encode(node),
+        pct_encode("https://github.com/")
+    );
+    let raw = mihomo::request(&format!("http://127.0.0.1:{port}"), &secret, "GET", &path, None)
+        .await
+        .ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let delay = value.get("delay").and_then(|v| v.as_u64()).unwrap_or(0);
+    (delay > 0).then_some(ServiceProbe {
+        id: "github".to_string(),
+        ok: true,
+        latency_ms: Some(delay),
+    })
+}
+
 /// 单个服务探测：前端并发调用，谁先完成谁先渲染。
 #[tauri::command]
-pub async fn probe_service_auto(app: tauri::AppHandle, id: String) -> Result<ServiceProbe, String> {
+pub async fn probe_service_auto(
+    app: tauri::AppHandle,
+    id: String,
+    egress_node: Option<String>,
+) -> Result<ServiceProbe, String> {
     let Some((target_id, url)) = TARGETS.iter().find(|(key, _)| *key == id) else {
         return Err("未知服务".to_string());
     };
+    // GitHub 固定出口已配置时，服务连通也必须测那个节点。
+    if *target_id == "github" {
+        if let Some(node) = egress_node.as_deref().filter(|n| !n.trim().is_empty()) {
+            if let Some(probe) = probe_github_via_fixed_node(&app, node.trim()).await {
+                return Ok(probe);
+            }
+        }
+    }
     let flags = app.state::<crate::prefs::AppFlags>();
     let port = *flags.mixed_port.lock().unwrap();
     let tun = *flags.tun_enabled.lock().unwrap();
