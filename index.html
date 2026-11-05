@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PP Clash</title>
+    <script>
+      // 首帧之前定主题：避免深色系统上闪一下白屏，也避免浅色系统闪黑
+      (function () {
+        try {
+          var mode = localStorage.getItem('ppclash.theme') || 'system';
+          var dark =
+            mode === 'dark' ||
+            (mode === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: #121418;
+      }
+      html[data-theme='light'] body {
+        background: #f2f3f6;
+      }
+      #splash {
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, 'PingFang SC', sans-serif;
+        font-size: 12.5px;
+        letter-spacing: 0.2px;
+        color: #6f7885;
+      }
+      html[data-theme='light'] #splash {
+        color: #8c94a1;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div id="splash">PP Clash 正在启动…</div></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
