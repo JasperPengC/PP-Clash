@@ -217,11 +217,19 @@ export async function generateConfig(
     (g) => String(asDict(g).name ?? '') === stableGroupName
   );
   // 订阅已有 GitHub 分组时直接复用；没有才追加固定出口分组。
+  // 分组保留全部节点，固定节点排第一；节点失效时仍有手动/自动切换的余地。
   if (!existingStableGroup && stableNode && !hasStableGroup) {
+    const allProxyNames = proxies
+      .map((p) => String(asDict(p).name ?? ''))
+      .filter(Boolean);
+    const proxiesForGroup = [
+      stableNode,
+      ...allProxyNames.filter((name) => name !== stableNode),
+    ];
     groups.push({
       name: stableGroupName,
       type: 'select',
-      proxies: [stableNode],
+      proxies: proxiesForGroup,
     });
   }
   const stableRules =

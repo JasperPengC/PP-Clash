@@ -15,6 +15,7 @@ import { SecurityPage } from './pages/Security';
 import { ProfilesPage } from './pages/Profiles';
 import { SettingsPage } from './pages/Settings';
 import { resolveEffectiveGroup, useApp, type OutboundMode, type ToastKind } from './store/app';
+import { STABLE_EGRESS_GROUP } from './core/generator';
 import { api, isTauri } from './core/api';
 import { IconAlert, IconCheck, IconDownload, IconInfo, IconX } from './components/icons';
 import { WindowsTitlebar } from './components/WindowsTitlebar';
@@ -255,6 +256,58 @@ export default function App() {
     window.addEventListener('ppclash:check-update', handle);
     return () => window.removeEventListener('ppclash:check-update', handle);
   }, []);
+
+  // GitHub 固定出口：只有连续 3 次探测失败才自动换节点。
+  // 避免一次抖动就把登录 IP 切走；分组里保留全部节点，用户也可以手动切换。
+  const kernelPhase = useApp((s) => s.kernelPhase);
+  const egressGuard = useApp((s) => s.settings.egressGuard);
+  const egressGuardNode = useApp((s) => s.settings.egressGuardNode);
+
+  useEffect(() => {
+    if (!isTauri || kernelPhase !== 'running' || !egressGuard || !egressGuardNode) return;
+    let alive = true;
+    let failures = 0;
+
+    const check = async () => {
+      if (!alive) return;
+      const row = await api.probeService('github', egressGuardNode).catch(() => null);
+      if (!alive) return;
+      if (row?.ok) {
+        failures = 0;
+        return;
+      }
+      failures += 1;
+      if (failures < 3) return;
+
+      const state = useApp.getState();
+      const group = state.groups.find((g) => g.name === STABLE_EGRESS_GROUP);
+      const next = group?.nodes.map((n) => n.name).find((n) => n !== egressGuardNode);
+      if (!next) {
+        failures = 0;
+        return;
+      }
+      try {
+        await api.mihomo('PUT', `/proxies/${encodeURIComponent(STABLE_EGRESS_GROUP)}`, {
+          name: next,
+        });
+      } catch {
+        failures = 0;
+        return;
+      }
+      state.updateSettings({ egressGuardNode: next });
+      state.notify('info', `GitHub 出口连续失败 3 次，已自动切换到 ${next}`);
+      failures = 0;
+      await state.refreshGroups();
+    };
+
+    const first = window.setTimeout(() => void check(), 15_000);
+    const timer = window.setInterval(() => void check(), 60_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [kernelPhase, egressGuard, egressGuardNode]);
 
   // 内核心跳：mihomo 可能自己退出（配置/端口/数据问题），
   // 前端不能一直显示「已连接」，否则用户会以为代理在跑但实际全网不通。

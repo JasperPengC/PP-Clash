@@ -256,4 +256,16 @@ describe('GitHub 固定出口', () => {
     expect(cfg['proxy-groups'].some((g: { name: string }) => g.name === STABLE_EGRESS_GROUP)).toBe(true);
   });
 
+  it('追加的固定出口分组保留全部节点，固定节点排第一', async () => {
+    const raw = `proxies:\n  - {name: NodeA, type: ss, server: a.example.com, port: 1, cipher: aes-256-gcm, password: p}\n  - {name: NodeB, type: ss, server: b.example.com, port: 2, cipher: aes-256-gcm, password: p}\nproxy-groups:\n  - {name: G, type: select, proxies: [NodeA, NodeB]}\nrules: []\n`;
+    const out = await generateConfig(raw, DEFAULT_POLICY, {
+      ...RUNTIME,
+      stableEgress: { enabled: true, node: 'NodeB', domains: STABLE_EGRESS_DOMAINS },
+    });
+    const cfg = JSON.parse(out.config);
+    const group = cfg['proxy-groups'].find((g: { name: string }) => g.name === STABLE_EGRESS_GROUP);
+    expect(group.proxies[0]).toBe('NodeB');
+    expect(group.proxies).toEqual(['NodeB', 'NodeA']);
+  });
+
 });

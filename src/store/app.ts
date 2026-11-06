@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api, DATA_DIR, isTauri, setMihomoBase, setMihomoSecret } from '../core/api';
-import { generateConfig, type ConfigStats, type RuleEditState, STABLE_EGRESS_DOMAINS } from '../core/generator';
+import { generateConfig, type ConfigStats, type RuleEditState, STABLE_EGRESS_DOMAINS, STABLE_EGRESS_GROUP } from '../core/generator';
 import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
 import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
@@ -1302,6 +1302,12 @@ export const useApp = create<AppStore>((set, get) => ({
   selectNode: async (group, node) => {
     try {
       await api.mihomo('PUT', `/proxies/${encodeURIComponent(group)}`, { name: node });
+      // 用户在固定出口分组里手动换节点，同步更新“固定节点”设置，
+      // 否则下一次服务探测/自动切换还会按旧节点判断。
+      if (group === STABLE_EGRESS_GROUP) {
+        set({ settings: { ...get().settings, egressGuardNode: node } });
+        void persist(get());
+      }
       await get().refreshGroups();
     } catch (e) {
       get().notify('error', `切换节点失败：${errorText(e)}`);
