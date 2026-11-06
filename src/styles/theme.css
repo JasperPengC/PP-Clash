@@ -7936,3 +7936,15 @@ body.tray-panel-window .tp-root {
   font-weight: 600;
   vertical-align: 1px;
 }
+
+/* GitHub 固定出口分组：固定节点常亮，不进入普通 pin 交互 */
+.node-pin.fixed {
+  opacity: 1;
+  cursor: default;
+  color: var(--text-3);
+}
+
+.node-pin.fixed.pinned {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

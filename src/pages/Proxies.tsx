@@ -13,6 +13,7 @@ import {
 } from '../components/icons';
 import { useApp } from '../store/app';
 import { countRealNodes, parseSubscriptionPreview } from '../core/subscription';
+import { STABLE_EGRESS_GROUP } from '../core/generator';
 
 function delayBadge(ms: number | null | undefined): string {
   if (ms == null || ms <= 0) return 'node-delay';
@@ -41,6 +42,8 @@ export function ProxiesPage() {
   const activeId = useApp((s) => s.activeId);
   const selectNode = useApp((s) => s.selectNode);
   const pinnedNodes = useApp((s) => s.pinnedNodes);
+  const egressGuard = useApp((s) => s.settings.egressGuard);
+  const egressGuardNode = useApp((s) => s.settings.egressGuardNode);
   const togglePinNode = useApp((s) => s.togglePinNode);
   const testDelay = useApp((s) => s.testDelay);
   const refreshGroups = useApp((s) => s.refreshGroups);
@@ -344,6 +347,10 @@ export function ProxiesPage() {
                             const key = `${g.name}|${node.name}`;
                             const ms = delays[key] ?? node.delay;
                             const selected = !usingPreview && g.now === node.name;
+                            const fixedEgress =
+                              egressGuard &&
+                              g.name === STABLE_EGRESS_GROUP &&
+                              egressGuardNode === node.name;
                             const busy = testingNodes.has(key);
                             return (
                               <div
@@ -376,29 +383,44 @@ export function ProxiesPage() {
                                 }}
                               >
                                 <span className="proxy-node-name"><NodeName name={node.name} /></span>
-                                <button
-                                  type="button"
-                                  className={`node-pin${
-                                    pinnedNodes[g.name]?.includes(node.name) ? ' pinned' : ''
-                                  }`}
-                                  aria-label={
-                                    pinnedNodes[g.name]?.includes(node.name) ? '取消固定' : '固定节点'
-                                  }
-                                  title={
-                                    pinnedNodes[g.name]?.includes(node.name)
-                                      ? '取消固定（也可双击节点）'
-                                      : '固定节点（也可双击节点）'
-                                  }
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    togglePinNode(g.name, node.name);
-                                  }}
-                                >
-                                  <IconFlag
-                                    size={11}
-                                    filled={pinnedNodes[g.name]?.includes(node.name)}
-                                  />
-                                </button>
+                                {g.name === STABLE_EGRESS_GROUP ? (
+                                  <span
+                                    className={`node-pin fixed${fixedEgress ? ' pinned' : ''}`}
+                                    title={
+                                      fixedEgress
+                                        ? '当前 GitHub 固定出口'
+                                        : '点击节点切换 GitHub 固定出口'
+                                    }
+                                  >
+                                    <IconFlag size={11} filled={fixedEgress} />
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className={`node-pin${
+                                      pinnedNodes[g.name]?.includes(node.name) ? ' pinned' : ''
+                                    }`}
+                                    aria-label={
+                                      pinnedNodes[g.name]?.includes(node.name)
+                                        ? '取消固定'
+                                        : '固定节点'
+                                    }
+                                    title={
+                                      pinnedNodes[g.name]?.includes(node.name)
+                                        ? '取消固定（也可双击节点）'
+                                        : '固定节点（也可双击节点）'
+                                    }
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      togglePinNode(g.name, node.name);
+                                    }}
+                                  >
+                                    <IconFlag
+                                      size={11}
+                                      filled={pinnedNodes[g.name]?.includes(node.name)}
+                                    />
+                                  </button>
+                                )}
                                 {busy ? (
                                   <span className="node-delay">
                                     <Spinner small />

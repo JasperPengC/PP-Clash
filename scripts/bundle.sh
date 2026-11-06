@@ -6,6 +6,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+VERSION="$(node -p "require('./package.json').version")"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # 图标产物（icon.icns / icon.png / tray 状态图）已提交在 src-tauri/icons 与
@@ -45,7 +46,7 @@ mkdir -p "$APP/Contents/Resources/resources"
 cp src-tauri/resources/kernel.zip "$APP/Contents/Resources/resources/kernel.zip"
 
 echo "▸ 写 Info.plist"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -57,8 +58,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>PP Clash</string>
   <key>CFBundleIconFile</key><string>icon.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+  <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>10.15</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
