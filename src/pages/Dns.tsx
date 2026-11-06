@@ -154,7 +154,7 @@ export function DnsPage() {
           >
             <Row
               label="启用嗅探"
-              hint="按域名匹配规则"
+              hint="默认开启；按域名匹配规则，减少纯 IP 误判"
               control={
                 <Toggle
                   on={settings.snifferEnabled}

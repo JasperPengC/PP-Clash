@@ -149,6 +149,12 @@ describe('DNS 与嗅探', () => {
     expect(cfg.sniffer['override-destination']).toBe(true);
     expect(cfg.sniffer.sniff.TLS.ports).toContain(443);
   });
+  it('关闭嗅探时不会偷偷启用', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, snifferEnabled: false });
+    const cfg = JSON.parse(out.config);
+    expect(cfg.sniffer.enable).toBe(false);
+  });
+
 });
 
 describe('额外端口与认证', () => {

@@ -273,7 +273,7 @@ export async function generateConfig(
     // 安全策略负责的子系统
     dns: buildDns(policy, runtime.dnsPort ?? 1053),
     tun: buildTun(policy, runtime.tunEnabled),
-    sniffer: buildSniffer(),
+    sniffer: runtime.snifferEnabled ? buildSniffer() : { enable: false },
 
     // 订阅负责的部分
     ...(proxies.length ? { proxies } : {}),
@@ -320,13 +320,8 @@ export async function generateConfig(
   // 嗅探：从 HTTP/TLS 握手提取域名，减少纯 IP 连接匹配不到规则的概率
   if (runtime.snifferEnabled) {
     config.sniffer = {
-      enable: true,
+      ...buildSniffer(),
       'override-destination': Boolean(runtime.snifferOverrideDestination),
-      sniff: {
-        HTTP: { ports: [80, '8080-8880'] },
-        TLS: { ports: [443, 8443] },
-        QUIC: { ports: [443, 8443] },
-      },
     };
   }
 

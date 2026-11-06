@@ -166,7 +166,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   advancedMode: true,
   traySpeed: true,
   hideDockOnClose: true,
-  settingsVersion: 2,
+  settingsVersion: 3,
   dnsPort: 1053,
   dnsNameserver: 'auto',
   dnsCustom: '',
@@ -180,7 +180,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     asn: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb',
     country: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb',
   },
-  snifferEnabled: false,
+  snifferEnabled: true,
   snifferOverrideDestination: false,
   autoUpdate: true,
   autoFailover: true,
@@ -567,6 +567,12 @@ export const useApp = create<AppStore>((set, get) => ({
       if (savedVersion < 2) {
         settings.advancedMode = true;
         settings.settingsVersion = 2;
+      }
+      // v3：嗅探提升为默认最佳配置；只迁移一次，之后尊重用户开关。
+      if (savedVersion < 3) {
+        settings.snifferEnabled = true;
+        settings.snifferOverrideDestination = false;
+        settings.settingsVersion = 3;
       }
       // 兼容旧版单文件覆写（overrideEnabled / overrideMode / overrideText）
       if (!Array.isArray(settings.overrides)) settings.overrides = [];
