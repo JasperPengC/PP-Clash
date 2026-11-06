@@ -245,7 +245,11 @@ export function SettingsPage() {
                           ? settings.egressGuardNode || activeNode
                           : settings.egressGuardNode,
                       });
-                      void useApp.getState().applyConfig();
+                      void (async () => {
+                        const st = useApp.getState();
+                        await st.applyConfig();
+                        if (st.kernelPhase === 'running') await st.restartKernel(true);
+                      })();
                       notify(
                         'info',
                         !on
@@ -283,7 +287,11 @@ export function SettingsPage() {
                       ariaLabel="GitHub 固定出口节点"
                       onChange={(v) => {
                         updateSettings({ egressGuardNode: v });
-                        void useApp.getState().applyConfig();
+                        void (async () => {
+                          const st = useApp.getState();
+                          await st.applyConfig();
+                          if (st.kernelPhase === 'running') await st.restartKernel(true);
+                        })();
                         notify('info', v ? 'GitHub 固定出口已更新' : 'GitHub 将使用首次连接的节点');
                       }}
                     />

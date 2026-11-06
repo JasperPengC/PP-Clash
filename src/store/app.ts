@@ -309,6 +309,7 @@ let recoveryToken = 0;
 let recoveryRunning = false;
 let configRevision = 0;
 let validatedRevision = -1;
+let egressGroupRepairing = false;
 
 const GROUP_PRIORITY: Record<string, number> = {
   Selector: 0,
@@ -1292,6 +1293,33 @@ export const useApp = create<AppStore>((set, get) => ({
           set({ settings: { ...settings, egressGuardNode: node } });
           void persist(get());
           if (get().kernelPhase === 'running') void get().applyConfig();
+        }
+      }
+
+      // 迁移旧配置：旧版本追加的 GitHub 固定出口只有固定节点一个成员。
+      // 新版本改为展示全部节点；发现旧格式时自动重生成并重启一次内核。
+      const current = get();
+      const stableGroup = groups.find((g) => g.name === STABLE_EGRESS_GROUP);
+      const otherNodeCount = new Set(
+        groups
+          .filter((g) => g.name !== STABLE_EGRESS_GROUP)
+          .flatMap((g) => g.nodes.map((n) => n.name))
+      ).size;
+      if (
+        current.settings.egressGuard &&
+        current.kernelPhase === 'running' &&
+        stableGroup &&
+        stableGroup.nodes.length <= 1 &&
+        otherNodeCount > 1 &&
+        !egressGroupRepairing
+      ) {
+        egressGroupRepairing = true;
+        try {
+          await current.applyConfig();
+          await current.restartKernel(true);
+          get().notify('info', '已更新 GitHub 固定出口分组，保留全部节点');
+        } finally {
+          egressGroupRepairing = false;
         }
       }
     } catch (e) {
