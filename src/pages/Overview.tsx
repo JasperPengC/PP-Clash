@@ -17,6 +17,7 @@ import {
 } from '../components/icons';
 import { resolveActiveNode, resolveEffectiveGroup, useApp, type OutboundMode } from '../store/app';
 import { api } from '../core/api';
+import { findStableEgressGroup } from '../core/generator';
 import { parseSubscriptionPreview } from '../core/subscription';
 import { checkWebRtc } from '../core/selfcheck';
 import { formatBytes, formatDuration, formatExpire, formatSpeed, formatTime } from '../core/format';
@@ -389,7 +390,12 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const peakUp = Math.max(...up);
   const peakDown = Math.max(...down);
 
-  const stableGithubNode = settings.egressGuard ? settings.egressGuardNode : '';
+  const detectedGithubGroup = findStableEgressGroup(
+    activeProfile ? parseSubscriptionPreview(activeProfile.raw) : []
+  );
+  const stableGithubNode = settings.egressGuard
+    ? detectedGithubGroup || settings.egressGuardNode
+    : '';
 
   const runServiceProbe = useCallback(async () => {
     if (!connected || serviceProbeRunning.current) return;

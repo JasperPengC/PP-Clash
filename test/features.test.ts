@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateConfig, STABLE_EGRESS_DOMAINS, STABLE_EGRESS_GROUP } from '../src/core/generator';
+import { generateConfig, STABLE_EGRESS_DOMAINS, STABLE_EGRESS_GROUP, findStableEgressGroup } from '../src/core/generator';
 import { DEFAULT_POLICY } from '../src/core/security';
 
 const RAW = `proxies:
@@ -234,4 +234,26 @@ describe('GitHub 固定出口', () => {
     expect(cfg.rules.some((r: string) => r.includes(STABLE_EGRESS_GROUP))).toBe(false);
     expect(cfg['proxy-groups'].some((g: { name: string }) => g.name === STABLE_EGRESS_GROUP)).toBe(false);
   });
+  it('订阅已有 GitHub 分组时复用，不重复追加', async () => {
+    const raw = `proxies:\n  - {name: NodeA, type: ss, server: a.example.com, port: 1, cipher: aes-256-gcm, password: p}\nproxy-groups:\n  - {name: GitHub, type: select, proxies: [NodeA]}\nrules: []\n`;
+    const out = await generateConfig(raw, DEFAULT_POLICY, {
+      ...RUNTIME,
+      stableEgress: { enabled: true, node: 'NodeA', domains: STABLE_EGRESS_DOMAINS },
+    });
+    const cfg = JSON.parse(out.config);
+    expect(findStableEgressGroup(cfg['proxy-groups'])).toBe('GitHub');
+    expect(cfg['proxy-groups'].filter((g: { name: string }) => g.name === STABLE_EGRESS_GROUP)).toHaveLength(0);
+    expect(cfg.rules[0]).toBe(`DOMAIN-SUFFIX,github.com,GitHub`);
+  });
+
+  it('没有 GitHub 分组时才追加固定出口', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, {
+      ...RUNTIME,
+      stableEgress: { enabled: true, node: 'NodeA', domains: STABLE_EGRESS_DOMAINS },
+    });
+    const cfg = JSON.parse(out.config);
+    expect(findStableEgressGroup(cfg['proxy-groups'])).toBeNull();
+    expect(cfg['proxy-groups'].some((g: { name: string }) => g.name === STABLE_EGRESS_GROUP)).toBe(true);
+  });
+
 });

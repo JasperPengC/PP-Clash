@@ -5,6 +5,8 @@ import { IconDownload, IconFolder, IconLog, IconPalette, IconSliders } from '../
 import { formatTime } from '../core/format';
 import { resolveActiveNode, useApp, type ThemeMode } from '../store/app';
 import { api, DATA_DIR, isTauri } from '../core/api';
+import { findStableEgressGroup } from '../core/generator';
+import { parseSubscriptionPreview } from '../core/subscription';
 import { isWindows } from '../core/platform';
 import { APP_VERSION, UPDATE_REPO } from '../core/update';
 import { VersionBadge } from '../components/VersionBadge';
@@ -73,6 +75,8 @@ const THEMES: Array<{ value: ThemeMode; label: string }> = [
 export function SettingsPage() {
   const settings = useApp((s) => s.settings);
   const groups = useApp((s) => s.groups);
+  const profiles = useApp((s) => s.profiles);
+  const activeId = useApp((s) => s.activeId);
   const updateSettings = useApp((s) => s.updateSettings);
   const activeNode = resolveActiveNode(groups, groups[0]?.now ?? '');
   const egressNodes = useMemo(
@@ -81,6 +85,11 @@ export function SettingsPage() {
         a.localeCompare(b)
       ),
     [groups]
+  );
+  const activeProfile = profiles.find((p) => p.id === activeId);
+  const detectedGithubGroup = useMemo(
+    () => findStableEgressGroup(parseSubscriptionPreview(activeProfile?.raw ?? '')),
+    [activeProfile?.raw]
   );
   const checkingUpdate = useApp((s) => s.checkingUpdate);
   const checkUpdate = useApp((s) => s.checkUpdate);
@@ -224,7 +233,7 @@ export function SettingsPage() {
               />
               <Row
                 label="GitHub 固定出口"
-                hint="切换节点时 GitHub 仍走同一个 IP，降低账号风控与封禁风险"
+                hint="优先复用订阅里的 GitHub 分组；没有才追加固定出口"
                 control={
                   <Toggle
                     on={settings.egressGuard}
@@ -237,17 +246,31 @@ export function SettingsPage() {
                           : settings.egressGuardNode,
                       });
                       void useApp.getState().applyConfig();
-                      notify('info', on ? 'GitHub 流量已固定到当前节点' : 'GitHub 已跟随节点切换');
+                      notify(
+                        'info',
+                        !on
+                          ? 'GitHub 已跟随节点切换'
+                          : detectedGithubGroup
+                            ? `GitHub 将使用订阅分组「${detectedGithubGroup}」`
+                            : '未发现 GitHub 分组，已追加固定出口'
+                      );
                     }}
                   />
                 }
               />
-              {settings.egressGuard && (
+              {settings.egressGuard && detectedGithubGroup && (
+                <Row
+                  label="订阅分组"
+                  hint="已检测到 GitHub 相关分组，直接沿用，不重复追加"
+                  control={<span className="version-text">{detectedGithubGroup}</span>}
+                />
+              )}
+              {settings.egressGuard && !detectedGithubGroup && (
                 <Row
                   label="固定节点"
                   hint={
                     egressNodes.length
-                      ? '仅影响 GitHub / GitHub API 与资源域名'
+                      ? '未发现 GitHub 分组；仅影响 GitHub / GitHub API 与资源域名'
                       : '连接内核后选择节点'
                   }
                   control={

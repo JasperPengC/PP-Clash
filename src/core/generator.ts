@@ -20,6 +20,18 @@ export const STABLE_EGRESS_DOMAINS = [
   'githubapp.com',
 ] as const;
 
+/** 订阅里已有的 GitHub / 代码相关分组，优先复用，不重复追加。 */
+export function findStableEgressGroup(groups: unknown[]): string | null {
+  const patterns = [/github/i, /git\s*hub/i, /代码/, /开发/, /程序/];
+  for (const item of groups) {
+    if (!item || typeof item !== 'object') continue;
+    const name = String((item as { name?: unknown }).name ?? '');
+    if (!name || name === STABLE_EGRESS_GROUP) continue;
+    if (patterns.some((re) => re.test(name))) return name;
+  }
+  return null;
+}
+
 export interface RuntimeOptions {
   mixedPort: number;
   controllerPort: number;
@@ -199,22 +211,25 @@ export async function generateConfig(
     stable?.enabled && stable.node && proxyNames.has(stable.node)
       ? stable.node
       : '';
-  const stableGroupName = STABLE_EGRESS_GROUP;
+  const existingStableGroup = findStableEgressGroup(groups);
+  const stableGroupName = existingStableGroup || STABLE_EGRESS_GROUP;
   const hasStableGroup = groups.some(
     (g) => String(asDict(g).name ?? '') === stableGroupName
   );
-  if (stableNode && !hasStableGroup) {
+  // 订阅已有 GitHub 分组时直接复用；没有才追加固定出口分组。
+  if (!existingStableGroup && stableNode && !hasStableGroup) {
     groups.push({
       name: stableGroupName,
       type: 'select',
       proxies: [stableNode],
     });
   }
-  const stableRules = stableNode
-    ? (stable?.domains ?? STABLE_EGRESS_DOMAINS).map(
-        (domain) => `DOMAIN-SUFFIX,${domain},${stableGroupName}`
-      )
-    : [];
+  const stableRules =
+    (existingStableGroup || stableNode)
+      ? (stable?.domains ?? STABLE_EGRESS_DOMAINS).map(
+          (domain) => `DOMAIN-SUFFIX,${domain},${stableGroupName}`
+        )
+      : [];
 
   let config: Dict = {
     // 安全策略负责的顶层字段

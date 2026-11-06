@@ -203,30 +203,42 @@ async fn fetch_group_info(port: u16, secret: &str) -> Option<(String, String, Ve
     let proxies = v.get("proxies")?.as_object()?;
     let group_types = ["Selector", "URLTest", "Fallback", "LoadBalance", "Relay"];
 
-    for (group_name, info) in proxies {
-        if group_name == "GLOBAL" {
+    // 面板应该展示「当前实际生效的分组」，而不是最外层订阅分组。
+    // 例如 一毛机场 -> 自动选择 -> 美国专线01：
+    // 外层分组 all 里只有「自动选择」这个子分组，直接展示会只剩一个兜底节点。
+    for (root_name, root_info) in proxies {
+        if root_name == "GLOBAL" {
             continue;
         }
-        if info.get("type").and_then(|x| x.as_str()) != Some("Selector") {
+        if root_info.get("type").and_then(|x| x.as_str()) != Some("Selector") {
             continue;
         }
-        let now = info.get("now").and_then(|x| x.as_str())?.to_string();
+        // 应用追加的 GitHub 固定出口不是主选择组，跳过。
+        if root_name == "GitHub 固定出口" {
+            continue;
+        }
 
-        // 沿 now 一直解析到真正的叶子节点（例如 Example Air -> 自动选择 -> 美国圣何塞02）
-        let mut actual = now.clone();
+        let mut group_name = root_name.clone();
+        let mut group_info = root_info;
+        let mut actual = group_info.get("now").and_then(|x| x.as_str())?.to_string();
+
         for _ in 0..8 {
-            let Some(info) = proxies.get(&actual) else { break };
-            if !group_types.contains(&info.get("type").and_then(|x| x.as_str()).unwrap_or("")) {
+            let Some(next_info) = proxies.get(&actual) else { break };
+            let next_type = next_info.get("type").and_then(|x| x.as_str()).unwrap_or("");
+            if !group_types.contains(&next_type) {
                 break;
             }
-            let Some(next) = info.get("now").and_then(|x| x.as_str()) else { break };
+            // 继续向下：面板显示真正拥有节点列表的那一层。
+            group_name = actual.clone();
+            group_info = next_info;
+            let Some(next) = next_info.get("now").and_then(|x| x.as_str()) else { break };
             if next == actual {
                 break;
             }
             actual = next.to_string();
         }
 
-        let all: Vec<String> = info
+        let all: Vec<String> = group_info
             .get("all")
             .and_then(|x| x.as_array())
             .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
@@ -280,7 +292,7 @@ async fn fetch_group_info(port: u16, secret: &str) -> Option<(String, String, Ve
             let db = b.delay.unwrap_or(u32::MAX);
             da.cmp(&db).then_with(|| a.name.cmp(&b.name))
         });
-        return Some((group_name.clone(), actual, nodes));
+        return Some((group_name, actual, nodes));
     }
     None
 }
