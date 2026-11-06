@@ -141,18 +141,23 @@ export function Select<T extends string>({
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) close();
     };
+    const onScroll = (e: Event) => {
+      // 菜单自身滚动时不能关闭；只有外部页面滚动才收起
+      if (ref.current && ref.current.contains(e.target as Node)) return;
+      close();
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close();
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
     // 下拉用 fixed 定位：滚动/缩放时直接收起，避免撑出滚动条
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
     };
   }, [open, options.length]);

@@ -79,13 +79,6 @@ export function SettingsPage() {
   const activeId = useApp((s) => s.activeId);
   const updateSettings = useApp((s) => s.updateSettings);
   const activeNode = resolveActiveNode(groups, groups[0]?.now ?? '');
-  const egressNodes = useMemo(
-    () =>
-      Array.from(new Set(groups.flatMap((g) => g.nodes.map((n) => n.name)))).sort((a, b) =>
-        a.localeCompare(b)
-      ),
-    [groups]
-  );
   const activeProfile = profiles.find((p) => p.id === activeId);
   const detectedGithubGroup = useMemo(
     () => findStableEgressGroup(parseSubscriptionPreview(activeProfile?.raw ?? '')),
@@ -256,48 +249,12 @@ export function SettingsPage() {
                           ? 'GitHub 已跟随节点切换'
                           : detectedGithubGroup
                             ? `GitHub 将使用订阅分组「${detectedGithubGroup}」`
-                            : '未发现 GitHub 分组，已追加固定出口'
+                            : '未发现 GitHub 分组，已追加固定出口；固定节点可在「节点」页切换'
                       );
                     }}
                   />
                 }
               />
-              {settings.egressGuard && detectedGithubGroup && (
-                <Row
-                  label="订阅分组"
-                  hint="已检测到 GitHub 相关分组，直接沿用，不重复追加"
-                  control={<span className="version-text">{detectedGithubGroup}</span>}
-                />
-              )}
-              {settings.egressGuard && !detectedGithubGroup && (
-                <Row
-                  label="固定节点"
-                  hint={
-                    egressNodes.length
-                      ? '未发现 GitHub 分组；仅影响 GitHub / GitHub API 与资源域名'
-                      : '连接内核后选择节点'
-                  }
-                  control={
-                    <Select
-                      value={settings.egressGuardNode || activeNode}
-                      options={[
-                        { value: '', label: '自动（首次连接节点）' },
-                        ...egressNodes.map((n) => ({ value: n, label: n })),
-                      ]}
-                      ariaLabel="GitHub 固定出口节点"
-                      onChange={(v) => {
-                        updateSettings({ egressGuardNode: v });
-                        void (async () => {
-                          const st = useApp.getState();
-                          await st.applyConfig();
-                          if (st.kernelPhase === 'running') await st.restartKernel(true);
-                        })();
-                        notify('info', v ? 'GitHub 固定出口已更新' : 'GitHub 将使用首次连接的节点');
-                      }}
-                    />
-                  }
-                />
-              )}
               <Row
                 label="版本"
                 hint="GitHub Releases · 点击检查更新"
