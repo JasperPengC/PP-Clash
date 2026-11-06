@@ -204,6 +204,8 @@ export default function App() {
   // 节点故障自动切换：只对 Selector 组生效，URLTest 交给内核自动调度。
   const failoverBusy = useRef(false);
   const lastFailoverAt = useRef(0);
+  const failoverNode = useRef('');
+  const failoverFails = useRef(0);
   useEffect(() => {
     if (!isTauri) return;
     const timer = window.setInterval(async () => {
@@ -222,11 +224,21 @@ export default function App() {
       if (!group || group.type !== 'Selector') return;
       const current = group.now;
       if (!current || !group.nodes.some((n) => n.name === current)) return;
+      if (failoverNode.current !== current) {
+        failoverNode.current = current;
+        failoverFails.current = 0;
+      }
 
       failoverBusy.current = true;
       try {
         const currentDelay = await s.testDelay(current);
-        if (currentDelay != null && currentDelay > 0) return;
+        if (currentDelay != null && currentDelay > 0) {
+          failoverFails.current = 0;
+          return;
+        }
+        // 连续 3 次探测失败才切换，避免一次抖动就把出口 IP 换掉。
+        failoverFails.current += 1;
+        if (failoverFails.current < 3) return;
         const candidates = group.nodes.filter((n) => n.name !== current).slice(0, 6);
         if (candidates.length === 0) return;
         const tested = await Promise.all(
@@ -239,8 +251,9 @@ export default function App() {
           .sort((a, b) => a.delay - b.delay)[0];
         if (!best) return;
         lastFailoverAt.current = Date.now();
+        failoverFails.current = 0;
         await s.selectNode(group.name, best.node.name);
-        s.notify('info', `节点 ${current} 不可用，已切换到 ${best.node.name}`);
+        s.notify('info', `节点 ${current} 连续 3 次不可用，已切换到 ${best.node.name}`);
       } catch {
         /* 自动切换失败不打扰用户 */
       } finally {

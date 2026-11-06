@@ -447,7 +447,7 @@ export function SettingsPage() {
               />
               <Row
                 label="节点不可用自动切换"
-                hint="探测当前节点，失败时切换到同组可用节点"
+                hint="连续 3 次探测失败才切换；URLTest 分组仍由内核按延迟调度"
                 control={
                   <Toggle
                     on={settings.autoFailover}
