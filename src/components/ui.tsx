@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { IconCheck, IconChevronDown } from './icons';
 
 /**
@@ -121,6 +122,7 @@ export function Select<T extends string>({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -139,11 +141,13 @@ export function Select<T extends string>({
 
     const close = () => setOpen(false);
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return;
+      close();
     };
     const onScroll = (e: Event) => {
       // 菜单自身滚动时不能关闭；只有外部页面滚动才收起
-      if (ref.current && ref.current.contains(e.target as Node)) return;
+      if (ref.current?.contains(e.target as Node) || menuRef.current?.contains(e.target as Node)) return;
       close();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -178,30 +182,39 @@ export function Select<T extends string>({
         <span className="select-label">{current?.label ?? value}</span>
         <IconChevronDown size={11} />
       </button>
-      {open && pos && (
-        <div
-          className="select-menu"
-          role="listbox"
-          style={{ top: pos.top, left: pos.left, minWidth: Math.max(pos.minWidth, 120) }}
-        >
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={`select-option${o.value === value ? ' active' : ''}`}
-              onClick={() => {
-                onChange(o.value);
-                setOpen(false);
-              }}
-            >
-              <span>{o.label}</span>
-              {o.value === value && <IconCheck size={11} />}
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="select-menu"
+            role="listbox"
+            style={{
+              top: pos.top,
+              left: pos.left,
+              minWidth: Math.max(pos.minWidth, 120),
+              maxHeight: Math.min(320, window.innerHeight - 24),
+            }}
+          >
+            {options.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                className={`select-option${o.value === value ? ' active' : ''}`}
+                onClick={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+              >
+                <span>{o.label}</span>
+                {o.value === value && <IconCheck size={11} />}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

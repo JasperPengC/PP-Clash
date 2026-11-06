@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api, DATA_DIR, isTauri, setMihomoBase, setMihomoSecret } from '../core/api';
-import { generateConfig, type ConfigStats, type RuleEditState, STABLE_EGRESS_DOMAINS, STABLE_EGRESS_GROUP } from '../core/generator';
+import { generateConfig, listProxyNames, type ConfigStats, type RuleEditState, STABLE_EGRESS_DOMAINS, STABLE_EGRESS_GROUP } from '../core/generator';
 import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
 import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
@@ -187,7 +187,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   egressGuard: true,
   egressGuardNode: '',
   overrides: [],
-  githubProxy: '',
+  githubProxy: 'auto',
   customRules: [],
   updateFeedUrl: '',
   updateCheckOnLaunch: true,
@@ -1013,6 +1013,17 @@ export const useApp = create<AppStore>((set, get) => ({
     const { activeId, profiles, policy } = get();
     const profile = profiles.find((p) => p.id === activeId);
     if (!profile) return;
+
+    // 导入/更新订阅后，如果还没记录固定节点（或旧节点已不在新订阅里），
+    // 先从新订阅里选一个节点，保证这次生成的配置就带 GitHub 固定出口分组。
+    if (get().settings.egressGuard) {
+      const names = listProxyNames(profile.raw);
+      const current = get().settings.egressGuardNode;
+      if (names.length > 0 && (!current || !names.includes(current))) {
+        set({ settings: { ...get().settings, egressGuardNode: names[0] } });
+        void persist(get());
+      }
+    }
 
     if (!isTauri) {
       // 浏览器预览：功能不可用是预期行为，不弹错误打扰看界面
