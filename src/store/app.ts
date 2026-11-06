@@ -823,6 +823,7 @@ export const useApp = create<AppStore>((set, get) => ({
         importing: false,
       }));
       await get().applyConfig();
+      if (get().kernelPhase === 'running') await get().restartKernel(true);
       void persist(get());
       const realNodes = countRealNodes(payload.raw);
       get().notify(
@@ -866,6 +867,7 @@ export const useApp = create<AppStore>((set, get) => ({
         importing: false,
       }));
       await get().applyConfig();
+      if (get().kernelPhase === 'running') await get().restartKernel(true);
       void persist(get());
       const realNodes = countRealNodes(raw);
       get().notify(
@@ -995,8 +997,11 @@ export const useApp = create<AppStore>((set, get) => ({
         ),
         refreshingIds: s.refreshingIds.filter((x) => x !== id),
       }));
-      // 活动中的订阅更新后立即重生成配置
-      if (get().activeId === id) await get().applyConfig();
+      // 活动中的订阅更新后立即重生成配置并让运行中的内核加载
+      if (get().activeId === id) {
+        await get().applyConfig();
+        if (get().kernelPhase === 'running') await get().restartKernel(true);
+      }
       void persist(get());
       if (!quiet) get().notify('success', '订阅已更新');
       return true;
