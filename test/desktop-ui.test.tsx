@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { Pill, Segmented, Select, Toggle } from '../src/components/ui';
+import { MiniSwitch, Pill, Segmented, Select, Toggle } from '../src/components/ui';
 import * as sharedUi from '../src/components/ui';
 import { readFileSync } from 'node:fs';
 import { RouteDiagnosticsPanel } from '../src/components/RouteDiagnosticsPanel';
@@ -85,6 +85,7 @@ it('共享控件、数据行和内容卡从令牌获得标准与紧凑尺度', a
       createElement('input', { className: 'input', 'aria-label': '输入' }),
       createElement(Segmented, { value: 'a', options: [{ value: 'a', label: '甲' }], onChange: vi.fn(), ariaLabel: '模式' }),
       createElement(Toggle, { on: true, onChange: vi.fn(), label: '系统代理' }),
+      createElement(MiniSwitch, { on: true, onChange: vi.fn(), label: '启用规则' }),
       createElement(Pill, { children: '等待' }),
       createElement('div', { className: 'data-row' }, '数据'),
       createElement('div', { className: 'surface-card' }, '卡片'))));
@@ -98,7 +99,32 @@ it('共享控件、数据行和内容卡从令牌获得标准与紧凑尺度', a
     expect(getComputedStyle(host.querySelector('.surface-card')!).borderRadius).toBe('16px');
     expect(getComputedStyle(host.querySelector('.toggle')!).width).toBe('40px');
     expect(getComputedStyle(host.querySelector('.toggle')!).height).toBe('22px');
+    const miniSwitch = host.querySelector('.mini-switch')!;
+    const thumb = miniSwitch.querySelector('span')!;
+    expect.soft(getComputedStyle(miniSwitch).width).toBe('40px');
+    expect.soft(getComputedStyle(miniSwitch).height).toBe('22px');
+    expect.soft(getComputedStyle(thumb).width).toBe('18px');
+    expect.soft(getComputedStyle(thumb).height).toBe('18px');
   } finally { style.remove(); delete document.documentElement.dataset.theme; }
+});
+
+it('MiniSwitch 保留名称和 checked 状态，禁用时不更新且点击不触发外层操作', async () => {
+  const change = vi.fn();
+  const outer = vi.fn();
+  const renderSwitch = async (on: boolean, disabled = false) => act(async () => root.render(
+    createElement('div', { onClick: outer }, createElement(MiniSwitch, { on, disabled, onChange: change, label: '启用覆写' }))));
+  await renderSwitch(false);
+  const control = host.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(control.getAttribute('aria-label')).toBe('启用覆写');
+  expect(control.getAttribute('aria-checked')).toBe('false');
+  await act(async () => control.click());
+  expect(change).toHaveBeenCalledExactlyOnceWith(true);
+  expect(outer).not.toHaveBeenCalled();
+  await renderSwitch(true, true);
+  expect(control.getAttribute('aria-checked')).toBe('true');
+  expect(control.disabled).toBe(true);
+  await act(async () => control.click());
+  expect(change).toHaveBeenCalledTimes(1);
 });
 
 it('下拉可用方向键选择、Escape退出，并将焦点还给触发器', async () => {

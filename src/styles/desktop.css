@@ -8,6 +8,7 @@
   --space-4: calc(var(--space-unit) * 4);
   --space-5: calc(var(--space-unit) * 5);
   --space-6: var(--page-pad);
+  --switch-thumb-size: 18px;
 }
 
 body {
@@ -367,18 +368,21 @@ textarea::placeholder {
   padding-inline: var(--space-2);
 }
 
-.toggle {
+.toggle,
+.mini-switch {
   width: var(--switch-width);
   height: var(--switch-height);
   border-radius: var(--radius-pill);
 }
 
-.toggle::after {
-  width: calc(var(--switch-height) - var(--space-1));
-  height: calc(var(--switch-height) - var(--space-1));
+.toggle::after,
+.mini-switch span {
+  width: var(--switch-thumb-size);
+  height: var(--switch-thumb-size);
 }
 
-.toggle.on::after {
+.toggle.on::after,
+.mini-switch.on span {
   transform: translateX(calc(var(--switch-width) - var(--switch-height)));
 }
 
