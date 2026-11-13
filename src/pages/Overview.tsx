@@ -66,12 +66,15 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   };
   const [switchingMode, setSwitchingMode] = useState(false);
   const [groupDelays, setGroupDelays] = useState<Record<string, number | null>>({});
+  const [connectionDelays, setConnectionDelays] = useState<Record<string, number | null>>({});
   const [testingGroup, setTestingGroup] = useState(false);
   const testGroupLock = useRef(false);
   const testGroupEpoch = useRef(0);
   const latencyPool = useRef({ active: 0, waiting: [] as Array<() => void> });
   const [testingCurrentNode, setTestingCurrentNode] = useState(false);
   const currentLatencyRequest = useRef<symbol | null>(null);
+  const currentLatencyRequestKey = useRef<string | null>(null);
+  const currentLatencyEpoch = useRef(0);
   const currentLatencyAttempts = useRef(new Set<string>());
   const modeLock = useRef(false);
   const [pendingNode, setPendingNode] = useState<string | null>(null);
@@ -120,13 +123,12 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     testGroupLock.current = false;
     setGroupDelays({});
     setTestingGroup(false);
-    currentLatencyAttempts.current.clear();
-    setTestingCurrentNode(currentLatencyRequest.current !== null);
     return () => { testGroupEpoch.current += 1; };
   }, [activeId, connectedAt, connected, inspectedGroup]);
   useEffect(() => {
     if (active) return;
     testGroupEpoch.current += 1;
+    currentLatencyEpoch.current += 1;
     testGroupLock.current = false;
     setTestingGroup(false);
   }, [active]);
@@ -367,6 +369,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
       if (!current()) return;
       setGroupDelays(prev => ({ ...prev, ...results }));
+      setConnectionDelays(prev => ({ ...prev, ...results }));
       await useApp.getState().refreshGroups(true).catch(() => false);
     } finally {
       if (current()) {
@@ -442,51 +445,85 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       })
     : [], [displayGroup, connected, groupNow, groupDelays]);
 
-  const selectedNode = displayGroup?.nodes.find((n) => n.name === groupNow);
-  const selectedNodeDelay = selectedNode ? nodeLatency(selectedNode) : undefined;
-  const currentLatencyTarget = groupLatencyTarget(displayGroup?.name ?? '');
-  const currentLatencyKey = JSON.stringify([activeId, connectedAt, displayGroup?.name, groupNow, currentLatencyTarget]);
-  const canTestCurrent = runtimeMatches && !!selectedNode && !groups.some(g => g.name === selectedNode.name)
-    && !['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'].includes(selectedNode.name);
+  const displayedLatencyTarget = groupLatencyTarget(displayGroup?.name ?? '');
+  const connectionGroup = runtimeMatches ? domain.groups.find(group => group.name === effectiveGroup?.name)
+    ?? domain.groups.find(group => group.name === primaryGroup?.name) : undefined;
+  const connectionRoute = connectionGroup ? resolveProxyRoute(domain, primaryGroup?.name ?? connectionGroup.name) : null;
+  const directConnection = settings.mode === 'direct';
+  const connectionNode = !directConnection && connectionRoute?.kind === 'selected'
+    ? connectionGroup?.nodes.find(node => node.name === nodeName) : undefined;
+  const connectionTarget = directConnection || !connectionGroup ? null : groupLatencyTarget(connectionGroup.name);
+  const reportedConnectionLatency = connectionNode
+    ? readGroupLatency(connectionDelays, connectionGroup!.name, connectionNode.name, connectionNode.delaysByTarget) : undefined;
+  const connectionDelay = reportedConnectionLatency === undefined ? undefined : normalizeLatency(reportedConnectionLatency);
+  const connectionKey = JSON.stringify([activeId, connectedAt, runtimeConfigRevision, settings.mode, connectionGroup?.name, connectionNode?.name, connectionTarget]);
+  const canTestConnection = runtimeMatches && !directConnection && !!connectionNode && !routingGroups.some(group => group.name === connectionNode.name)
+    && !['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'].includes(connectionNode.name);
+  const actualConnection = {
+    group: connectionGroup,
+    node: connectionNode,
+    name: !runtimeMatches ? '待确认' : directConnection ? 'DIRECT'
+      : connectionRoute?.kind === 'multiple' ? '按连接分配 · 无唯一出口'
+      : connectionRoute?.kind === 'relay' ? 'Relay 能力未核验'
+      : connectionRoute?.kind !== 'selected' ? '当前出口待确认' : nodeName || '待确认',
+    auxiliaryLabel: directConnection ? '直连模式' : primaryGroup?.name ?? '策略待确认',
+    delay: connectionDelay,
+    reading: directConnection ? '直连' : connectionDelay === undefined ? '未测' : connectionDelay === null ? '失败' : `${connectionDelay} ms`,
+    target: connectionTarget,
+    targetDescription: directConnection ? '直连模式，不测速代理候选'
+      : !canTestConnection ? '当前连接不支持单节点测速'
+      : `${connectionTarget === GITHUB_LATENCY_URL ? 'GitHub' : 'Google'} HTTPS 延迟 · 点击重测`,
+    tone: connectionDelay == null ? 'idle' : connectionDelay < 120 ? 'good' : connectionDelay < 260 ? 'warn' : 'bad',
+    canTest: canTestConnection,
+    key: connectionKey,
+    testing: testingCurrentNode && currentLatencyRequestKey.current === connectionKey,
+  };
+  useEffect(() => {
+    currentLatencyEpoch.current += 1;
+    currentLatencyAttempts.current.clear();
+    setConnectionDelays({});
+    return () => { currentLatencyEpoch.current += 1; };
+  }, [activeId, connectedAt, connected, runtimeConfigRevision, settings.mode, connectionGroup?.name, connectionNode?.name]);
   const testCurrentNode = async () => {
-    if (!canTestCurrent || !selectedNode || currentLatencyRequest.current || testGroupLock.current) return;
+    if (!actualConnection.canTest || !actualConnection.node || !actualConnection.group || !actualConnection.target || currentLatencyRequest.current || testGroupLock.current) return;
     const request = Symbol();
     currentLatencyRequest.current = request;
-    currentLatencyAttempts.current.add(currentLatencyKey);
-    const epoch = testGroupEpoch.current;
-    const group = displayGroup!.name;
+    currentLatencyRequestKey.current = actualConnection.key;
+    currentLatencyAttempts.current.add(actualConnection.key);
+    const epoch = currentLatencyEpoch.current;
+    const group = actualConnection.group.name;
+    const resultKey = latencyKey(group, actualConnection.target, actualConnection.node.name);
     setTestingCurrentNode(true);
     await acquireLatencySlot();
     try {
-      if (epoch !== testGroupEpoch.current) return;
-      const delay = await testDelay(selectedNode.name, currentLatencyTarget);
-      if (epoch === testGroupEpoch.current) setGroupDelays(prev => ({ ...prev,
-        [latencyKey(group, currentLatencyTarget, selectedNode.name)]: normalizeLatency(delay),
-      }));
+      if (epoch !== currentLatencyEpoch.current) return;
+      const delay = normalizeLatency(await testDelay(actualConnection.node.name, actualConnection.target));
+      if (epoch === currentLatencyEpoch.current) {
+        setConnectionDelays(prev => ({ ...prev, [resultKey]: delay }));
+        setGroupDelays(prev => ({ ...prev, [resultKey]: delay }));
+      }
     } catch {
-      if (epoch === testGroupEpoch.current) setGroupDelays(prev => ({ ...prev,
-        [latencyKey(group, currentLatencyTarget, selectedNode.name)]: null,
-      }));
+      if (epoch === currentLatencyEpoch.current) {
+        setConnectionDelays(prev => ({ ...prev, [resultKey]: null }));
+        setGroupDelays(prev => ({ ...prev, [resultKey]: null }));
+      }
     } finally {
       releaseLatencySlot();
       // 结果代次可以过期，但在途请求仍须释放它自己持有的锁。
       if (currentLatencyRequest.current === request) {
         currentLatencyRequest.current = null;
+        currentLatencyRequestKey.current = null;
         setTestingCurrentNode(false);
       }
     }
   };
   useEffect(() => {
-    if (!active || inspectedGroup !== null || !canTestCurrent || selectedNodeDelay !== undefined || testingGroup || testingCurrentNode
-      || currentLatencyAttempts.current.has(currentLatencyKey)) return;
+    if (!active || !actualConnection.canTest || actualConnection.delay !== undefined || testingGroup || testingCurrentNode
+      || currentLatencyAttempts.current.has(actualConnection.key)) return;
     // 当前出口稳定且缺少记录时补一次；窗口隐藏时不开始，不测备用节点。
     const timer = window.setTimeout(() => { void testCurrentNode(); }, 5000);
     return () => window.clearTimeout(timer);
-  }, [active, inspectedGroup, canTestCurrent, currentLatencyKey, selectedNodeDelay, testingGroup, testingCurrentNode]);
-  const heroDelay =
-    connected ? selectedNodeDelay ?? null : null;
-  const heroQuality =
-    heroDelay == null ? 'idle' : heroDelay < 120 ? 'good' : heroDelay < 260 ? 'warn' : 'bad';
+  }, [active, actualConnection.canTest, actualConnection.key, actualConnection.delay, testingGroup, testingCurrentNode]);
 
   const onSelectNode = async (name: string) => {
     if (!canSelectMember || !displayGroup) return;
@@ -505,16 +542,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       : <span className="ov-hero-region">{egressCountryLabel}</span>
   ) : null;
 
-  const connectionGroup = domain.groups.find(group => group.name === effectiveGroup?.name) ?? domain.groups[0];
-  const connectionRoute = connectionGroup ? resolveProxyRoute(domain, connectionGroup.name) : null;
-  const connectionName = !runtimeMatches ? '待确认' : settings.mode === 'direct' ? 'DIRECT'
-    : connectionRoute?.kind === 'multiple' ? '按连接分配 · 无唯一出口'
-    : connectionRoute?.kind === 'relay' ? 'Relay 能力未核验'
-    : connectionRoute?.kind === 'unknown' ? '当前出口待确认' : nodeName || '待确认';
-  const connectionNode = connectionGroup?.nodes.find(node => node.name === connectionGroup.now);
-  const reportedConnectionLatency = connectionNode
-    ? readGroupLatency(groupDelays, connectionGroup?.name ?? '', connectionNode.name, connectionNode.delaysByTarget) : undefined;
-  const connectionLatency = reportedConnectionLatency === undefined ? undefined : normalizeLatency(reportedConnectionLatency);
   const visibleStart = Math.min(nodeWindowStart, Math.max(0, groupNodes.length - OVERVIEW_NODE_WINDOW));
   const visibleGroupNodes = groupNodes.slice(visibleStart, visibleStart + OVERVIEW_NODE_WINDOW);
 
@@ -537,17 +564,17 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                 <span className="ov-hero-uptime">{uptime ?? (kernelBusy ? '请稍候' : '尚未连接')}</span>
               </div>
               <div className="ov-hero-main">
-                <strong className="ov-hero-node" title={connected ? connectionName : desc}>{connected ? <NodeName name={connectionName} /> : desc}</strong>
-                <span className="ov-hero-route" title={primaryGroup?.name}>{connected ? primaryGroup?.name ?? '策略待确认' : failed ? kernelError ?? '内核未就绪' : '开启系统代理或 TUN 后连接'}</span>
+                <strong className="ov-hero-node" title={connected ? actualConnection.name : desc}>{connected ? <NodeName name={actualConnection.name} /> : desc}</strong>
+                <span className="ov-hero-route" title={actualConnection.auxiliaryLabel}>{connected ? actualConnection.auxiliaryLabel : failed ? kernelError ?? '内核未就绪' : '开启系统代理或 TUN 后连接'}</span>
               </div>
               <div className="ov-hero-egress"><span>出口</span><strong>{connected ? egress ?? (egressLoading ? '获取中' : '待确认') : '待确认'}</strong>{connected && egressFlag}</div>
               <div className="ov-hero-foot">
                 <span><IconUpload size={12} />{formatBytes(connected ? upTotal : 0)}</span>
                 <span><IconDownload size={12} />{formatBytes(connected ? downTotal : 0)}</span>
-                <button type="button" className={`ov-latency hero-gauge ${heroQuality}`} disabled={!canTestCurrent || inspectedGroup !== null || testingCurrentNode || testingGroup}
-                  aria-label={heroDelay != null ? `测速当前节点，延迟 ${heroDelay} 毫秒` : '测速当前节点'}
-                  title={`${currentLatencyTarget === GITHUB_LATENCY_URL ? 'GitHub' : 'Google'} HTTPS 延迟 · 点击重测`} onClick={() => void testCurrentNode()}>
-                  <span className="ov-latency-reading">{testingCurrentNode ? <Spinner small /> : <IconRefresh size={12} />}<strong>{!connected ? '未测' : connectionLatency === undefined ? '未测' : connectionLatency === null ? '失败' : `${connectionLatency} ms`}</strong></span>
+                <button type="button" className={`ov-latency hero-gauge ${actualConnection.tone}`} disabled={!actualConnection.canTest || testingCurrentNode || testingGroup}
+                  aria-label={actualConnection.delay != null ? `测速当前节点，延迟 ${actualConnection.delay} 毫秒` : directConnection ? '直连模式，不测速代理候选' : '测速当前节点'}
+                  title={actualConnection.targetDescription} onClick={() => void testCurrentNode()}>
+                  <span className="ov-latency-reading">{actualConnection.testing ? <Spinner small /> : <IconRefresh size={12} />}<strong>{actualConnection.reading}</strong></span>
                 </button>
               </div>
               {failed && <div className="ov-hero-actions"><button type="button" className="btn btn-primary btn-sm" disabled={retrying || kernelBusy} onClick={() => void retryConnection()}>{retrying ? '重试中…' : '重试连接'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('logs')}>查看日志</button></div>}
@@ -593,7 +620,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
               <div className="ov-traffic-foot"><span><i className="ov-legend" />代理 ↑ {formatBytes(proxyUpBytes)}　↓ {formatBytes(proxyDownBytes)}</span><span><i className="ov-legend is-direct" />直连 ↑ {formatBytes(directUpBytes)}　↓ {formatBytes(directDownBytes)}</span></div>
             </section>
             <section className="ov-routing" aria-label="当前分组">
-              <div className="ov-pane-head"><h2>当前分组{currentLatencyTarget === GITHUB_LATENCY_URL && <span className="ov-meta" title={GITHUB_LATENCY_URL}> · GitHub 延迟</span>}</h2><button type="button" className="link-action" title="测速当前分组" aria-label="测速当前分组" disabled={!runtimeMatches || testingGroup || testingCurrentNode} onClick={() => void testCurrentGroup()}>{testingGroup ? <Spinner small /> : <IconBolt size={13} />}{testingGroup ? '测速中' : '测速'}</button></div>
+              <div className="ov-pane-head"><h2>当前分组{displayedLatencyTarget === GITHUB_LATENCY_URL && <span className="ov-meta" title={GITHUB_LATENCY_URL}> · GitHub 延迟</span>}</h2><button type="button" className="link-action" title="测速当前分组" aria-label="测速当前分组" disabled={!runtimeMatches || testingGroup || testingCurrentNode} onClick={() => void testCurrentGroup()}>{testingGroup ? <Spinner small /> : <IconBolt size={13} />}{testingGroup ? '测速中' : '测速'}</button></div>
               <div className="ov-group-picker"><select value={displayGroup?.name ?? ''} aria-label="浏览策略" disabled={!domain.groups.length} onChange={event => setInspectedGroup(event.target.value)}>{domain.groups.map(group => {
                 const route = resolveProxyRoute(domain, group.name);
                 const meaning = route.kind === 'multiple' ? '按连接分配' : route.kind === 'relay' ? '链式转发能力未核验' : proxyGroupKind(group.type);

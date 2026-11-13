@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { OverviewPage } from '../src/pages/Overview';
 import { useApp } from '../src/store/app';
-import { DEFAULT_LATENCY_URL } from '../src/core/latency';
+import { DEFAULT_LATENCY_URL, GITHUB_LATENCY_URL } from '../src/core/latency';
 import { api } from '../src/core/api';
 
 vi.mock('../src/core/api', async original => {
@@ -91,6 +91,49 @@ it('无效的当前节点目标延迟显示失败，不作为零毫秒成功读�
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
   const connection = host.querySelector('section[aria-label="当前连接"]')!;
   expect(connection.querySelector('.ov-latency')?.textContent).toBe('失败');
+});
+
+it('直连模式不显示或自动测速 Main 的闲置代理候选', async () => {
+  vi.useFakeTimers();
+  try {
+    const testDelay = vi.fn().mockResolvedValue(64);
+    useApp.setState(state => ({ settings: { ...state.settings, mode: 'direct' }, testDelay,
+      refreshGroups: vi.fn().mockResolvedValue(true), groups: [{ name: 'Main', type: 'Selector', now: 'A',
+        nodes: [{ name: 'A', type: 'Trojan', delay: null }] }],
+    }));
+    await act(async () => root.render(createElement(OverviewPage, { active: true })));
+    await act(async () => vi.advanceTimersByTimeAsync(6000));
+    const connection = host.querySelector('section[aria-label="当前连接"]')!;
+    expect(connection.querySelector('.ov-hero-node')?.textContent).toBe('DIRECT');
+    expect(testDelay).not.toHaveBeenCalled();
+    expect(connection.querySelector('.ov-latency')?.textContent).toBe('直连');
+    expect(connection.querySelector<HTMLButtonElement>('.ov-latency')?.disabled).toBe(true);
+    expect(connection.querySelector('.ov-hero-route')?.textContent).toBe('直连模式');
+  } finally { vi.useRealTimers(); }
+});
+
+it('浏览 GitHub 分组后主卡目标、读数、颜色、辅助标签和重测仍属于实际 Main 连接', async () => {
+  const testDelay = vi.fn().mockResolvedValue(180);
+  useApp.setState({ testDelay, groups: [
+    { name: 'Main', type: 'Selector', now: 'A', nodes: [{ name: 'A', type: 'Trojan', delay: 320, delaysByTarget: { [DEFAULT_LATENCY_URL]: 320 } }] },
+    { name: '开发', type: 'Selector', now: 'B', nodes: [{ name: 'B', type: 'Trojan', delay: 21, delaysByTarget: { [GITHUB_LATENCY_URL]: 21 } }] },
+  ] });
+  await act(async () => root.render(createElement(OverviewPage, { active: false })));
+  const connection = host.querySelector('section[aria-label="当前连接"]')!;
+  const mainLatency = () => connection.querySelector<HTMLButtonElement>('.ov-latency')!;
+  const target = mainLatency().title;
+  expect(target).toContain('Google HTTPS');
+  await browseGroup('开发');
+  expect(mainLatency().title).toBe(target);
+  expect(mainLatency().getAttribute('aria-label')).toBe('测速当前节点，延迟 320 毫秒');
+  expect(mainLatency().classList.contains('bad')).toBe(true);
+  expect(mainLatency().textContent).toBe('320 ms');
+  expect(connection.querySelector('.ov-hero-route')?.textContent).toBe('Main');
+  expect(mainLatency().disabled).toBe(false);
+  await act(async () => mainLatency().click());
+  expect(testDelay).toHaveBeenCalledExactlyOnceWith('A', DEFAULT_LATENCY_URL);
+  expect(mainLatency().textContent).toBe('180 ms');
+  expect(host.querySelector('.ov-routing')?.textContent).not.toContain('180 ms');
 });
 
 it('全局模式的状态与当前分组来自 GLOBAL 快照，不借用订阅首组延迟', async () => {
