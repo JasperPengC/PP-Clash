@@ -85,40 +85,41 @@ export function Sidebar({
       onClick={() => onChange(page)}
       aria-current={current === page ? 'page' : undefined}
     >
-      <span className="nav-icon">{ICONS[page]}</span>
+      <span className="nav-icon" aria-hidden="true">{ICONS[page]}</span>
       <span className="nav-label">{LABELS[page]}</span>
     </button>
   );
 
   return (
     <aside className="sidebar">
-      <div className="titlebar" data-tauri-drag-region />
+      <div className="titlebar sidebar-window-chrome" data-tauri-drag-region aria-hidden="true" />
 
       <div className="sidebar-brand">
-        <BrandCat size={30} className="brand-cat" />
-        <span className="brand-name">PP Clash</span>
-        <VersionBadge className="brand-version" />
+        <BrandCat size={26} className="brand-cat" />
+        <div className="sidebar-brand-copy">
+          <span className="brand-name">PP Clash</span>
+          <VersionBadge className="brand-version" />
+        </div>
       </div>
 
-      <div className="sidebar-label">导航</div>
-      <nav className="sidebar-nav" aria-label="主导航">
-        {BASE_ORDER.map((page) => renderItem(page))}
-      </nav>
+      <div className="sidebar-scroll">
+        <nav className="sidebar-nav" aria-label="主导航">
+          {BASE_ORDER.map((page) => renderItem(page))}
+        </nav>
 
-      {advancedMode && (
-        <>
-          <div className="sidebar-label">高级</div>
-          <nav className="sidebar-nav" aria-label="高级功能">
-            {ADVANCED_ORDER.map((page) => renderItem(page))}
-          </nav>
-          <div className="sidebar-label">工具</div>
-          <nav className="sidebar-nav" aria-label="工具">
-            {TOOLS_ORDER.map((page) => renderItem(page))}
-          </nav>
-        </>
-      )}
+        {advancedMode && (
+          <>
+            <nav className="sidebar-nav sidebar-nav-group" aria-label="配置与诊断">
+              {ADVANCED_ORDER.map((page) => renderItem(page))}
+            </nav>
+            <nav className="sidebar-nav sidebar-nav-group" aria-label="工具">
+              {TOOLS_ORDER.map((page) => renderItem(page))}
+            </nav>
+          </>
+        )}
+      </div>
 
-      <nav className="sidebar-nav" aria-label="设置">
+      <nav className="sidebar-nav sidebar-bottom" aria-label="设置">
         {renderItem('settings')}
       </nav>
     </aside>
