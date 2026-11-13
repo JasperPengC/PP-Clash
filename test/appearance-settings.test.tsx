@@ -80,3 +80,31 @@ it.each(['light', 'dark'])('%s 主题独立映射可读语义前景，上传使�
     else root.dataset.theme = previousTheme;
   }
 });
+
+it.each([
+  ['light', 'hero-text', 0], ['light', 'hero-text', 1],
+  ['light', 'hero-muted', 0], ['light', 'hero-muted', 1],
+  ['dark', 'hero-text', 0], ['dark', 'hero-text', 1],
+  ['dark', 'hero-muted', 0], ['dark', 'hero-muted', 1],
+] as const)('%s 主题 %s 对英雄渐变端点 %i 的功能文字对比度至少为 4.5:1', (theme, role, endpoint) => {
+  const root = document.documentElement;
+  const previousTheme = root.dataset.theme;
+  const style = document.createElement('style');
+  style.textContent = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
+  const probe = document.createElement('span');
+  probe.style.color = `var(--${role})`;
+  document.head.append(style); document.body.append(probe);
+  try {
+    root.dataset.theme = theme;
+    const endpoints = getComputedStyle(root).getPropertyValue('--hero-fill').match(/#[\da-f]{6}\b/gi) ?? [];
+    expect(endpoints).toHaveLength(2);
+    const foreground = luminance(getComputedStyle(probe).color);
+    const background = luminance(endpoints[endpoint]);
+    const contrast = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    expect(contrast, `${role} / ${endpoints[endpoint]}`).toBeGreaterThanOrEqual(4.5);
+  } finally {
+    style.remove(); probe.remove();
+    if (previousTheme === undefined) delete root.dataset.theme;
+    else root.dataset.theme = previousTheme;
+  }
+});

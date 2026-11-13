@@ -46,9 +46,9 @@
   --accent-soft: #ecf1ff;
 
   /* 概览状态卡：整块品牌色实底，正文用同族白。 */
-  --hero-fill: linear-gradient(168deg, #4a79e6, #2f5ed0);
+  --hero-fill: linear-gradient(168deg, #3464d5, #2f5ed0);
   --hero-text: #ffffff;
-  --hero-muted: #d4e0ff;
+  --hero-muted: #ecf1ff;
   --hero-line: #ffffff29;
 }
 
@@ -100,7 +100,7 @@
   /* 深色下品牌色明度偏高，实底改深一档保证白字对比。 */
   --hero-fill: linear-gradient(168deg, #2f56cc, #234099);
   --hero-text: #ffffff;
-  --hero-muted: #c3d2ff;
+  --hero-muted: #d4e0ff;
   --hero-line: #ffffff24;
 }
 
