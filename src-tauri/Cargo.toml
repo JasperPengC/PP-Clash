@@ -1,10 +1,10 @@
 [package]
 name = "ppclash"
-version = "0.1.5"
+version = "0.2.0"
 description = "防泄漏开箱即用的 Clash 客户端"
 license = "AGPL-3.0-only"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.90"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -17,12 +17,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri = { version = "2", features = ["tray-icon", "custom-protocol", "image-png", "macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde-saphyr = { version = "=2.1.1", default-features = false, features = ["deserialize"] }
 tokio = { version = "1", features = ["process", "time", "sync", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-dialog = "2"
 dirs = "5"
 zip = "2"
 sha2 = "0.10"
+regex = "1"
+flate2 = "1"
+tempfile = "3"
 
 [profile.release]
 codegen-units = 1

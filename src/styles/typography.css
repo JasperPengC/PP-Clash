@@ -1,0 +1,286 @@
+/* PP Clash 排版角色：相同用途使用同一组属性，不在页面单独加字号。 */
+
+html { font-size: 100%; }
+body { font-family: var(--font); }
+button, input, textarea, select { font-family: inherit; }
+strong, b { font-weight: var(--weight-semibold); }
+h1, h2, h3 { text-wrap: balance; }
+
+/* 页面标题 */
+.page-title,
+.t-title {
+  font-size: var(--type-page);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-heading);
+  color: var(--text-primary);
+}
+
+/* 卡片标题 */
+.section-title,
+.proxy-group-name,
+.profile-card-title,
+.sub-name,
+.kernel-summary-title,
+.diagnostics-heading h2,
+.service-title,
+.protection-title,
+.ip-quality-title,
+.dash .service-title,
+.dash .group-title,
+.dash .protection-title,
+.t-sub,
+.modal-title,
+.node-title {
+  font-size: var(--type-section);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-primary);
+}
+
+/* 小节标题与强调 */
+.diagnostic-section h3,
+.empty-title,
+.read-error strong,
+.kernel-summary-metrics strong,
+.diagnostics-summary strong {
+  font-size: var(--type-body);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-primary);
+}
+
+/* 正文 */
+body,
+.t-body {
+  font-size: var(--type-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* 表单控件 */
+.input,
+.select-btn,
+.select-option {
+  font-size: var(--type-control);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* 标签与条目 */
+.field-label,
+.policy-title,
+.switch-title,
+.toggle-card-title,
+.list-title,
+.quota-card-name,
+.quota-card-head .quota-profile-select .select-btn,
+.t-body-m {
+  font-size: var(--type-label);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-primary);
+}
+
+/* 导航沿用组件定义的默认、悬停和选中颜色。 */
+.nav-item {
+  font-size: var(--type-body);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* 正文数据 */
+.diagnostic-facts dd,
+.node-name,
+.proxy-node-name,
+.resource-name,
+.override-file-name,
+.kernel-stat-value,
+.kernel-value {
+  font-size: var(--type-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-primary);
+}
+
+/* 辅助说明 */
+.page-sub,
+.section-desc,
+.empty-desc,
+.card-hint,
+.diagnostics-heading p,
+.diagnostic-section .card-hint,
+.read-error p,
+.modal-desc,
+.t-caption,
+.kernel-summary-sub,
+.profile-card-empty,
+.list-sub {
+  font-size: var(--type-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-secondary);
+}
+
+/* 表单辅助说明与辅助标签共享三档尺度。 */
+.field-hint,
+.policy-desc,
+.switch-sub,
+.toggle-card-sub {
+  font-size: var(--type-hint);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-secondary);
+}
+
+/* 次要元信息 */
+.diagnostic-facts dt,
+.diagnostics-summary span span,
+.sub-meta,
+.proxy-group-meta,
+.proxy-group-count,
+.kernel-stat-label,
+.resource-meta,
+.resource-size,
+.resource-file-note,
+.geo-source-file,
+.quota-card-balance,
+.quota-updated {
+  font-size: var(--type-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-muted);
+}
+
+/* 普通按钮 */
+.btn {
+  font-size: var(--type-control);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-body);
+}
+
+/* 紧凑按钮与选项 */
+.btn-sm,
+.seg-btn,
+.sort-btn,
+.link-action,
+.group-test-link,
+.resource-tab,
+.override-file-add {
+  font-size: var(--type-meta);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-body);
+}
+
+/* 状态与紧凑数据 */
+.delay,
+.node-delay,
+.proxy-node .node-delay,
+.group-node-delay,
+.dash .group-node-delay,
+.status-text,
+.report-row,
+.diagnostic-leaks > div,
+.service-state,
+.service-latency,
+.dash .service-latency,
+.service-name,
+.dash .service-name,
+.group-node-name,
+.dash .group-node-name,
+.geo-source-title,
+.geo-source-input {
+  font-size: var(--type-meta);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* 小标签与刻度 */
+.pill,
+.tag,
+.seg-count,
+.sidebar-label,
+.legend,
+.hero-uptime,
+.hero-gauge-text span,
+.version-badge,
+.sidebar-brand .brand-version,
+.version-text,
+.version-pill,
+.service-route,
+.node-state,
+.t-micro {
+  font-size: var(--type-micro);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* 主指标 */
+.stat-number,
+.traffic-stat-value,
+.hero-node,
+.hero-node-row .hero-node,
+.t-metric {
+  font-size: var(--type-metric);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-heading);
+  color: var(--text-primary);
+}
+
+/* 仪表与品牌 */
+.hero-gauge-text strong,
+.latency-reading {
+  font-size: var(--type-gauge);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-heading);
+}
+
+/* 品牌名 */
+.brand-name {
+  font-size: var(--type-subtitle);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-primary);
+}
+
+/* 等宽编辑与日志 */
+.input-mono,
+.override-editor,
+.log-view,
+.rule-payload,
+.custom-rule-payload,
+.sub-rule-payload,
+.conn-host {
+  font-size: var(--type-meta);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-code);
+  letter-spacing: var(--tracking-body);
+  font-family: var(--font-mono);
+}
+
+/* 动态数字只选择已有角色，不生成新字号。 */
+.hero-gauge-text .gauge-reading-compact { font-size: var(--type-meta); }
+.hero-gauge-text .gauge-reading-medium { font-size: var(--type-subtitle); }
+.latency-reading-small { font-size: var(--type-section); }
+.t-num, .t-metric, .stat-number, .traffic-stat-value, .diagnostic-facts dd { font-variant-numeric: tabular-nums; }
+
+/* 概览速率强调读数，单位使用已有元信息角色。 */
+.rate-stat .stat-number { font-size: var(--type-page); }
+.rate-stat .stat-number > span { font-size: var(--type-meta); font-weight: var(--weight-regular); letter-spacing: var(--tracking-body); color: var(--text-secondary); }

@@ -1,0 +1,178 @@
+/* PP Clash 设计变量：颜色与排版的唯一数值来源。组件按语义引用，详见 DESIGN.md。 */
+
+:root[data-theme='light'] {
+  --bg: #f6f7fa;
+  --sidebar-bg: #ebeff8;
+  --surface: #ffffff;
+  --surface-2: #f1f3f7;
+  --surface-3: #e6e8ee;
+
+  --border: #e6e8ee;
+  --border-soft: #e6e8ee;
+  --border-strong: #c9ced9;
+
+  --text-primary: #242833;
+  --text-secondary: #626978;
+  --text-muted: #626978;
+
+  --accent: #3768db;
+  --accent-text: #2455c0;
+  --accent-hover: #2858c6;
+  --accent-contrast: #ffffff;
+
+  /* 主题语义前景独立定义，上传沿用橙色语义。 */
+  --success: #26734b;
+  --warning: #906014;
+  --danger: #b0413a;
+
+  --up: #906014;
+  --down: #3768db;
+
+  --brand: var(--accent);
+  --brand-soft: var(--accent-soft);
+
+  --shadow-card: 0 2px 5px #1f294509, 0 12px 32px #1f29450a;
+  --shadow-control: 0 1px 2px #202b4924;
+  --sidebar-material: linear-gradient(145deg, #ffffffa6, #e1e8f680);
+  --shadow-raise: 0 2px 6px rgb(16 24 40 / 0.06), 0 16px 36px -22px rgb(16 24 40 / 0.28);
+  --shadow-pop: 0 24px 64px -28px rgb(16 24 40 / 0.3);
+  --tray-border: rgb(16 24 40 / 0.18);
+  --tray-shadow: 0 2px 5px rgb(16 24 40 / 0.1), 0 8px 20px -6px rgb(16 24 40 / 0.28);
+  --shadow-primary: none;
+  --orb-shadow: none;
+
+  color-scheme: light;
+
+  --accent-soft: #ecf1ff;
+
+  /* 概览状态卡：整块品牌色实底，正文用同族白。 */
+  --hero-fill: linear-gradient(168deg, #4a79e6, #2f5ed0);
+  --hero-text: #ffffff;
+  --hero-muted: #d4e0ff;
+  --hero-line: #ffffff29;
+}
+
+:root[data-theme='dark'] {
+  --bg: #24262d;
+  --sidebar-bg: #292c38;
+  --surface: #2e313a;
+  --surface-2: #252832;
+  --surface-3: #414550;
+
+  --border: #414550;
+  --border-soft: #414550;
+  --border-strong: #5e6575;
+
+  --text-primary: #f0f1f5;
+  --text-secondary: #afb5c4;
+  --text-muted: #afb5c4;
+
+  --accent: #8dabff;
+  --accent-text: #b6caff;
+  --accent-hover: #a3bcff;
+  --accent-contrast: #142341;
+
+  /* 深色语义前景不继承浅色主题的计算值。 */
+  --success: #91cda9;
+  --warning: #e7c082;
+  --danger: #ffa398;
+
+  --up: #e7c082;
+  --down: #8dabff;
+
+  --brand: var(--accent);
+  --brand-soft: var(--accent-soft);
+
+  --shadow-card: 0 2px 5px #00000012, 0 12px 32px #00000012;
+  --shadow-control: 0 1px 3px #0004;
+  --sidebar-material: linear-gradient(145deg, #53586c59, #292c3866);
+  --shadow-raise: 0 2px 8px rgb(0 0 0 / 0.3), 0 18px 40px -24px rgb(0 0 0 / 0.8);
+  --shadow-pop: 0 26px 68px -30px rgb(0 0 0 / 0.9);
+  --tray-border: rgb(255 255 255 / 0.2);
+  --tray-shadow: 0 2px 5px rgb(0 0 0 / 0.3), 0 8px 20px -6px rgb(0 0 0 / 0.65);
+  --shadow-primary: none;
+  --orb-shadow: none;
+
+  color-scheme: dark;
+
+  --accent-soft: #364364;
+
+  /* 深色下品牌色明度偏高，实底改深一档保证白字对比。 */
+  --hero-fill: linear-gradient(168deg, #2f56cc, #234099);
+  --hero-text: #ffffff;
+  --hero-muted: #c3d2ff;
+  --hero-line: #ffffff24;
+}
+
+:root {
+  --sidebar-w: 174px;
+  --titlebar-h: 40px;
+  --control-height: 32px;
+  --control-height-compact: 28px;
+  --row-height: 48px;
+  --nav-row-height: 36px;
+  --switch-width: 40px;
+  --switch-height: 22px;
+  --icon-sm: 15px;
+  --icon-md: 16px;
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-pill: 999px;
+  --page-pad: 24px;
+  --gap: 12px;
+  --switch-thumb: #ffffff;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+  /* 标准桌面角色；辅助与功能标签不小于元信息字号。 */
+  --type-page: 21px;
+  --type-section: 13px;
+  --type-body: 13px;
+  --type-label: 12px;
+  --type-control: 12px;
+  --type-meta: 11px;
+  --type-hint: var(--type-meta);
+  --type-micro: var(--type-meta);
+  --type-metric: 22px;
+  --type-gauge: 20px;
+  --type-subtitle: 16px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-body: 1.5;
+  --leading-heading: 1.35;
+  --leading-tight: 1.2;
+  --leading-code: 1.65;
+  --tracking-heading: -0.02em;
+  --tracking-body: 0;
+}
+
+
+/* 只改变语义尺度，不缩放整个窗口；布局与控件使用这些变量适配。 */
+:root[data-text-size='larger'] {
+  --type-page: 22px;
+  --type-section: 14px;
+  --type-body: 14px;
+  --type-label: 13px;
+  --type-control: 13px;
+  --type-meta: 12px;
+  --type-hint: var(--type-meta);
+  --type-micro: var(--type-meta);
+  --type-metric: 23px;
+  --type-gauge: 21px;
+  --type-subtitle: 17px;
+}
+
+:root[data-text-size='large'] {
+  --type-page: 23px;
+  --type-section: 15px;
+  --type-body: 15px;
+  --type-label: 14px;
+  --type-control: 14px;
+  --type-meta: 13px;
+  --type-hint: var(--type-meta);
+  --type-micro: var(--type-meta);
+  --type-metric: 24px;
+  --type-gauge: 22px;
+  --type-subtitle: 18px;
+}

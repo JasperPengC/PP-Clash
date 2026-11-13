@@ -1,11 +1,12 @@
 {
   "name": "ppclash",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run check:version && tsc --noEmit && vite build",
+    "check:version": "node scripts/check-version.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "app": "tauri dev",
@@ -14,10 +15,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
     "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "flag-icons": "^7.6.0",
     "js-yaml": "^4.1.0",
+    "quickjs-emscripten-core": "0.32.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "simple-icons": "^13.21.0",
@@ -30,6 +33,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.9.0",
     "vite": "^7.1.0",
     "vitest": "^5.0.5"
