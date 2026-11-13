@@ -136,6 +136,35 @@ it('浏览 GitHub 分组后主卡目标、读数、颜色、辅助标签和重�
   expect(host.querySelector('.ov-routing')?.textContent).not.toContain('180 ms');
 });
 
+it.each([
+  ['rule', 'DIRECT', '直连', 'Main · 直连出口'],
+  ['rule', 'REJECT', '拒绝', 'Main · 拒绝连接'],
+  ['rule', 'REJECT-DROP', '丢弃', 'Main · 丢弃连接'],
+  ['global', 'DIRECT', '直连', 'GLOBAL · 直连出口'],
+  ['global', 'REJECT', '拒绝', 'GLOBAL · 拒绝连接'],
+  ['global', 'REJECT-DROP', '丢弃', 'GLOBAL · 丢弃连接'],
+] as const)('%s 模式保留已确认的 %s 终端，不显示为未知或测速代理', async (mode, terminal, reading, auxiliaryLabel) => {
+  const testDelay = vi.fn();
+  useApp.setState(state => ({ settings: { ...state.settings, mode }, testDelay }));
+  vi.mocked(api.mihomo).mockResolvedValue({ proxies: {
+    GLOBAL: { type: 'Selector', now: terminal, all: ['A', terminal] },
+    Main: { type: 'Selector', now: terminal, all: ['A', terminal] },
+    A: { type: 'Trojan', extra: { [DEFAULT_LATENCY_URL]: { Alive: true, History: [{ delay: 21 }] } } },
+    [terminal]: { type: terminal },
+  } });
+  await act(async () => { await useApp.getState().refreshGroups(); root.render(createElement(OverviewPage, { active: false })); });
+  const connection = host.querySelector('section[aria-label="当前连接"]')!;
+  const latency = connection.querySelector<HTMLButtonElement>('.ov-latency')!;
+  expect(connection.querySelector('.ov-hero-node')?.textContent).toBe(terminal);
+  expect(connection.querySelector('.ov-hero-route')?.textContent).toBe(auxiliaryLabel);
+  expect(latency.textContent).toBe(reading);
+  expect(latency.disabled).toBe(true);
+  expect(latency.title).not.toContain('HTTPS');
+  expect(latency.getAttribute('aria-label')).not.toContain('测速当前节点');
+  await act(async () => latency.click());
+  expect(testDelay).not.toHaveBeenCalled();
+});
+
 it('全局模式的状态与当前分组来自 GLOBAL 快照，不借用订阅首组延迟', async () => {
   useApp.setState(state => ({ settings: { ...state.settings, mode: 'global' } }));
   vi.mocked(api.mihomo).mockResolvedValue({ proxies: {

@@ -448,11 +448,15 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const displayedLatencyTarget = groupLatencyTarget(displayGroup?.name ?? '');
   const connectionGroup = runtimeMatches ? domain.groups.find(group => group.name === effectiveGroup?.name)
     ?? domain.groups.find(group => group.name === primaryGroup?.name) : undefined;
-  const connectionRoute = connectionGroup ? resolveProxyRoute(domain, primaryGroup?.name ?? connectionGroup.name) : null;
-  const directConnection = settings.mode === 'direct';
+  const connectionRoute = connectionGroup && settings.mode !== 'direct' ? resolveProxyRoute(domain, primaryGroup?.name ?? connectionGroup.name) : null;
+  const directMode = settings.mode === 'direct';
+  const directConnection = directMode || connectionRoute?.kind === 'direct';
+  const terminalName = directConnection ? 'DIRECT' : connectionRoute?.kind === 'reject' ? connectionRoute.terminal ?? 'REJECT' : null;
+  const terminalReading = terminalName === 'DIRECT' ? '直连' : terminalName === 'REJECT-DROP' ? '丢弃' : terminalName === 'REJECT' ? '拒绝' : null;
+  const terminalHelper = terminalName === 'DIRECT' ? '直连出口' : terminalName === 'REJECT-DROP' ? '丢弃连接' : '拒绝连接';
   const connectionNode = !directConnection && connectionRoute?.kind === 'selected'
     ? connectionGroup?.nodes.find(node => node.name === nodeName) : undefined;
-  const connectionTarget = directConnection || !connectionGroup ? null : groupLatencyTarget(connectionGroup.name);
+  const connectionTarget = terminalName || !connectionGroup ? null : groupLatencyTarget(connectionGroup.name);
   const reportedConnectionLatency = connectionNode
     ? readGroupLatency(connectionDelays, connectionGroup!.name, connectionNode.name, connectionNode.delaysByTarget) : undefined;
   const connectionDelay = reportedConnectionLatency === undefined ? undefined : normalizeLatency(reportedConnectionLatency);
@@ -462,18 +466,19 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const actualConnection = {
     group: connectionGroup,
     node: connectionNode,
-    name: !runtimeMatches ? '待确认' : directConnection ? 'DIRECT'
-      : connectionRoute?.kind === 'multiple' ? '按连接分配 · 无唯一出口'
+    name: !runtimeMatches ? '待确认' : terminalName ?? (
+      connectionRoute?.kind === 'multiple' ? '按连接分配 · 无唯一出口'
       : connectionRoute?.kind === 'relay' ? 'Relay 能力未核验'
-      : connectionRoute?.kind !== 'selected' ? '当前出口待确认' : nodeName || '待确认',
-    auxiliaryLabel: directConnection ? '直连模式' : primaryGroup?.name ?? '策略待确认',
+      : connectionRoute?.kind !== 'selected' ? '当前出口待确认' : nodeName || '待确认'),
+    auxiliaryLabel: directMode ? '直连模式' : terminalName ? `${primaryGroup?.name ?? '当前策略'} · ${terminalHelper}` : primaryGroup?.name ?? '策略待确认',
     delay: connectionDelay,
-    reading: directConnection ? '直连' : connectionDelay === undefined ? '未测' : connectionDelay === null ? '失败' : `${connectionDelay} ms`,
+    reading: terminalReading ?? (connectionDelay === undefined ? '未测' : connectionDelay === null ? '失败' : `${connectionDelay} ms`),
     target: connectionTarget,
-    targetDescription: directConnection ? '直连模式，不测速代理候选'
+    targetDescription: directMode ? '直连模式，不测速代理候选'
+      : terminalName ? `${terminalName} · ${terminalReading}，不测速代理候选`
       : !canTestConnection ? '当前连接不支持单节点测速'
       : `${connectionTarget === GITHUB_LATENCY_URL ? 'GitHub' : 'Google'} HTTPS 延迟 · 点击重测`,
-    tone: connectionDelay == null ? 'idle' : connectionDelay < 120 ? 'good' : connectionDelay < 260 ? 'warn' : 'bad',
+    tone: connectionRoute?.kind === 'reject' ? 'bad' : connectionDelay == null ? 'idle' : connectionDelay < 120 ? 'good' : connectionDelay < 260 ? 'warn' : 'bad',
     canTest: canTestConnection,
     key: connectionKey,
     testing: testingCurrentNode && currentLatencyRequestKey.current === connectionKey,
@@ -572,7 +577,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                 <span><IconUpload size={12} />{formatBytes(connected ? upTotal : 0)}</span>
                 <span><IconDownload size={12} />{formatBytes(connected ? downTotal : 0)}</span>
                 <button type="button" className={`ov-latency hero-gauge ${actualConnection.tone}`} disabled={!actualConnection.canTest || testingCurrentNode || testingGroup}
-                  aria-label={actualConnection.delay != null ? `测速当前节点，延迟 ${actualConnection.delay} 毫秒` : directConnection ? '直连模式，不测速代理候选' : '测速当前节点'}
+                  aria-label={actualConnection.delay != null ? `测速当前节点，延迟 ${actualConnection.delay} 毫秒` : actualConnection.canTest ? '测速当前节点' : actualConnection.targetDescription}
                   title={actualConnection.targetDescription} onClick={() => void testCurrentNode()}>
                   <span className="ov-latency-reading">{actualConnection.testing ? <Spinner small /> : <IconRefresh size={12} />}<strong>{actualConnection.reading}</strong></span>
                 </button>
