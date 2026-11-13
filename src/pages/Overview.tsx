@@ -1,105 +1,135 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { siGoogle, siYoutube, siGithub, siOpenai, siAnthropic } from 'simple-icons';
+import { BrandCat } from '../components/BrandCat';
 import { NodeName } from '../components/NodeName';
-import { MiniSparkline, RouteTrafficChart } from '../components/visuals';
-import { navigate, Pill, Segmented, Select, Spinner, Toggle } from '../components/ui';
+import { SplitSparkline } from '../components/visuals';
+import { navigate, Segmented, Select, Spinner, Toggle } from '../components/ui';
 import {
-  IconActivity,
   IconBolt,
   IconCheck,
   IconChevronRight,
   IconDownload,
-  IconGlobe,
-  IconProfiles,
   IconRefresh,
-  IconSecurity,
-  IconTun,
   IconUpload,
 } from '../components/icons';
-import { resolveActiveNode, resolveEffectiveGroup, useApp, type OutboundMode } from '../store/app';
+import { getLifecycleToken, isLifecycleCurrent, primaryRoutingGroup, resolveActiveNode, resolveEffectiveGroup, useApp, type OutboundMode, type ProxyNode } from '../store/app';
 import { api } from '../core/api';
-import { findStableEgressGroup } from '../core/generator';
-import { parseSubscriptionPreview } from '../core/subscription';
-import { checkWebRtc } from '../core/selfcheck';
+import { useTakeoverStatus } from '../core/use-takeover-status';
+import { findStableEgressGroup, STABLE_EGRESS_GROUP } from '../core/generator';
+import { buildProxyDomain, proxyGroupKind, resolveProxyRoute } from '../core/proxy-domain';
+import { useRouteDiagnostics } from '../core/use-diagnostics';
+import { startPolling } from '../core/polling';
 import { formatBytes, formatDuration, formatExpire, formatSpeed, formatTime } from '../core/format';
-import { siGoogle, siYoutube, siGithub, siOpenai, siAnthropic } from 'simple-icons';
+import { GITHUB_LATENCY_URL, groupLatencyTarget, latencyKey, normalizeLatency, readGroupLatency } from '../core/latency';
 
 const EMPTY = Array.from({ length: 32 }, () => 0);
-
-function errorText(e: unknown): string {
-  return e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
-}
-
-const SERVICES = [
-  { id: 'google', name: 'Google', icon: siGoogle, mono: false },
-  { id: 'youtube', name: 'YouTube', icon: siYoutube, mono: false },
-  { id: 'github', name: 'GitHub', icon: siGithub, mono: true },
-  { id: 'openai', name: 'ChatGPT', icon: siOpenai, mono: true },
-  { id: 'anthropic', name: 'Claude', icon: siAnthropic, mono: true },
-] as const;
-
+const OVERVIEW_NODE_HEIGHT = 44;
+const OVERVIEW_NODE_WINDOW = 16;
 
 export function OverviewPage({ active = true }: { active?: boolean }) {
   const kernelPhase = useApp((s) => s.kernelPhase);
   const connectedAt = useApp((s) => s.connectedAt);
   const kernelError = useApp((s) => s.kernelError);
   const groups = useApp((s) => s.groups);
+  const proxyRuntime = useApp(s => s.proxyRuntime);
   const profiles = useApp((s) => s.profiles);
   const activeId = useApp((s) => s.activeId);
   const sysProxyEnabled = useApp((s) => s.sysProxyEnabled);
   const tunEnabled = useApp((s) => s.tunEnabled);
   const settings = useApp((s) => s.settings);
+  const runtimeConfigRevision = useApp(s => s.runtimeConfigRevision);
+  const runtimeConfigTransition = useApp(s => s.runtimeConfigTransition);
+  const fixedNodes = useApp(s => s.fixedNodes);
+  const [inspectedGroup, setInspectedGroup] = useState<string | null>(null);
+  const [nodeWindowStart, setNodeWindowStart] = useState(0);
+  const nodeListRef = useRef<HTMLDivElement>(null);
+  const [connCount, setConnCount] = useState<number | null>(null);
   const mixedPort = useApp((s) => s.settings.mixedPort);
   const toggleSystemProxy = useApp((s) => s.toggleSystemProxy);
   const setTun = useApp((s) => s.setTun);
   const selectNode = useApp((s) => s.selectNode);
+  const testDelay = useApp((s) => s.testDelay);
   const refreshProfile = useApp((s) => s.refreshProfile);
   const refreshingIds = useApp((s) => s.refreshingIds);
   const activate = useApp((s) => s.activate);
   const notify = useApp((s) => s.notify);
   const updateSettings = useApp((s) => s.updateSettings);
+  const blockWebRtc = useApp((s) => s.policy.blockWebRtc);
+  const [retrying, setRetrying] = useState(false);
+  const retryLock = useRef(false);
+  const retryConnection = async () => {
+    if (retryLock.current) return;
+    retryLock.current = true; setRetrying(true);
+    try { await useApp.getState().startKernel(); }
+    catch (e) { notify('error', `重新连接失败：${String(e)}`); }
+    finally { retryLock.current = false; setRetrying(false); }
+  };
   const [switchingMode, setSwitchingMode] = useState(false);
   const [groupDelays, setGroupDelays] = useState<Record<string, number | null>>({});
   const [testingGroup, setTestingGroup] = useState(false);
-  const [serviceMap, setServiceMap] = useState<
-    Record<string, { ok: boolean; latency_ms: number | null }>
-  >({});
-  const [servicesLoading, setServicesLoading] = useState(false);
-  const serviceProbeRunning = useRef(false);
-  const [egressCountry, setEgressCountry] = useState<{ name: string | null; code: string | null } | null>(null);
-  const [egressLoading, setEgressLoading] = useState(false);
-  const [ipQuality, setIpQuality] = useState<{
-    ip: string;
-    country: string | null;
-    region: string | null;
-    city: string | null;
-    isp: string | null;
-    org: string | null;
-    asn: string | null;
-    kind: string;
-    risk: string;
-    score: number;
-  } | null>(null);
-  const [ipQualityLoading, setIpQualityLoading] = useState(false);
-  const [ipQualityError, setIpQualityError] = useState<string | null>(null);
-  const [ipQualityAt, setIpQualityAt] = useState<number | null>(null);
-  const [leakPhase, setLeakPhase] = useState<'idle' | 'running' | 'done'>('idle');
-  const [leakRows, setLeakRows] = useState<
-    Array<{ id: string; label: string; status: 'ok' | 'warn' | 'bad' | 'info'; text: string }>
-  >([]);
-
+  const testGroupLock = useRef(false);
+  const testGroupEpoch = useRef(0);
+  const latencyPool = useRef({ active: 0, waiting: [] as Array<() => void> });
+  const [testingCurrentNode, setTestingCurrentNode] = useState(false);
+  const currentLatencyRequest = useRef<symbol | null>(null);
+  const currentLatencyAttempts = useRef(new Set<string>());
+  const modeLock = useRef(false);
+  const [pendingNode, setPendingNode] = useState<string | null>(null);
+  const nodeLock = useRef(false);
   const changeMode = async (mode: OutboundMode) => {
-    if (mode === settings.mode) return;
+    if (mode === settings.mode || modeLock.current) return;
+    const token = getLifecycleToken();
+    modeLock.current = true;
     setSwitchingMode(true);
+    const previous = settings.mode;
     updateSettings({ mode });
-    const st = useApp.getState();
-    await st.applyConfig();
-    if (st.kernelPhase === 'running') {
-      await st.restartKernel(true);
+    try {
+      const st = useApp.getState();
+      const applied = await st.applyConfig();
+      if (!isLifecycleCurrent(token)) return;
+      if (!applied) {
+        updateSettings({ mode: previous });
+        notify('error', '配置生成失败，出站模式未切换');
+        return;
+      }
+      if (st.kernelPhase === 'running' && !await st.restartKernel(true, token, true)) {
+        if (!isLifecycleCurrent(token)) return;
+        if (useApp.getState().kernelPhase === 'running') {
+          updateSettings({ mode: previous });
+          useApp.setState({ configPath: '' });
+          notify('error', '出站模式未能应用，继续使用原模式');
+        } else notify('error', '模式已保存，但重新连接失败，请重试连接');
+      }
+    } catch (e) {
+      if (!isLifecycleCurrent(token)) return;
+      notify('error', `切换模式失败：${String(e)}`);
+    } finally {
+      modeLock.current = false;
+      setSwitchingMode(false);
     }
-    setSwitchingMode(false);
   };
 
   const connected = kernelPhase === 'running';
+  const takeover = useTakeoverStatus({ active, running: connected, sysProxy: sysProxyEnabled, tun: tunEnabled,
+    revision: JSON.stringify([runtimeConfigRevision, connectedAt, settings.controllerPort, settings.controllerSecret]),
+    transitioning: runtimeConfigTransition,
+  });
+  useEffect(() => { setInspectedGroup(null); }, [activeId]);
+  useEffect(() => {
+    testGroupEpoch.current += 1;
+    testGroupLock.current = false;
+    setGroupDelays({});
+    setTestingGroup(false);
+    currentLatencyAttempts.current.clear();
+    setTestingCurrentNode(currentLatencyRequest.current !== null);
+    return () => { testGroupEpoch.current += 1; };
+  }, [activeId, connectedAt, connected, inspectedGroup]);
+  useEffect(() => {
+    if (active) return;
+    testGroupEpoch.current += 1;
+    testGroupLock.current = false;
+    setTestingGroup(false);
+  }, [active]);
   const failed = kernelPhase === 'failed';
   const kernelBusy = kernelPhase === 'starting' || kernelPhase === 'stopping';
   const [proxyPending, setProxyPending] = useState(false);
@@ -124,10 +154,13 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     }
   };
   const activeProfile = profiles.find((p) => p.id === activeId);
-  const primaryGroup = groups[0];
+  const routing = useApp(s => s.routing);
+  const routeRevision = useApp(s => s.routeRevision);
+  const primaryGroup = primaryRoutingGroup({ groups, profiles, activeId, settings, routing });
+  const routingGroups = primaryGroup?.name === 'GLOBAL' ? [primaryGroup, ...groups] : groups;
   const effectiveGroup =
-    connected && primaryGroup ? resolveEffectiveGroup(groups, primaryGroup.name) : undefined;
-  const nodeName = resolveActiveNode(groups, primaryGroup?.now ?? '');
+    connected && primaryGroup ? resolveEffectiveGroup(routingGroups, primaryGroup.name) : undefined;
+  const nodeName = settings.mode === 'direct' ? 'DIRECT' : resolveActiveNode(routingGroups, primaryGroup?.now ?? '');
 
   const [up, setUp] = useState<number[]>(EMPTY);
   const [down, setDown] = useState<number[]>(EMPTY);
@@ -142,22 +175,20 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const [directUpBytes, setDirectUpBytes] = useState(0);
   const [directDownBytes, setDirectDownBytes] = useState(0);
   const prevConns = useRef<Map<string, { up: number; down: number }>>(new Map());
-  const [latency, setLatency] = useState<number | null>(null);
-  const [egress, setEgress] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const prev = useRef<{ up: number; down: number; ts: number } | null>(null);
 
-  // 断开时先用订阅原文把节点画出来，和节点页保持一致
-  const previewGroups = useMemo(
-    () => parseSubscriptionPreview(activeProfile?.raw ?? ''),
-    [activeProfile?.raw]
-  );
-  const displayGroup = connected
-    ? effectiveGroup
-    : previewGroups[0]
-      ? { name: previewGroups[0].name, now: '', nodes: previewGroups[0].nodes }
-      : undefined;
+  const snapshot = proxyRuntime?.profileId === activeId && proxyRuntime?.revision === runtimeConfigRevision
+    && proxyRuntime?.connectedAt === connectedAt ? proxyRuntime : null;
+  const runtimeMatches = connected && !runtimeConfigTransition && (!proxyRuntime || !!snapshot);
+  const domain = useMemo(() => buildProxyDomain({ raw: activeProfile?.raw, groups: runtimeMatches ? routingGroups : [],
+    profileId: activeId, revision: runtimeConfigRevision, runtime: runtimeMatches,
+    runtimeProxies: snapshot?.proxies, providers: snapshot?.providers, providersError: snapshot?.providersError }),
+    [activeProfile?.raw, groups, primaryGroup, activeId, runtimeConfigRevision, runtimeMatches, snapshot]);
+  const displayGroup = domain.groups.find(g => g.name === inspectedGroup)
+    ?? domain.groups.find(g => g.name === effectiveGroup?.name) ?? domain.groups[0];
+  useEffect(() => { setNodeWindowStart(0); if (nodeListRef.current) nodeListRef.current.scrollTop = 0; }, [displayGroup?.name, activeId]);
 
   useEffect(() => {
     if (!active) return;
@@ -174,13 +205,14 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       setProxyDownBytes(0);
       setDirectUpBytes(0);
       setDirectDownBytes(0);
-      setLatency(null);
       prev.current = null;
       prevConns.current = new Map();
       return;
     }
 
     let alive = true;
+    prev.current = null;
+    prevConns.current = new Map();
 
     const tick = async () => {
       try {
@@ -188,6 +220,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
           api.mihomo('GET', '/connections') as Promise<any>,
           api.trafficRates().catch(() => null),
         ]);
+        if (!alive) return;
         // mihomo 的 /connections 用 uploadTotal / downloadTotal，兼容旧字段名
         const u = c?.uploadTotal ?? c?.uploadTraffic ?? 0;
         const d = c?.downloadTotal ?? c?.downloadTraffic ?? 0;
@@ -208,6 +241,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
         }
         // 按连接链拆出「直连 / 代理」流量：逐连接做增量，避免连接关闭后字节数丢失
         const list: any[] = Array.isArray(c?.connections) ? c.connections : [];
+        if (alive) setConnCount(list.length);
         const next = new Map<string, { up: number; down: number }>();
         let pu = 0;
         let pd = 0;
@@ -255,122 +289,16 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       }
     };
 
-    const tickGroups = () => {
-      void useApp.getState().refreshGroups();
-    };
-
-    const testSelected = async () => {
-      const node = useApp.getState().groups[0]?.now;
-      if (!node) return;
-      const d = await useApp.getState().testDelay(node);
-      if (alive) setLatency(d);
-    };
-
-    void tick();
-    tickGroups();
-    void testSelected();
-    const i1 = window.setInterval(tick, 1000);
-    const i2 = window.setInterval(tickGroups, 3000);
-    const i3 = window.setInterval(testSelected, 8000);
+    const i1 = startPolling(tick, 1000);
+    const i2 = startPolling(async () => { await useApp.getState().refreshGroups(); }, 3000);
 
     return () => {
       alive = false;
-      window.clearInterval(i1);
-      window.clearInterval(i2);
-      window.clearInterval(i3);
+      i1();
+      i2();
+
     };
   }, [connected, active]);
-
-  // 出口 IP：连接后异步取一次；首轮失败自动重试，避免偶尔空白。
-  useEffect(() => {
-    if (!active) return;
-    if (!connected) {
-      setEgress(null);
-      setEgressLoading(false);
-      return;
-    }
-    let alive = true;
-    const load = async () => {
-      if (alive) setEgressLoading(true);
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          const r = await api.leakCheckIp(mixedPort);
-          if (!alive) return;
-          if (r.proxied) {
-            setEgress(r.proxied);
-            break;
-          }
-        } catch {
-          /* 下一轮重试 */
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 800 * (attempt + 1)));
-      }
-      if (alive) setEgressLoading(false);
-    };
-    void load();
-    const early = window.setTimeout(() => void load(), 4000);
-    const t = window.setInterval(() => void load(), 60_000);
-    return () => {
-      alive = false;
-      window.clearTimeout(early);
-      window.clearInterval(t);
-    };
-  }, [connected, mixedPort, nodeName, active]);
-
-  // 出口 IP 归属地：多个 GeoIP 源由后端兜底，前端再重试两轮。
-  useEffect(() => {
-    if (!active || !connected || !egress) {
-      setEgressCountry(null);
-      return;
-    }
-    let alive = true;
-    const load = async () => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          const r = await api.lookupIpCountry(egress);
-          if (!alive) return;
-          if (r.country || r.country_code) {
-            setEgressCountry({ name: r.country, code: r.country_code });
-            return;
-          }
-        } catch {
-          /* next attempt */
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 700 * (attempt + 1)));
-      }
-    };
-    void load();
-    return () => {
-      alive = false;
-    };
-  }, [connected, egress, mixedPort, active]);
-
-  // IP 质量：只使用公开元数据，基于出口 IP 查询类型/风险/ASN。
-  const loadIpQuality = useCallback(async () => {
-    if (!connected || !egress) {
-      setIpQuality(null);
-      setIpQualityError(null);
-      setIpQualityAt(null);
-      return;
-    }
-    setIpQualityLoading(true);
-    setIpQualityError(null);
-    try {
-      const q = await api.checkIpQuality(egress);
-      setIpQuality(q);
-      setIpQualityAt(Date.now());
-    } catch (e) {
-      setIpQualityError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setIpQualityLoading(false);
-    }
-  }, [connected, egress]);
-
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setTimeout(() => void loadIpQuality(), 1200);
-    return () => window.clearTimeout(timer);
-  }, [active, loadIpQuality]);
 
   // 运行时长计时
   useEffect(() => {
@@ -383,147 +311,76 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
 
   const latestUp = up[up.length - 1] ?? 0;
   const latestDown = down[down.length - 1] ?? 0;
-  const latestProxyUp = proxyUp[proxyUp.length - 1] ?? 0;
-  const latestProxyDown = proxyDown[proxyDown.length - 1] ?? 0;
-  const latestDirectUp = directUp[directUp.length - 1] ?? 0;
-  const latestDirectDown = directDown[directDown.length - 1] ?? 0;
   const peakUp = Math.max(...up);
   const peakDown = Math.max(...down);
 
-  const detectedGithubGroup = findStableEgressGroup(
-    activeProfile ? parseSubscriptionPreview(activeProfile.raw) : []
-  );
-  const stableGithubNode = settings.egressGuard
-    ? detectedGithubGroup || settings.egressGuardNode
+  const githubGroups = runtimeMatches ? groups : domain.groups;
+  const detectedGithubGroup = findStableEgressGroup(githubGroups)
+    ?? githubGroups.find(group => group.name === STABLE_EGRESS_GROUP)?.name;
+  const stableGithubNode = settings.mode === 'rule' && settings.egressGuard
+    ? (detectedGithubGroup ? resolveActiveNode(groups, detectedGithubGroup) : settings.egressGuardNode)
     : '';
 
-  const runServiceProbe = useCallback(async () => {
-    if (!connected || serviceProbeRunning.current) return;
-    serviceProbeRunning.current = true;
-    setServicesLoading(true);
-    // 每个服务独立请求，谁先返回谁先更新，不等待最慢的 ChatGPT。
-    await Promise.all(
-      SERVICES.map(async ({ id }) => {
-        try {
-          // GitHub 走了固定出口时，连通性测试也必须测这个节点，而不是当前主节点。
-          const row = await api.probeService(
-            id,
-            id === 'github' && stableGithubNode ? stableGithubNode : null
-          );
-          setServiceMap((prev) => ({ ...prev, [id]: row }));
-        } catch {
-          /* 单个失败保留旧结果 */
-        }
-      })
-    );
-    serviceProbeRunning.current = false;
-    setServicesLoading(false);
-  }, [connected, stableGithubNode]);
-
-  useEffect(() => {
-    if (!active) return;
-    if (!connected || kernelBusy) {
-      setServiceMap({});
-      setServicesLoading(false);
-      return;
-    }
-    // 首次接管后等内核和路由完全落稳再探测，避免刚启动时的假失败。
-    // 这里不依赖 nodeName：URLTest 自动换节点时不能反复重置探测定时器。
-    let alive = true;
-    const start = window.setTimeout(() => {
-      if (alive) void runServiceProbe();
-    }, 3500);
-    const timer = window.setInterval(() => {
-      if (alive) void runServiceProbe();
-    }, 30_000);
-    return () => {
-      alive = false;
-      window.clearTimeout(start);
-      window.clearInterval(timer);
-    };
-  }, [connected, kernelBusy, mixedPort, runServiceProbe, active]);
+  const acquireLatencySlot = () => new Promise<void>(resolve => {
+    if (latencyPool.current.active < 3) {
+      latencyPool.current.active += 1;
+      resolve();
+    } else latencyPool.current.waiting.push(resolve);
+  });
+  const releaseLatencySlot = () => {
+    const next = latencyPool.current.waiting.shift();
+    if (next) next();
+    else latencyPool.current.active -= 1;
+  };
 
   const testCurrentGroup = async () => {
-    if (!displayGroup || testingGroup) return;
+    if (!runtimeMatches || !displayGroup || testGroupLock.current || currentLatencyRequest.current) return;
     if (!connected) {
       notify('info', '先开启接管');
       return;
     }
+    testGroupLock.current = true;
+    const epoch = testGroupEpoch.current;
+    const group = displayGroup;
+    const target = groupLatencyTarget(group.name);
+    const current = () => epoch === testGroupEpoch.current;
+    const queue = [...group.nodes];
+    const results: Record<string, number | null> = {};
+    const worker = async () => {
+      while (current() && queue.length) {
+        // 旧批次仍占用请求槽，重连后的新批次需等其退出；过期队列不发请求。
+        await acquireLatencySlot();
+        try {
+          if (!current()) return;
+          const node = queue.shift();
+          if (!node) return;
+          let delay: number | null = null;
+          try { delay = normalizeLatency(await testDelay(node.name, target)); } catch { /* 失败只更新此节点的测速结果。 */ }
+          if (current()) results[latencyKey(group.name, target, node.name)] = delay;
+        } finally {
+          releaseLatencySlot();
+        }
+      }
+    };
     setTestingGroup(true);
     try {
-      // 交给 mihomo 分组测速：服务端并发测完整组，避免前端逐个节点串行等待。
-      const data = await api.mihomo(
-        'GET',
-        `/group/${encodeURIComponent(displayGroup.name)}/delay?url=${encodeURIComponent(
-          'https://www.gstatic.com/generate_204'
-        )}&timeout=5000`
-      );
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        setGroupDelays((prev) => ({
-          ...prev,
-          ...(data as Record<string, number | null>),
-        }));
-      }
-      await useApp.getState().refreshGroups(true);
-    } catch (e) {
-      notify('error', `分组测速失败：${errorText(e)}`);
+      await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
+      if (!current()) return;
+      setGroupDelays(prev => ({ ...prev, ...results }));
+      await useApp.getState().refreshGroups(true).catch(() => false);
     } finally {
-      setTestingGroup(false);
+      if (current()) {
+        testGroupLock.current = false;
+        setTestingGroup(false);
+      }
     }
   };
 
-  const runLeakCheck = useCallback(async () => {
-    if (!connected) return;
-    setLeakPhase('running');
-    const [ip, dns, webrtc] = await Promise.all([
-      api.leakCheckIp(mixedPort, tunEnabled).catch(() => null),
-      api.leakCheckDns('www.apple.com', settings.dnsPort).catch(() => null),
-      checkWebRtc(),
-    ]);
-
-    let ipRow: { status: 'ok' | 'warn' | 'bad' | 'info'; text: string };
-    if (!ip) ipRow = { status: 'warn', text: '检测失败' };
-    else if (!ip.proxied) ipRow = { status: 'warn', text: '代理端口不可达' };
-    else if (tunEnabled) ipRow = { status: 'ok', text: `TUN 出口 ${ip.proxied}` };
-    else if (ip.direct && ip.direct === ip.proxied)
-      ipRow = { status: 'bad', text: `直连与代理出口相同（${ip.direct}）` };
-    else ipRow = { status: 'ok', text: `代理出口 ${ip.proxied}` };
-
-    let dnsRow: { status: 'ok' | 'warn' | 'bad' | 'info'; text: string };
-    if (!dns) dnsRow = { status: 'warn', text: '检测失败' };
-    else if (dns.system_fake_ip) dnsRow = { status: 'ok', text: '已接管（Fake-IP）' };
-    else if (dns.kernel_alive && dns.kernel_fake_ip)
-      dnsRow = { status: 'info', text: '内核正常；系统未接管' };
-    else if (dns.kernel_alive) dnsRow = { status: 'info', text: '内核可达，未返回 Fake-IP' };
-    else dnsRow = { status: 'warn', text: '内核 DNS 不可达' };
-
-    let webRtcRow: { status: 'ok' | 'warn' | 'bad' | 'info'; text: string };
-    if (!webrtc.supported) webRtcRow = { status: 'info', text: '当前环境不支持' };
-    else if (webrtc.publicIps.length === 0) webRtcRow = { status: 'ok', text: '无公网候选' };
-    else if (ip?.direct && webrtc.publicIps.includes(ip.direct))
-      webRtcRow = { status: 'bad', text: `真实 IP ${webrtc.publicIps.join('、')}` };
-    else if (ip?.proxied && webrtc.publicIps.every((x) => ip.proxied!.includes(x)))
-      webRtcRow = { status: 'info', text: `代理 IP ${webrtc.publicIps.join('、')}` };
-    else webRtcRow = { status: 'info', text: webrtc.publicIps.join('、') || '无候选' };
-
-    setLeakRows([
-      { id: 'ip', label: '出口 IP', ...ipRow },
-      { id: 'dns', label: 'DNS 接管', ...dnsRow },
-      { id: 'webrtc', label: 'WebRTC', ...webRtcRow },
-    ]);
-    setLeakPhase('done');
-  }, [connected, mixedPort, settings.dnsPort, tunEnabled, egress]);
-
-  useEffect(() => {
-    if (!active) return;
-    if (!connected) {
-      setLeakRows([]);
-      setLeakPhase('idle');
-      return;
-    }
-    const t = window.setTimeout(() => void runLeakCheck(), 2500);
-    return () => window.clearTimeout(t);
-  }, [connected, runLeakCheck, active]);
+  const routeKey = JSON.stringify([routeRevision, connected, connectedAt, activeId, nodeName, settings.mode, tunEnabled, sysProxyEnabled, mixedPort, settings.dnsPort, stableGithubNode, blockWebRtc]);
+  const diagnostics = useRouteDiagnostics({
+    active, connected, routeKey, mixedPort, dnsPort: settings.dnsPort, tun: tunEnabled, githubNode: stableGithubNode, blockWebRtc,
+  });
+  const { egress, egressLoading, egressCountry } = diagnostics;
 
   const egressCountryLabel = useMemo(() => {
     if (!egressCountry) return null;
@@ -537,8 +394,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     return egressCountry.name;
   }, [egressCountry]);
 
-  const leakHasBad = leakRows.some((r) => r.status === 'bad');
-  const leakHasWarn = leakRows.some((r) => r.status === 'warn');
 
   const quota = activeProfile?.userinfo ?? null;
   const quotaUsed = quota ? quota.upload + quota.download : 0;
@@ -567,632 +422,264 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
 
   const uptime = connected && connectedAt ? formatDuration(now - connectedAt) : null;
 
-  const groupNow = connected ? (displayGroup?.now ?? '') : '';
-  const groupNodes = displayGroup
+  const groupHasSingleSelection = displayGroup && ['Selector', 'URLTest', 'Fallback'].includes(displayGroup.type);
+  const canSelectMember = runtimeMatches && !displayGroup?.synthetic && displayGroup?.type === 'Selector';
+  const groupNow = runtimeMatches && groupHasSingleSelection ? (displayGroup?.now ?? '') : '';
+  const nodeLatency = (node: ProxyNode) => {
+    const value = readGroupLatency(groupDelays, displayGroup?.name ?? '', node.name, node.delaysByTarget);
+    return value === undefined ? undefined : normalizeLatency(value);
+  };
+  const groupNodes = useMemo(() => displayGroup
     ? [...displayGroup.nodes].sort((a, b) => {
         // 已选中的节点永远排第一，其余按延迟升序
         const aSel = connected && a.name === groupNow;
         const bSel = connected && b.name === groupNow;
         if (aSel !== bSel) return aSel ? -1 : 1;
-        const da = a.delay != null && a.delay > 0 ? a.delay : Number.MAX_SAFE_INTEGER;
-        const db = b.delay != null && b.delay > 0 ? b.delay : Number.MAX_SAFE_INTEGER;
+        const da = nodeLatency(a) ?? Number.MAX_SAFE_INTEGER;
+        const db = nodeLatency(b) ?? Number.MAX_SAFE_INTEGER;
         if (da !== db) return da - db;
         return a.name.localeCompare(b.name);
       })
-    : [];
+    : [], [displayGroup, connected, groupNow, groupDelays]);
 
-  const selectedNodeDelay = displayGroup?.nodes.find((n) => n.name === groupNow)?.delay;
+  const selectedNode = displayGroup?.nodes.find((n) => n.name === groupNow);
+  const selectedNodeDelay = selectedNode ? nodeLatency(selectedNode) : undefined;
+  const currentLatencyTarget = groupLatencyTarget(displayGroup?.name ?? '');
+  const currentLatencyKey = JSON.stringify([activeId, connectedAt, displayGroup?.name, groupNow, currentLatencyTarget]);
+  const canTestCurrent = runtimeMatches && !!selectedNode && !groups.some(g => g.name === selectedNode.name)
+    && !['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'].includes(selectedNode.name);
+  const testCurrentNode = async () => {
+    if (!canTestCurrent || !selectedNode || currentLatencyRequest.current || testGroupLock.current) return;
+    const request = Symbol();
+    currentLatencyRequest.current = request;
+    currentLatencyAttempts.current.add(currentLatencyKey);
+    const epoch = testGroupEpoch.current;
+    const group = displayGroup!.name;
+    setTestingCurrentNode(true);
+    await acquireLatencySlot();
+    try {
+      if (epoch !== testGroupEpoch.current) return;
+      const delay = await testDelay(selectedNode.name, currentLatencyTarget);
+      if (epoch === testGroupEpoch.current) setGroupDelays(prev => ({ ...prev,
+        [latencyKey(group, currentLatencyTarget, selectedNode.name)]: normalizeLatency(delay),
+      }));
+    } catch {
+      if (epoch === testGroupEpoch.current) setGroupDelays(prev => ({ ...prev,
+        [latencyKey(group, currentLatencyTarget, selectedNode.name)]: null,
+      }));
+    } finally {
+      releaseLatencySlot();
+      // 结果代次可以过期，但在途请求仍须释放它自己持有的锁。
+      if (currentLatencyRequest.current === request) {
+        currentLatencyRequest.current = null;
+        setTestingCurrentNode(false);
+      }
+    }
+  };
+  useEffect(() => {
+    if (!active || inspectedGroup !== null || !canTestCurrent || selectedNodeDelay !== undefined || testingGroup || testingCurrentNode
+      || currentLatencyAttempts.current.has(currentLatencyKey)) return;
+    // 当前出口稳定且缺少记录时补一次；窗口隐藏时不开始，不测备用节点。
+    const timer = window.setTimeout(() => { void testCurrentNode(); }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [active, inspectedGroup, canTestCurrent, currentLatencyKey, selectedNodeDelay, testingGroup, testingCurrentNode]);
   const heroDelay =
-    connected && latency != null && latency > 0 ? latency : selectedNodeDelay ?? null;
+    connected ? selectedNodeDelay ?? null : null;
   const heroQuality =
     heroDelay == null ? 'idle' : heroDelay < 120 ? 'good' : heroDelay < 260 ? 'warn' : 'bad';
-  const gaugeProgress =
-    heroDelay == null ? 0 : Math.max(0.08, Math.min(1, 1 - heroDelay / 420));
-  const gaugeNumberSize =
-    heroDelay == null ? 18 : heroDelay >= 1000 ? 12 : heroDelay >= 100 ? 16 : 18;
 
-  const onSelectNode = (name: string) => {
-    if (!connected || !displayGroup) {
-      notify('info', '先开启系统代理或 TUN');
-      return;
-    }
-    void selectNode(displayGroup.name, name);
+  const onSelectNode = async (name: string) => {
+    if (!canSelectMember || !displayGroup) return;
+    if (nodeLock.current) return;
+    nodeLock.current = true;
+    setPendingNode(name);
+    try { await selectNode(displayGroup.name, name); }
+    catch (error) { notify('error', `切换节点失败：${String(error)}`); }
+    finally { nodeLock.current = false; setPendingNode(null); }
   };
+
+  const displayNow = groupHasSingleSelection && runtimeMatches ? displayGroup?.now ?? '' : '';
+  const egressFlag = egressCountryLabel ? (
+    egressCountry?.code
+      ? <span className={`fi fi-${egressCountry.code.toLowerCase()} ov-hero-flag`} role="img" aria-label={egressCountry.code} />
+      : <span className="ov-hero-region">{egressCountryLabel}</span>
+  ) : null;
+
+  const connectionGroup = domain.groups.find(group => group.name === effectiveGroup?.name) ?? domain.groups[0];
+  const connectionRoute = connectionGroup ? resolveProxyRoute(domain, connectionGroup.name) : null;
+  const connectionName = !runtimeMatches ? '待确认' : settings.mode === 'direct' ? 'DIRECT'
+    : connectionRoute?.kind === 'multiple' ? '按连接分配 · 无唯一出口'
+    : connectionRoute?.kind === 'relay' ? 'Relay 能力未核验'
+    : connectionRoute?.kind === 'unknown' ? '当前出口待确认' : nodeName || '待确认';
+  const connectionNode = connectionGroup?.nodes.find(node => node.name === connectionGroup.now);
+  const reportedConnectionLatency = connectionNode
+    ? readGroupLatency(groupDelays, connectionGroup?.name ?? '', connectionNode.name, connectionNode.delaysByTarget) : undefined;
+  const connectionLatency = reportedConnectionLatency === undefined ? undefined : normalizeLatency(reportedConnectionLatency);
+  const visibleStart = Math.min(nodeWindowStart, Math.max(0, groupNodes.length - OVERVIEW_NODE_WINDOW));
+  const visibleGroupNodes = groupNodes.slice(visibleStart, visibleStart + OVERVIEW_NODE_WINDOW);
 
   return (
     <>
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">概览</h1>
-        </div>
-        <div className="page-actions">
-          <span className={`mode-switch-hint${switchingMode ? ' show' : ''}`}>切换中…</span>
-          <Segmented
-            ariaLabel="出站模式"
-            options={[
-              { value: 'rule', label: '规则' },
-              { value: 'global', label: '全局' },
-              { value: 'direct', label: '直连' },
-            ]}
-            value={settings.mode}
-            onChange={(v) => void changeMode(v)}
-          />
-        </div>
+      <header className="page-head ov-page-head">
+        <div className="page-heading"><h1 className="page-title">概览</h1></div>
+        <Segmented ariaLabel="出站模式" disabled={switchingMode}
+          options={[{ value: 'rule', label: '规则' }, { value: 'global', label: '全局' }, { value: 'direct', label: '直连' }]}
+          value={settings.mode} onChange={(value) => void changeMode(value)} />
       </header>
-
-      <div className="page-scroll">
-        <div className="dash">
-          {/* 连接主卡 */}
-          <section className={`card hero-card span-6${connected ? ' on' : ' disconnected'}`}>
-            <div className="hero-top">
-              <div className="hero-main">
-                <div className="hero-status-row">
-                  <span className={`status-dot${connected ? ' on' : failed ? ' warn' : ''}`} />
-                  <span className="status-text">{stateText}</span>
-                  {uptime && <span className="hero-uptime">{uptime}</span>}
-                </div>
-
-                <div className="hero-node-row">
-                  <div className="hero-node">
-                    {connected ? (
-                      <NodeName name={nodeName || '未选择节点'} />
-                    ) : failed ? (
-                      '启动失败'
-                    ) : (
-                      '未接管流量'
-                    )}
-                  </div>
-                </div>
-
-                {connected && displayGroup?.name && (
-                  <div className="hero-group-text">{displayGroup.name}</div>
-                )}
-                {!connected && <div className="hero-sub">{desc}</div>}
+      <div className="page-scroll ov-scroll">
+        <div className="ov-page">
+          {connected && kernelError && <div className="banner warn ov-warning" role="alert"><span>{kernelError}</span></div>}
+          <div className="ov-top-row">
+            <section className={`ov-hero${connected ? ' is-up' : failed ? ' is-failed' : ''}`} aria-label="当前连接">
+              <BrandCat size={150} className="ov-hero-cat" />
+              <div className="ov-hero-top">
+                <span className="ov-hero-state"><i className={`ov-hero-dot${connected ? ' is-running' : failed ? ' is-failed' : ''}`} aria-hidden="true" />{stateText}</span>
+                <span className="ov-hero-uptime">{uptime ?? (kernelBusy ? '请稍候' : '尚未连接')}</span>
               </div>
-
-              {connected && (
-                <div className={`hero-gauge ${heroQuality}`} aria-label={heroDelay != null ? `延迟 ${heroDelay} 毫秒` : '延迟未知'}>
-                  <svg viewBox="0 0 66 66" aria-hidden="true">
-                    <circle className="hero-gauge-track" cx="33" cy="33" r="27" pathLength="100" />
-                    <circle
-                      className="hero-gauge-value"
-                      cx="33"
-                      cy="33"
-                      r="27"
-                      pathLength="100"
-                      strokeDasharray={`${(gaugeProgress * 100).toFixed(0)} 100`}
-                    />
-                  </svg>
-                  <div className="hero-gauge-text">
-                    <strong style={{ fontSize: gaugeNumberSize }}>{heroDelay ?? '—'}</strong>
-                    <span>{heroDelay != null ? 'ms' : '延迟'}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="hero-bottom">
-              <div className="hero-exit">
-                <span className="hero-bottom-label">出口</span>
-                <span className="hero-exit-value">
-                  {connected ? egress ?? (egressLoading ? '获取中…' : '—') : '—'}
-                </span>
-                {connected && egressCountryLabel && (
-                  <span className="hero-country-inline">· {egressCountryLabel}</span>
-                )}
+              <div className="ov-hero-main">
+                <strong className="ov-hero-node" title={connected ? connectionName : desc}>{connected ? <NodeName name={connectionName} /> : desc}</strong>
+                <span className="ov-hero-route" title={primaryGroup?.name}>{connected ? primaryGroup?.name ?? '策略待确认' : failed ? kernelError ?? '内核未就绪' : '开启系统代理或 TUN 后连接'}</span>
               </div>
-              <div className="hero-session">
-                <span className="hero-up">↑ {formatBytes(upTotal)}</span>
-                <span className="hero-down">↓ {formatBytes(downTotal)}</span>
-              </div>
-            </div>
-
-            {!activeProfile && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 13 }}>
-                <button
-                  type="button"
-                  className="link-action"
-                  onClick={() => navigate('profiles')}
-                >
-                  导入订阅
-                  <IconChevronRight size={11} />
+              <div className="ov-hero-egress"><span>出口</span><strong>{connected ? egress ?? (egressLoading ? '获取中' : '待确认') : '待确认'}</strong>{connected && egressFlag}</div>
+              <div className="ov-hero-foot">
+                <span><IconUpload size={12} />{formatBytes(connected ? upTotal : 0)}</span>
+                <span><IconDownload size={12} />{formatBytes(connected ? downTotal : 0)}</span>
+                <button type="button" className={`ov-latency hero-gauge ${heroQuality}`} disabled={!canTestCurrent || inspectedGroup !== null || testingCurrentNode || testingGroup}
+                  aria-label={heroDelay != null ? `测速当前节点，延迟 ${heroDelay} 毫秒` : '测速当前节点'}
+                  title={`${currentLatencyTarget === GITHUB_LATENCY_URL ? 'GitHub' : 'Google'} HTTPS 延迟 · 点击重测`} onClick={() => void testCurrentNode()}>
+                  <span className="ov-latency-reading">{testingCurrentNode ? <Spinner small /> : <IconRefresh size={12} />}<strong>{!connected ? '未测' : connectionLatency === undefined ? '未测' : connectionLatency === null ? '失败' : `${connectionLatency} ms`}</strong></span>
                 </button>
               </div>
-            )}
-          </section>
-
-          {/* 上传 */}
-          <section className="card stat-card span-3">
-            <div className="stat-head">
-              <span className="icon-tile up">
-                <IconUpload size={15} />
-              </span>
-              上传
-            </div>
-            <div className="stat-number">{connected ? formatSpeed(latestUp) : '0 B/s'}</div>
-            <div className="stat-meta">
-              峰值 {connected ? formatSpeed(peakUp) : '0 B/s'} · 本次{' '}
-              {connected ? formatBytes(upTotal) : '0 B'}
-            </div>
-            <MiniSparkline points={up} color="var(--up)" />
-          </section>
-
-          {/* 下载 */}
-          <section className="card stat-card span-3">
-            <div className="stat-head">
-              <span className="icon-tile down">
-                <IconDownload size={15} />
-              </span>
-              下载
-            </div>
-            <div className="stat-number">{connected ? formatSpeed(latestDown) : '0 B/s'}</div>
-            <div className="stat-meta">
-              峰值 {connected ? formatSpeed(peakDown) : '0 B/s'} · 本次{' '}
-              {connected ? formatBytes(downTotal) : '0 B'}
-            </div>
-            <MiniSparkline points={down} color="var(--down)" />
-          </section>
-
-          {/* 系统代理 + TUN */}
-          <section className="card switches-card span-6">
-            <div className="switch-row">
-              <span className={`icon-tile${sysProxyEnabled ? ' accent' : ''}`}>
-                <IconGlobe size={15} />
-              </span>
-              <div className="switch-main">
-                <div className="switch-title">系统代理</div>
-                <div className="switch-sub">
-                  {proxyPending
-                    ? '处理中…'
-                    : kernelBusy
-                      ? '等待中…'
-                      : sysProxyEnabled
-                        ? '已开启'
-                        : '未开启'}
+              {failed && <div className="ov-hero-actions"><button type="button" className="btn btn-primary btn-sm" disabled={retrying || kernelBusy} onClick={() => void retryConnection()}>{retrying ? '重试中…' : '重试连接'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('logs')}>查看日志</button></div>}
+              {!connected && !activeProfile && <div className="ov-hero-actions"><button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('profiles')}>导入订阅</button></div>}
+            </section>
+            {(['up', 'down'] as const).map(direction => {
+              const upload = direction === 'up';
+              const rate = connected ? upload ? latestUp : latestDown : 0;
+              return <section className={`ov-rate-card is-${direction}`} aria-label={upload ? '上传速率' : '下载速率'} key={direction}>
+                <div className="ov-rate-head"><span className="ov-rate-title">{upload ? <IconUpload size={14} /> : <IconDownload size={14} />}{upload ? '上传' : '下载'}</span></div>
+                <div className="ov-rate-figure"><strong>{formatSpeed(rate).split(' ')[0]}</strong><span>{formatSpeed(rate).split(' ')[1]}</span></div>
+                <span className="ov-rate-peak">峰值 {formatSpeed(connected ? upload ? peakUp : peakDown : 0)}</span>
+                <SplitSparkline proxy={upload ? proxyUp : proxyDown} direct={upload ? directUp : directDown} color={upload ? 'var(--up)' : 'var(--down)'} />
+                <span className="ov-rate-total">本次 {formatBytes(connected ? upload ? upTotal : downTotal : 0)}</span>
+              </section>;
+            })}
+          </div>
+          <div className="ov-control-row">
+            <section className="ov-takeover" aria-label="流量接管">
+              <h2>流量接管</h2>
+              <div className="ov-takeover-controls">
+                <div className="ov-control"><span className="ov-control-copy"><strong>系统代理</strong><span>{proxyPending ? '处理中…' : kernelBusy ? '等待中…' : takeover.systemProxySubtitle}</span></span><Toggle on={sysProxyEnabled} busy={proxyPending} disabled={switchesBusy} onChange={value => void changeSystemProxy(value)} label="系统代理" /></div>
+                <div className="ov-control"><span className="ov-control-copy"><strong>TUN 模式</strong><span>{tunPending ? '处理中…' : kernelBusy ? '等待中…' : takeover.tunSubtitle}</span></span><Toggle on={tunEnabled} busy={tunPending} disabled={switchesBusy} onChange={value => void changeTun(value)} label="TUN 模式" /></div>
+              </div>
+            </section>
+            <section className="ov-subscription quota-card" aria-label="当前订阅">
+              <div className="ov-section-heading"><h2>当前订阅</h2><button type="button" className="link-action" onClick={() => navigate('profiles')}>管理<IconChevronRight size={12} /></button></div>
+              <div className="ov-subscription-main">
+                <div className="ov-profile-name">{profiles.length > 1 && activeId ? <Select value={activeId} options={profiles.map(profile => ({ value: profile.id, label: profile.name }))} ariaLabel="切换订阅" className="ov-profile-select" onChange={id => void activate(id)} /> : <strong className="quota-card-name" title={activeProfile?.name}>{activeProfile?.name ?? '未导入订阅'}</strong>}<span>{activeProfile ? `更新于 ${formatTime(activeProfile.updatedAt)}` : '导入订阅后显示配额和节点'}</span></div>
+                <div className="ov-quota-balance">{quota && quota.total > 0 ? <><span>剩余 <strong>{formatBytes(Math.max(quota.total - quotaUsed, 0))}</strong></span><span>{formatBytes(quotaUsed)} / {formatBytes(quota.total)}</span></> : <span>{activeProfile ? '暂无配额信息' : '尚未导入订阅'}</span>}</div>
+                {activeId && <button type="button" className="icon-btn" title="更新当前订阅" aria-label="更新当前订阅" disabled={refreshingIds.includes(activeId)} onClick={() => void refreshProfile(activeId)}>{refreshingIds.includes(activeId) ? <Spinner small /> : <IconRefresh size={13} />}</button>}
+              </div>
+              {quota && quota.total > 0 && <div className="ov-quota-footer"><div className="ov-quota-progress" role="progressbar" aria-label="订阅配额已用" aria-valuenow={Math.round(quotaRatio * 100)} aria-valuemin={0} aria-valuemax={100}><span className={`ov-quota-fill is-${quotaTone}`} style={{ width: `${quotaRatio * 100}%` }} /></div><span>{quota.expire > 0 ? `到期 ${formatExpire(quota.expire)}` : '不限期'}</span></div>}
+            </section>
+          </div>
+          <div className="ov-main-row">
+            <section className="ov-traffic" aria-label="实时流量">
+              <div className="ov-pane-head"><h2>实时流量</h2><span className="ov-meta">{connected && connCount != null ? `${connCount} 个连接` : '最近 32 秒'} · 代理 / 直连</span><button type="button" className="link-action" onClick={() => window.dispatchEvent(new CustomEvent('ppclash:nav', { detail: 'traffic' }))}>详情<IconChevronRight size={12} /></button></div>
+              <div className="ov-traffic-chart">
+                <div className="ov-traffic-series"><span><i className="ov-legend is-up" />上传</span><SplitSparkline proxy={proxyUp} direct={directUp} color="var(--up)" /></div>
+                <div className="ov-traffic-series"><span><i className="ov-legend is-down" />下载</span><SplitSparkline proxy={proxyDown} direct={directDown} color="var(--down)" /></div>
+              </div>
+              <div className="ov-traffic-foot"><span><i className="ov-legend" />代理 ↑ {formatBytes(proxyUpBytes)}　↓ {formatBytes(proxyDownBytes)}</span><span><i className="ov-legend is-direct" />直连 ↑ {formatBytes(directUpBytes)}　↓ {formatBytes(directDownBytes)}</span></div>
+            </section>
+            <section className="ov-routing" aria-label="当前分组">
+              <div className="ov-pane-head"><h2>当前分组{currentLatencyTarget === GITHUB_LATENCY_URL && <span className="ov-meta" title={GITHUB_LATENCY_URL}> · GitHub 延迟</span>}</h2><button type="button" className="link-action" title="测速当前分组" aria-label="测速当前分组" disabled={!runtimeMatches || testingGroup || testingCurrentNode} onClick={() => void testCurrentGroup()}>{testingGroup ? <Spinner small /> : <IconBolt size={13} />}{testingGroup ? '测速中' : '测速'}</button></div>
+              <div className="ov-group-picker"><select value={displayGroup?.name ?? ''} aria-label="浏览策略" disabled={!domain.groups.length} onChange={event => setInspectedGroup(event.target.value)}>{domain.groups.map(group => {
+                const route = resolveProxyRoute(domain, group.name);
+                const meaning = route.kind === 'multiple' ? '按连接分配' : route.kind === 'relay' ? '链式转发能力未核验' : proxyGroupKind(group.type);
+                return <option value={group.name} key={group.name}>{group.name} · {meaning}</option>;
+              })}{!domain.groups.length && <option value="">暂无分组</option>}</select>
+                <span className="ov-meta">{displayGroup ? proxyGroupKind(displayGroup.type) : '暂无分组'}{!canSelectMember && displayGroup ? ' · 只读' : ''}{!connected && displayGroup ? ' · 订阅预览' : ''}</span>
+              </div>
+              <div id="overview-nodes" className="ov-nodes-body">
+                <div ref={nodeListRef} className="ov-node-list" aria-label="当前分组候选" tabIndex={0}
+                  onScroll={event => setNodeWindowStart(Math.max(0, Math.floor(event.currentTarget.scrollTop / OVERVIEW_NODE_HEIGHT) - 2))}>
+                  {visibleStart > 0 && <div aria-hidden="true" style={{ height: visibleStart * OVERVIEW_NODE_HEIGHT }} />}
+                  {visibleGroupNodes.map(node => {
+                    const selected = connected && displayNow === node.name;
+                    const ms = nodeLatency(node);
+                    return <button key={node.name} type="button" className={`ov-node group-node${selected ? ' selected' : ''}`} title={node.name} aria-pressed={selected} disabled={!canSelectMember || pendingNode !== null} onClick={() => void onSelectNode(node.name)}>
+                      <span className="ov-node-name"><NodeName name={node.name} /><span className="ov-node-type">{node.type}{selected && activeId && fixedNodes[activeId]?.[displayGroup!.name] === node.name ? ' · 固定' : ''}</span></span>
+                      <span className="ov-node-status">{pendingNode === node.name ? <Spinner small /> : selected && <span className="ov-node-current"><IconCheck size={11} />当前</span>}<span className={`ov-node-delay${ms === null ? ' is-failed' : ''}`}>{ms === undefined ? '未测' : ms === null ? '失败' : `${ms} ms`}</span></span>
+                    </button>;
+                  })}
+                  {groupNodes.length > visibleStart + visibleGroupNodes.length && <div aria-hidden="true" style={{ height: (groupNodes.length - visibleStart - visibleGroupNodes.length) * OVERVIEW_NODE_HEIGHT }} />}
+                  {!groupNodes.length && <div className="ov-group-empty">{!activeProfile ? '导入订阅后显示节点' : displayGroup?.providers.some(provider => provider.state === 'error') ? '节点源读取失败，可在节点页重试' : displayGroup?.providers.some(provider => provider.state === 'waiting') ? '等待节点源加载' : '此分组暂无可见候选'}</div>}
                 </div>
               </div>
-              <Toggle
-                on={sysProxyEnabled}
-                busy={proxyPending}
-                disabled={switchesBusy}
-                onChange={(v) => void changeSystemProxy(v)}
-                label="系统代理"
-              />
-            </div>
-            <div className="switch-row">
-              <span className={`icon-tile${tunEnabled ? ' accent' : ''}`}>
-                <IconTun size={15} />
-              </span>
-              <div className="switch-main">
-                <div className="switch-title">TUN 模式</div>
-                <div className="switch-sub">
-                  {tunPending
-                    ? '处理中…'
-                    : kernelBusy
-                      ? '等待中…'
-                      : tunEnabled
-                        ? '已开启'
-                        : '未开启'}
-                </div>
-              </div>
-              <Toggle
-                on={tunEnabled}
-                busy={tunPending}
-                disabled={switchesBusy}
-                onChange={(v) => void changeTun(v)}
-                label="TUN 模式"
-              />
-            </div>
-          </section>
-
-          {/* 订阅配额 */}
-          <section className="card quota-card span-6">
-            <div className="quota-card-head">
-              <span className="icon-tile success">
-                <IconProfiles size={15} />
-              </span>
-              {profiles.length > 1 && activeId ? (
-                <Select
-                  value={activeId}
-                  options={profiles.map((p) => ({ value: p.id, label: p.name }))}
-                  ariaLabel="切换订阅"
-                  className="quota-profile-select"
-                  onChange={(id) => void activate(id)}
-                />
-              ) : (
-                <span className="quota-card-name">{quota ? activeProfile?.name : '未导入订阅'}</span>
-              )}
-              <div className="spacer" />
-              {quota && quota.total > 0 && (
-                <span className="quota-card-remain">
-                  剩余 <b>{formatBytes(Math.max(quota.total - quotaUsed, 0))}</b>
-                </span>
-              )}
-              <button
-                type="button"
-                className="link-action"
-                onClick={() => navigate('profiles')}
-              >
-                管理
-                <IconChevronRight size={11} />
-              </button>
-            </div>
-
-            {quota && quota.total > 0 ? (
-              <>
-                <div className="progress">
-                  <span
-                    className={`progress-fill ${quotaTone}`}
-                    style={{ width: `${quotaRatio * 100}%` }}
-                  />
-                </div>
-                <div className="quota-card-foot">
-                  <span>
-                    已用 {formatBytes(quotaUsed)} / {formatBytes(quota.total)}
-                  </span>
-                  <span>·</span>
-                  <span>{quota.expire > 0 ? `${formatExpire(quota.expire)} 到期` : '不限期'}</span>
-                  <div className="spacer" />
-                  <span>{(quotaRatio * 100).toFixed(1)}%</span>
-                </div>
-              </>
-            ) : (
-              <div className="quota-card-foot">
-                <span className="quota-empty">
-                  {activeProfile
-                    ? '暂无配额信息'
-                    : '导入订阅后显示'}
-                </span>
-                <div className="spacer" />
-                {!activeProfile && (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => navigate('profiles')}
-                  >
-                    去导入
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="quota-updated">
-              <span>
-                {activeProfile
-                  ? `更新于 ${formatTime(activeProfile.updatedAt)}`
-                  : '尚未导入订阅'}
-              </span>
-              <div className="spacer" />
-              {activeId && (
-                <button
-                  type="button"
-                  className="icon-btn quota-refresh"
-                  title="更新当前订阅"
-                  aria-label="更新当前订阅"
-                  disabled={refreshingIds.includes(activeId)}
-                  onClick={() => void refreshProfile(activeId)}
-                >
-                  {refreshingIds.includes(activeId) ? (
-                    <Spinner small />
-                  ) : (
-                    <IconRefresh size={12} />
-                  )}
-                </button>
-              )}
-            </div>
-          </section>
-
-          {/* 流量曲线 */}
-          <section className="card chart-card span-8">
-            <div className="chart-head">
-              <span className="section-title">实时流量</span>
-              <div className="spacer" />
-              <div className="legend">
-                <span className="legend-item" style={{ color: 'var(--up)' }}>
-                  <span className="legend-swatch" />
-                  代理↑ {connected ? formatSpeed(latestProxyUp) : '0 B/s'}
-                </span>
-                <span className="legend-item" style={{ color: 'var(--down)' }}>
-                  <span className="legend-swatch" />
-                  代理↓ {connected ? formatSpeed(latestProxyDown) : '0 B/s'}
-                </span>
-                <span className="legend-item" style={{ color: 'var(--up)', opacity: 0.55 }}>
-                  <span className="legend-swatch" />
-                  直连↑ {connected ? formatSpeed(latestDirectUp) : '0 B/s'}
-                </span>
-                <span className="legend-item" style={{ color: 'var(--down)', opacity: 0.55 }}>
-                  <span className="legend-swatch" />
-                  直连↓ {connected ? formatSpeed(latestDirectDown) : '0 B/s'}
-                </span>
-              </div>
-            </div>
-
-            <RouteTrafficChart
-              proxyUp={proxyUp}
-              proxyDown={proxyDown}
-              directUp={directUp}
-              directDown={directDown}
-            />
-
-            <div className="card-foot">
-              <span className="card-hint">
-                代理 ↑{connected ? formatBytes(proxyUpBytes) : '0 B'} ↓
-                {connected ? formatBytes(proxyDownBytes) : '0 B'} · 直连 ↑
-                {connected ? formatBytes(directUpBytes) : '0 B'} ↓
-                {connected ? formatBytes(directDownBytes) : '0 B'}
-              </span>
-              <div className="spacer" />
-              <span className="card-hint">最近 32 秒</span>
-            </div>
-          </section>
-
-          {/* 当前分组 */}
-          <section className="card group-card span-4">
-            <div className="group-head">
-              <span className="section-title">{connected ? '当前分组' : '订阅节点'}</span>
-              {displayGroup && <Pill tone={connected ? 'accent' : 'muted'}>{displayGroup.name}</Pill>}
-              {!connected && <Pill tone="muted">预览</Pill>}
-              <div className="spacer" />
-              <button
-                type="button"
-                className="link-action group-test-link"
-                title="测速当前分组"
-                aria-label="测速当前分组"
-                disabled={!connected || testingGroup}
-                onClick={() => void testCurrentGroup()}
-              >
-                {testingGroup ? <Spinner small /> : <IconBolt size={12} />}
-                测速
-              </button>
-            </div>
-
-            {groupNodes.length > 0 ? (
-              <>
-                <div className="group-nodes-scroll">
-                {groupNodes.map((node) => {
-                  const selected = connected && groupNow === node.name;
-                  const ms = groupDelays[node.name] ?? node.delay;
-                  return (
-                    <button
-                      key={node.name}
-                      type="button"
-                      className={`group-node${selected ? ' selected' : ''}`}
-                      onClick={() => onSelectNode(node.name)}
-                    >
-                      <span className="group-node-name"><NodeName name={node.name} /></span>
-                      {selected ? (
-                        <span className="group-node-check">
-                          <IconCheck size={12} />
-                        </span>
-                      ) : (
-                        connected &&
-                        ms != null &&
-                        ms > 0 && (
-                          <span className="delay" style={{ minWidth: 42, fontSize: 10.5 }}>
-                            {ms} ms
-                          </span>
-                        )
-                      )}
-                    </button>
-                  );
-                })}
-                </div>
-              </>
-            ) : (
-              <div className="group-empty">
-                {!activeProfile ? '导入订阅后显示节点' : '开启接管后显示'}
-                {!activeProfile && (
-                  <div style={{ marginTop: 10 }}>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => navigate('profiles')}
-                    >
-                      导入订阅
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* 服务连通 */}
-          <section className="card service-card span-12">
-            <div className="service-head">
-              <span className="service-lead-icon">
-                <IconGlobe size={15} />
-              </span>
-              <div className="service-heading">
-                <span className="service-title">服务连通</span>
-                <span className="service-sub">
-                  {connected
-                    ? servicesLoading
-                      ? Object.keys(serviceMap).length
-                        ? '更新中…'
-                        : '检测中…'
-                      : '经当前出口探测'
-                    : '接管后检测'}
-                </span>
-              </div>
-              <div className="spacer" />
-              <button
-                type="button"
-                className="icon-btn service-refresh"
-                title="重新测试连通性"
-                aria-label="重新测试连通性"
-                disabled={!connected || servicesLoading}
-                onClick={() => void runServiceProbe()}
-              >
-                {servicesLoading ? <Spinner small /> : <IconRefresh size={13} />}
-              </button>
-            </div>
-            <div className="service-grid">
-              {SERVICES.map(({ id, name, icon, mono }) => {
-                const row = serviceMap[id];
-                const state = !connected
-                  ? 'pending'
-                  : row
-                    ? row.ok
-                      ? 'ok'
-                      : 'bad'
-                    : servicesLoading
-                      ? 'pending'
-                      : 'bad';
-                return (
-                  <div
-                    className={`service-tile ${state}`}
-                    key={id}
-                    title={
-                      id === 'github' && stableGithubNode
-                        ? `GitHub 连通性测试使用固定出口：${stableGithubNode}`
-                        : undefined
-                    }
-                  >
-                    <span
-                      className="service-logo"
-                      style={{ color: mono ? 'var(--text-1)' : `#${icon.hex}` }}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d={icon.path} fill="currentColor" />
-                      </svg>
-                    </span>
-                    <div className="service-info">
-                      <span className="service-name">
-                        {name}
-                        {id === 'github' && stableGithubNode && (
-                          <span className="service-fixed">固定</span>
-                        )}
-                      </span>
-                      <span className="service-latency">
-                        {!connected
-                          ? '未接管'
-                          : row
-                            ? row.ok
-                              ? `${row.latency_ms ?? '—'} ms`
-                              : '不可达'
-                            : servicesLoading
-                              ? '检测中…'
-                              : '—'}
-                      </span>
-                    </div>
-                    <span className={`service-dot ${state}`} />
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* IP 质量 */}
-          <section className="card ip-quality-card span-12">
-            <div className="ip-quality-inner">
-              <span className="icon-tile ip-quality-icon"><IconActivity size={15} /></span>
-              <div className="ip-quality-heading">
-                <div className="ip-quality-title">IP 质量</div>
-                <div className={`ip-quality-sub${ipQualityError ? ' error' : ''}`} title={ipQualityError ?? undefined}>
-                  {ipQualityLoading
-                    ? '检测中…'
-                    : ipQualityError
-                      ? '检测失败，点右侧重试'
-                      : ipQuality
-                        ? `${ipQuality.ip}${ipQualityAt ? ` · ${formatTime(ipQualityAt)}` : ''}`
-                        : '连接后检测'}
-                </div>
-              </div>
-              <div className="ip-quality-metrics">
-                <span className="ip-quality-metric">
-                  <span>类型</span>
-                  <strong>{ipQuality?.kind ?? '—'}</strong>
-                </span>
-                <span className="ip-quality-metric">
-                  <span>风险</span>
-                  <strong className={`ip-risk ${ipQuality?.risk === '高' ? 'bad' : ipQuality?.risk === '中' ? 'warn' : ''}`}>
-                    {ipQuality?.risk ?? '—'}
-                  </strong>
-                </span>
-                <span className="ip-quality-metric">
-                  <span>纯净度</span>
-                  <strong>{ipQuality ? `${ipQuality.score}/100` : '—'}</strong>
-                </span>
-                <span className="ip-quality-metric">
-                  <span>ASN</span>
-                  <strong>{ipQuality?.asn ?? '—'}</strong>
-                </span>
-                <span className="ip-quality-metric">
-                  <span>运营商</span>
-                  <strong>{ipQuality?.isp ?? ipQuality?.org ?? '—'}</strong>
-                </span>
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                title="重新检测 IP 质量"
-                aria-label="重新检测 IP 质量"
-                disabled={!connected || ipQualityLoading}
-                onClick={() => void loadIpQuality()}
-              >
-                {ipQualityLoading ? <Spinner small /> : <IconRefresh size={13} />}
-              </button>
-            </div>
-          </section>
-
-          {/* 泄露检查 */}
-          <section className="card protection-card span-12">
-            <div className="protection-head">
-              <span className="protection-lead-icon">
-                <IconSecurity size={15} />
-              </span>
-              <div className="protection-heading">
-                <div className="protection-title">
-                  泄露检查
-                </div>
-                <div className={`protection-sub${sysProxyEnabled && !tunEnabled ? ' warn' : leakPhase === 'done' && leakHasBad ? ' danger' : ''}`}>
-                  {sysProxyEnabled && !tunEnabled
-                    ? '系统代理不接管 UDP / WebRTC / DNS，建议开启 TUN'
-                    : leakPhase === 'running'
-                      ? '正在实测出口 / DNS / WebRTC…'
-                      : leakPhase === 'done'
-                        ? `出口 IP · DNS 接管 · WebRTC · ${leakHasBad ? '有泄漏风险' : leakHasWarn ? '部分未通过' : '通过'}`
-                        : '接管后自动检测'}
-                </div>
-              </div>
-              <div className="spacer" />
-              <button
-                type="button"
-                className="icon-btn"
-                title="重新检测"
-                aria-label="重新检测"
-                disabled={!connected || leakPhase === 'running'}
-                onClick={() => void runLeakCheck()}
-              >
-                {leakPhase === 'running' ? <Spinner small /> : <IconRefresh size={13} />}
-              </button>
-              <button
-                type="button"
-                className="link-action"
-                onClick={() => navigate('security')}
-              >
-                安全设置
-                <IconChevronRight size={11} />
-              </button>
-            </div>
-            <div className="protection-grid leak-grid">
-              {(leakRows.length > 0
-                ? leakRows
-                : [
-                    { id: 'ip', label: '出口 IP', status: 'info' as const, text: connected ? '检测中…' : '未接管' },
-                    { id: 'dns', label: 'DNS 接管', status: 'info' as const, text: connected ? '检测中…' : '未接管' },
-                    { id: 'webrtc', label: 'WebRTC', status: 'info' as const, text: connected ? '检测中…' : '未接管' },
-                  ]
-              ).map((row) => (
-                <div className={`protection-tile ${row.status}`} key={row.id}>
-                  <span className={`protection-dot ${row.status}`} />
-                  <span className="protection-name">{row.label}</span>
-                  <span className="protection-state">{row.text}</span>
-                </div>
-              ))}
-            </div>
-          </section>
+              <button type="button" className="ov-all-nodes link-action" aria-label="查看全部节点" onClick={() => navigate('proxies')}>{groupNodes.length ? `全部 ${groupNodes.length} 个节点` : '全部节点'}<IconChevronRight size={12} /></button>
+            </section>
+          </div>
+          <OverviewDiagnostics connected={connected} diagnostics={diagnostics} githubNode={stableGithubNode} />
         </div>
       </div>
     </>
   );
+}
+
+function OverviewDiagnostics({ connected, diagnostics: d, githubNode }: {
+  connected: boolean; diagnostics: ReturnType<typeof useRouteDiagnostics>; githubNode: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const busy = d.egressLoading || d.servicesLoading || d.ipQualityLoading || d.leakPhase === 'running';
+  const services = [['google', 'Google', siGoogle], ['youtube', 'YouTube', siYoutube], ['github', 'GitHub', siGithub],
+    ['openai', 'ChatGPT', siOpenai], ['anthropic', 'Claude', siAnthropic]] as const;
+  const quality = d.ipQuality;
+  const qualityTone = d.ipQualityError ? 'bad' : quality?.risk === '高' || quality?.risk === '中' ? 'warn' : quality?.risk === '低' ? 'ok' : 'pending';
+  const score = quality && quality.risk !== '未知' && Number.isFinite(quality.score) ? Math.max(0, Math.min(100, quality.score)) : null;
+  useEffect(() => {
+    if (!expanded) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setExpanded(false); toggleRef.current?.focus(); } };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [expanded]);
+  return <div className="ov-diagnostic-row">
+    <section className="ov-diagnostic-card" aria-label="服务连通">
+      <div className="ov-section-heading"><h2>服务连通</h2><button type="button" className="icon-btn icon-btn-sm" title="刷新出口诊断" aria-label="刷新出口诊断" disabled={!connected || busy} onClick={d.runServiceProbe}>{busy ? <Spinner small /> : <IconRefresh size={13} />}</button></div>
+      <div className="ov-service-list">{services.map(([id, name, icon]) => {
+        const row = d.serviceMap[id];
+        const tone = row ? row.ok ? 'ok' : row.status === 'error' ? 'warn' : 'bad' : 'pending';
+        return <div className="ov-check-row service-tile" key={id} title={id === 'github' && githubNode ? `固定出口：${githubNode}` : row?.detail ?? undefined}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon.path} fill="currentColor" /></svg><span>{name}{id === 'github' && githubNode && <small className="ov-service-fixed">固定出口</small>}</span>
+          <strong className={`diagnostic-status-${tone}`}>{row ? row.ok ? `${row.latency_ms ?? '—'} ms` : row.status === 'error' ? '检测异常' : '不可达' : busy ? '检测中' : '未测'}</strong>
+        </div>;
+      })}</div>
+    </section>
+    <section className={`ov-diagnostic-card ov-quality diagnostic-status-${qualityTone}`} aria-label="IP 质量">
+      <div className="ov-section-heading"><h2>IP 质量</h2><span className="ov-meta">{d.ipQualityLoading ? '检测中' : d.ipQualityError ? '检测失败' : quality ? '参考估算' : '待确认'}</span></div>
+      <div className="ov-quality-main"><div><strong>{quality?.kind ?? '类型待确认'}</strong><span className={`diagnostic-status-${qualityTone}`}>{quality ? `${quality.risk}风险` : connected ? '等待检测' : '连接后检测'}</span></div>
+        <div className="ov-quality-ring" role="img" aria-label={score === null ? '纯净度待确认' : `参考纯净度 ${score} 分`} style={{ '--quality-score': `${score ?? 0}%` } as React.CSSProperties}><b>{score ?? '—'}<small>纯净度</small></b></div>
+      </div>
+      <div className="ov-quality-foot">{[['ASN', quality?.asn], ['地区', quality?.country], ['运营商', quality?.isp ?? quality?.org]].map(([label, value]) => <span key={label} title={value ?? undefined}>{label}<b>{value || '待确认'}</b></span>)}</div>
+      {d.ipQualityError && <span className="ov-quality-error" role="status" title={d.ipQualityError}>{d.ipQualityError}</span>}
+    </section>
+    <section className="ov-diagnostic-card" aria-label="泄漏检查">
+      <div className="ov-section-heading diagnostics-heading"><h2>泄漏检查</h2><button ref={toggleRef} type="button" className="link-action" aria-expanded={expanded} aria-controls="diagnostic-details" onClick={() => setExpanded(value => !value)}>{expanded ? '收起详情' : '查看详情'}<IconChevronRight size={12} /></button></div>
+      <div className="ov-leak-list">{[['ip', '出口'], ['dns', 'DNS'], ['webrtc', 'WebRTC']].map(([id, label]) => {
+        const row = d.leakRows.find(row => row.id === id);
+        return <div className="ov-check-row" key={id} title={row?.text}><span>{label}</span><strong className={`diagnostic-status-${row?.status === 'info' ? 'warn' : row?.status ?? 'pending'}`}>{row?.text ?? (d.leakPhase === 'running' ? '检测中' : '尚未检查')}</strong></div>;
+      })}</div>
+      <div className="ov-diagnostic-note">{d.leakRows.find(row => row.id === 'stun')?.text ?? '策略开启与检测结果分别确认'}</div>
+    </section>
+    {expanded && <div id="diagnostic-details" className="ov-diagnostic-popover" role="region" aria-label="出口诊断详情">
+      <div className="ov-section-heading"><h2>出口诊断详情</h2><button type="button" className="btn btn-ghost btn-sm" onClick={() => { setExpanded(false); toggleRef.current?.focus(); }}>关闭</button></div>
+      <p className="ov-diagnostic-note">服务仅检测连接，不检查账号权限或地区限制；IP 质量按公开信息估算。</p>
+      <div className="ov-diagnostic-detail-grid">{services.map(([id, name]) => <div key={id}><strong>{name}{id === 'github' && githubNode ? ' · 固定出口' : ''}</strong><p>{d.serviceMap[id]?.detail || '尚无检测详情'}</p></div>)}</div>
+      {d.ipQualityError && <p className="diagnostic-status-bad">{d.ipQualityError}</p>}
+      <p className="ov-diagnostic-note">WebRTC 检测仅限本应用。STUN 防护按内核运行规则检查。</p>
+      {d.leakRows.map(row => <div className="ov-check-row" key={row.id}><span>{row.label}</span><strong className={`diagnostic-status-${row.status === 'info' ? 'warn' : row.status}`}>{row.text}</strong></div>)}
+      <button type="button" className="link-action" onClick={() => navigate('security')}>安全设置<IconChevronRight size={12} /></button>
+    </div>}
+  </div>;
 }
