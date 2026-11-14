@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { EmptyState, MiniSwitch, Pill, Select, Spinner } from '../components/ui';
-import { IconAlert, IconFolder, IconImport, IconProfiles, IconRefresh, IconTrash } from '../components/icons';
+import { IconAlert, IconChevronRight, IconFolder, IconImport, IconProfiles, IconRefresh, IconTrash } from '../components/icons';
 import { useApp, type Profile } from '../store/app';
 import { isTauri, previewMode } from '../core/api';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -16,6 +16,11 @@ const AUTO_OPTIONS = (followHours: number | null) => [
   { value: 'off', label: '关闭自动更新' },
 ];
 
+function profileSource(profile: Profile): string {
+  if (profile.sourceType === 'file') return '本地配置';
+  try { return new URL(profile.url).hostname; } catch { return '远程订阅'; }
+}
+
 function QuotaCell({ info }: { info: TrafficInfo | null }) {
   if (!info) return <div className="sub-empty">暂无配额信息</div>;
 
@@ -29,12 +34,12 @@ function QuotaCell({ info }: { info: TrafficInfo | null }) {
 
   return (
     <div className="sub-quota">
+      {total > 0 && <strong className="sub-quota-remaining">剩余 {formatBytes(remaining)}</strong>}
       <div className="sub-quota-line">
         <span>
           已用 {formatBytes(used)}
           {total > 0 ? ` / ${formatBytes(total)}` : ''}
         </span>
-        {total > 0 && <span>剩余 {formatBytes(remaining)}</span>}
       </div>
       {total > 0 && (
         <div className="progress sub-progress">
@@ -54,159 +59,130 @@ function QuotaCell({ info }: { info: TrafficInfo | null }) {
   );
 }
 
-function ProfileRow({
-  profile,
-  active,
-  busy,
-  confirming,
-  nodeCount,
-  refreshing,
-  onActivate,
-  onRefresh,
-  onDelete,
-  onUpdate,
-  onMove,
-  canMoveUp,
-  canMoveDown,
-  dragging,
-  dropTarget,
-  onDragHandle,
-}: {
-  profile: Profile;
-  active: boolean;
-  busy: boolean;
-  confirming: boolean;
-  nodeCount: number;
-  refreshing: boolean;
-  onActivate: () => void;
-  onRefresh: () => void;
-  onDelete: () => void;
-  onUpdate: (patch: Partial<Profile>) => void;
-  onMove: (dir: -1 | 1) => void;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  dragging: boolean;
-  dropTarget: boolean;
+function ProfileEditor({ profile, busy, confirming, index, total, onUpdate, onMove, onDelete, onClose, onRefresh }: {
+  profile: Profile; busy: boolean; confirming: boolean; index: number; total: number;
+  onUpdate: (patch: Partial<Profile>) => void; onMove: (dir: -1 | 1) => void;
+  onDelete: () => void; onClose: () => void; onRefresh: () => void;
+}) {
+  const [source, setSource] = useState(profile.url);
+  const [hours, setHours] = useState(profile.autoUpdateHours ?? null);
+  const [proxy, setProxy] = useState(Boolean(profile.useProxy));
+  const [picking, setPicking] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const sourceInput = useRef<HTMLInputElement>(null);
+  const local = profile.sourceType === 'file';
+  const changed = source.trim() !== profile.url || hours !== (profile.autoUpdateHours ?? null) || proxy !== Boolean(profile.useProxy);
+  useEffect(() => { sourceInput.current?.focus(); }, []);
+
+  const replaceFile = async () => {
+    if (!isTauri || busy || picking) return;
+    setPicking(true);
+    try {
+      const path = await open({ multiple: false, directory: false,
+        filters: [{ name: 'Clash / mihomo 配置', extensions: ['yaml', 'yml', 'json'] }] });
+      if (typeof path === 'string' && path) { setSource(path); setSaved(false); }
+    } catch (error) {
+      useApp.getState().notify('error', `选择文件失败：${String(error)}`);
+    } finally { setPicking(false); }
+  };
+
+  return <form className="sub-editor" aria-label={`编辑 ${profile.name}`} onKeyDown={event => {
+    if (event.key === 'Escape' && !picking) { event.preventDefault(); onClose(); }
+  }} onSubmit={event => {
+    event.preventDefault();
+    if (busy || picking || !source.trim()) return;
+    onUpdate({ url: source.trim(), autoUpdateHours: hours, useProxy: proxy });
+    setSaved(true);
+  }}>
+    <div className="sub-editor-heading"><h3>编辑订阅</h3><span>{local ? '本地配置' : '远程订阅'}</span></div>
+    <label className="sub-editor-field"><span>{local ? '本地文件' : '订阅 URL'}</span>
+      <div className="sub-source-field">
+        <input ref={sourceInput} className="input" type={local ? 'text' : 'url'} required
+          pattern={local ? undefined : 'https?://.+'} readOnly={local} disabled={busy || picking}
+          aria-label={local ? '本地文件路径' : '订阅 URL'} value={source} spellCheck={false}
+          onChange={event => { setSource(event.target.value); setSaved(false); }} />
+        {local && <button type="button" className="btn" disabled={!isTauri || busy || picking} onClick={() => void replaceFile()}>
+          <IconFolder size={14} />{picking ? '选择中…' : '更换文件'}
+        </button>}
+      </div>
+    </label>
+    <div className="sub-editor-settings">
+      <div className="sub-editor-field"><span>自动更新间隔</span><Select disabled={busy || picking}
+        value={hours === 0 ? 'off' : hours == null ? 'auto' : String(hours)}
+        options={AUTO_OPTIONS(profile.updateIntervalHours)} ariaLabel="自动更新间隔"
+        onChange={value => { setHours(value === 'auto' ? null : value === 'off' ? 0 : Number(value)); setSaved(false); }} />
+      </div>
+      {!local && <div className="sub-proxy-control"><span>使用代理更新</span>
+        <MiniSwitch on={proxy} disabled={busy || picking} label="经代理更新" onChange={value => { setProxy(value); setSaved(false); }} />
+      </div>}
+    </div>
+    <p className="sub-editor-hint">保存来源后点击更新订阅，验证通过后替换配置；更新失败会保留最后成功的内容。</p>
+    <div className="sub-editor-controls">
+      <button type="submit" className="btn btn-primary" disabled={busy || picking || !source.trim() || !changed}>保存修改</button>
+      <button type="button" className="btn" disabled={busy || picking || changed} onClick={onRefresh}><IconRefresh size={14} />更新订阅</button>
+      <button type="button" className="btn btn-ghost" disabled={picking} onClick={onClose}>取消编辑</button>
+      {saved && <span role="status" className="sub-editor-saved">修改已保存</span>}
+    </div>
+    <div className="sub-editor-manage">
+      <div className="sub-order-control"><span>顺序 {index + 1} / {total}</span>
+        <button type="button" className="icon-btn" aria-label="上移订阅" title="上移订阅" disabled={busy || picking || index === 0} onClick={() => onMove(-1)}><IconChevronRight size={14} className="sub-move-up" /></button>
+        <button type="button" className="icon-btn" aria-label="下移订阅" title="下移订阅" disabled={busy || picking || index === total - 1} onClick={() => onMove(1)}><IconChevronRight size={14} className="sub-move-down" /></button>
+        <span className="sub-drag-hint">也可拖动卡片排序</span>
+      </div>
+      <button type="button" className="btn btn-ghost danger" aria-label={confirming ? '确认删除订阅' : '删除订阅'} disabled={busy || picking} onClick={onDelete}>
+        <IconTrash size={14} />{confirming ? '确认删除订阅' : '删除订阅'}
+      </button>
+      {confirming && <span className="sub-delete-warning" role="status">{profile.id === useApp.getState().activeId ? '删除当前订阅会断开连接，再次点击确认。' : '再次点击确认删除。'}</span>}
+    </div>
+  </form>;
+}
+
+function ProfileCard({ profile, active, busy, confirming, nodeCount, refreshing, refreshError,
+  editing, editMode, index, total, status, statusTone, onActivate, onRefresh, onDelete, onUpdate,
+  onMove, onEdit, onClose, dragging, dropTarget, onDragHandle }: {
+  profile: Profile; active: boolean; busy: boolean; confirming: boolean; nodeCount: number;
+  refreshing: boolean; refreshError?: string; editing: boolean; editMode: boolean;
+  index: number; total: number; status: string; statusTone: 'ok' | 'warn' | 'bad' | 'neutral';
+  onActivate: () => void; onRefresh: () => void; onDelete: () => void;
+  onUpdate: (patch: Partial<Profile>) => void; onMove: (dir: -1 | 1) => void;
+  onEdit: () => void; onClose: () => void; dragging: boolean; dropTarget: boolean;
   onDragHandle: (e: ReactPointerEvent<HTMLSpanElement>) => void;
 }) {
-  const autoValue =
-    profile.autoUpdateHours === 0
-      ? 'off'
-      : profile.autoUpdateHours == null
-        ? 'auto'
-        : String(profile.autoUpdateHours);
-
-  return (
-    <div
-      className={`sub-row${active ? ' active' : ''}${dragging ? ' dragging' : ''}${
-        dropTarget ? ' drop-target' : ''
-      }`}
-      data-profile-id={profile.id}
-      role="button"
-      tabIndex={0}
-      onClick={() => {
-        if (!active) onActivate();
-      }}
-      onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && !active) {
-          e.preventDefault();
-          onActivate();
-        }
-      }}
-    >
-      <span
-        className="drag-handle"
-        title="拖拽排序"
-        aria-hidden="true"
-        onPointerDown={onDragHandle}
-        onClick={(e) => e.stopPropagation()}
-      >
-        ⋮⋮
-      </span>
-      <div className="sub-main">
-        <div className="sub-text">
-          <div className="sub-name-line">
-            <span className="sub-name" title={profile.name}>
-              {profile.name}
-            </span>
-            {profile.sourceType === 'file' && <Pill>本地</Pill>}
-            {active && <Pill tone="ok">当前</Pill>}
-          </div>
-          <div className="sub-meta">
-            {nodeCount} 个节点 · 更新于 {formatTime(profile.updatedAt)}
-          </div>
-        </div>
-      </div>
-
-      <QuotaCell info={profile.userinfo} />
-
-      <div className="sub-update" onClick={(e) => e.stopPropagation()}>
-        <Select
-          value={autoValue}
-          options={AUTO_OPTIONS(profile.updateIntervalHours)}
-          ariaLabel="自动更新间隔"
-          onChange={(v) =>
-            onUpdate({
-              autoUpdateHours: v === 'auto' ? null : v === 'off' ? 0 : Number(v),
-            })
-          }
-        />
-        {profile.sourceType !== 'file' && (
-          <>
-            <span className="sub-proxy-label" title="更新订阅时使用本机代理">使用代理</span>
-            <MiniSwitch
-              on={Boolean(profile.useProxy)}
-              onChange={(v) => onUpdate({ useProxy: v })}
-              label="经代理更新"
-            />
-          </>
-        )}
-      </div>
-
-      <div className="sub-actions" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          className="icon-btn"
-          title="上移"
-          aria-label="上移订阅"
-          disabled={busy || !canMoveUp}
-          onClick={() => onMove(-1)}
-        >
-          ↑
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          title="下移"
-          aria-label="下移订阅"
-          disabled={busy || !canMoveDown}
-          onClick={() => onMove(1)}
-        >
-          ↓
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          title="更新订阅"
-          aria-label="更新订阅"
-          disabled={busy}
-          onClick={onRefresh}
-        >
-          {refreshing ? <Spinner small /> : <IconRefresh size={14} />}
-        </button>
-        <button
-          type="button"
-          className={`icon-btn danger${confirming ? ' confirming' : ''}`}
-          title={confirming ? '再点一次确认删除' : '删除订阅'}
-          aria-label={confirming ? '确认删除订阅' : '删除订阅'}
-          disabled={busy}
-          onClick={onDelete}
-        >
-          {confirming ? <span className="t-micro">确认</span> : <IconTrash size={14} />}
-        </button>
+  const editButton = useRef<HTMLButtonElement>(null);
+  const interval = profile.autoUpdateHours ?? profile.updateIntervalHours ?? 24;
+  return <section className={`card sub-card${active ? ' sub-hero' : ''}${editing ? ' editing' : ''}${editMode ? ' edit-mode' : ''}${dragging ? ' dragging' : ''}${dropTarget ? ' drop-target' : ''}`}
+    data-profile-id={profile.id} aria-label={active ? '当前订阅' : `订阅 ${profile.name}`}>
+    {editMode && <span className="drag-handle" title="拖拽排序" aria-hidden="true" onPointerDown={event => { if (!busy) onDragHandle(event); }}>
+      <svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor" aria-hidden="true">
+        {[5, 9, 13].map(y => <g key={y}><circle cx="4" cy={y} r=".8" /><circle cx="8" cy={y} r=".8" /></g>)}
+      </svg>
+    </span>}
+    <div className="sub-card-heading">
+      <span className="sub-profile-symbol" aria-hidden="true">{profile.sourceType === 'file' ? <IconFolder size={22} /> : <IconProfiles size={22} />}</span>
+      <div className="sub-main"><h2 className="sub-name" title={profile.name}>{profile.name}</h2>
+        <div className="sub-meta">{active && '当前使用 · '}{nodeCount} 个节点 · {refreshing ? '正在更新…' : `更新于 ${formatTime(profile.updatedAt)}`}</div>
+        <div className="sub-source">{profileSource(profile)}</div>
       </div>
     </div>
-  );
+    {active && <div className="sub-chips"><Pill tone={statusTone}>{status}</Pill>
+      <Pill>{interval === 0 ? '自动更新已关闭' : `每 ${interval} 小时更新`}</Pill>
+      {profile.sourceType !== 'file' && profile.useProxy && <Pill>经代理更新</Pill>}
+    </div>}
+    <QuotaCell info={profile.userinfo} />
+    {refreshError && <div className="sub-update-error" role="status"><IconAlert size={14} /><span>{refreshError}</span></div>}
+    <div className="sub-card-actions">
+      {!active && <Pill>{profile.sourceType === 'file' ? '本地配置' : '备用'}</Pill>}
+      {active && <button type="button" className="btn btn-primary" disabled={busy} onClick={onRefresh}>
+        {refreshing ? <Spinner small /> : <IconRefresh size={14} />}立即更新
+      </button>}
+      <button ref={editButton} type="button" className="btn" aria-expanded={editing} aria-controls={`profile-edit-${profile.id}`}
+        disabled={busy} onClick={onEdit}>{active ? '编辑订阅' : '编辑'}</button>
+      {!active && <button type="button" className="btn sub-switch" disabled={busy} aria-label={`切换使用 ${profile.name}`} onClick={onActivate}>切换使用</button>}
+    </div>
+    {editing && <div id={`profile-edit-${profile.id}`} className="sub-editor-wrap"><ProfileEditor profile={profile} busy={busy}
+      confirming={confirming} index={index} total={total} onUpdate={onUpdate} onMove={onMove} onDelete={onDelete}
+      onRefresh={onRefresh} onClose={() => { onClose(); editButton.current?.focus(); }} /></div>}
+  </section>;
 }
 
 export function ProfilesPage() {
@@ -257,13 +233,35 @@ export function ProfilesPage() {
     };
   }, [dragId, reorderProfiles]);
   const stats = useApp((s) => s.stats);
+  const activating = useApp(s => s.activatingProfile);
   const importing = useApp((s) => s.importing);
   const refreshingIds = useApp((s) => s.refreshingIds);
+  const refreshErrors = useApp((s) => s.profileRefreshErrors);
+  const kernelPhase = useApp(s => s.kernelPhase);
+  const kernelError = useApp(s => s.kernelError);
+  const transition = useApp(s => s.runtimeConfigTransition);
 
   const [url, setUrl] = useState('');
   const [proxyImport, setProxyImport] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const globalBusy = activating || importing || transition || kernelPhase === 'starting' || kernelPhase === 'stopping';
+  const manageBusy = globalBusy || refreshingIds.length > 0;
+  const activeProfile = profiles.find(profile => profile.id === activeId);
+  const status = activating || transition ? '正在切换配置' : kernelPhase === 'failed' ? '连接失败'
+    : kernelPhase === 'running' ? kernelError ? '运行状态未确认' : '运行中' : kernelPhase === 'starting' ? '启动中'
+      : kernelPhase === 'stopping' ? '停止中' : '未连接';
+  const statusTone = kernelError || kernelPhase === 'failed' ? 'bad' : kernelPhase === 'running' && !activating && !transition ? 'ok'
+    : globalBusy ? 'warn' : 'neutral';
+
+  useEffect(() => {
+    if (editingId && !profiles.some(profile => profile.id === editingId)) setEditingId(null);
+  }, [profiles, editingId]);
+  useEffect(() => {
+    if (manageBusy || !editingId) { setDragId(null); setDragOverId(null); dragOverRef.current = null; }
+  }, [manageBusy, editingId]);
 
   const nodeCounts = useMemo(() => {
     const out: Record<string, number> = {};
@@ -272,7 +270,7 @@ export function ProfilesPage() {
   }, [profiles]);
 
   const pickFile = async () => {
-    if (!isTauri || importing) return;
+    if (!isTauri || globalBusy) return;
     try {
       const path = await open({
         multiple: false,
@@ -287,16 +285,17 @@ export function ProfilesPage() {
 
   const submit = async () => {
     const v = url.trim();
-    if (!v || importing) return;
-    const before = useApp.getState().profiles.length;
-    await importProfile(v, proxyImport);
-    setUrl('');
-    if (useApp.getState().profiles.length > before) {
+    if (!v || globalBusy) return;
+    const ok = await importProfile(v, proxyImport);
+    if (ok) {
+      setUrl('');
       setProxyImport(false);
+      setAdding(false);
     }
   };
 
   const askDelete = (id: string) => {
+    if (manageBusy) return;
     if (confirmId === id) {
       setConfirmId(null);
       void removeProfile(id);
@@ -309,6 +308,7 @@ export function ProfilesPage() {
   };
 
   const refreshAll = () => {
+    if (manageBusy || refreshingAll) return;
     const notify = useApp.getState().notify;
     setRefreshingAll(true);
     void Promise.all(profiles.map((p) => refreshProfile(p.id, true)))
@@ -319,13 +319,27 @@ export function ProfilesPage() {
       .finally(() => setRefreshingAll(false));
   };
 
+  const renderProfile = (profile: Profile) => <ProfileCard key={profile.id} profile={profile}
+    active={profile.id === activeId} busy={manageBusy} confirming={confirmId === profile.id}
+    nodeCount={nodeCounts[profile.id] ?? 0} refreshing={refreshingIds.includes(profile.id)} refreshError={refreshErrors[profile.id]}
+    editing={editingId === profile.id} editMode={editingId !== null} index={profiles.indexOf(profile)} total={profiles.length}
+    status={status} statusTone={statusTone} onActivate={() => { if (!manageBusy) void activate(profile.id); }}
+    onRefresh={() => { if (!manageBusy) void refreshProfile(profile.id); }} onDelete={() => askDelete(profile.id)}
+    onUpdate={patch => { if (!manageBusy) updateProfile(profile.id, patch); }}
+    onMove={dir => { if (!manageBusy) moveProfile(profile.id, dir); }} onEdit={() => {
+      setEditingId(editingId === profile.id ? null : profile.id); setConfirmId(null); setAdding(false);
+    }} onClose={() => { setEditingId(null); setConfirmId(null); }} dragging={dragId === profile.id}
+    dropTarget={dragOverId === profile.id && dragId !== profile.id} onDragHandle={event => {
+      event.preventDefault(); event.stopPropagation(); setDragOverId(null); setDragId(profile.id);
+    }} />;
+
   return (
     <>
       <header className="page-head">
         <div className="page-heading">
           <h1 className="page-title">订阅</h1>
           <div className="page-sub">
-            {profiles.length > 0 ? `${profiles.length} 份订阅` : '还没有订阅'}
+            {profiles.length > 0 ? `${profiles.length} 份订阅 · ${Object.values(nodeCounts).reduce((sum, count) => sum + count, 0)} 个节点` : '还没有订阅'}
           </div>
         </div>
         <div className="page-actions">
@@ -333,13 +347,15 @@ export function ProfilesPage() {
             <button
               type="button"
               className="btn"
-              disabled={refreshingAll}
+              disabled={manageBusy || refreshingAll}
               onClick={refreshAll}
             >
               {refreshingAll ? <Spinner small /> : <IconRefresh size={13} />}
               全部更新
             </button>
           )}
+          <button type="button" className="btn btn-primary" disabled={globalBusy} aria-expanded={adding || profiles.length === 0}
+            onClick={() => { setAdding(!adding); setEditingId(null); setConfirmId(null); }}>添加订阅</button>
         </div>
       </header>
 
@@ -352,20 +368,19 @@ export function ProfilesPage() {
             </div>
           )}
 
-          <section className="card import-card">
+          {activeProfile && renderProfile(activeProfile)}
+
+          {(adding || profiles.length === 0) && <section className="card import-card" aria-label="添加订阅">
             <div className="import-head">
-              <span className="icon-tile accent import-icon">
-                <IconImport size={16} />
-              </span>
               <div className="import-heading">
-                <span className="section-title">添加订阅</span>
-                <span className="card-hint">Clash / mihomo 链接或本地文件</span>
+                <h2 className="section-title">添加订阅</h2>
+                <span className="card-hint">导入 Clash / mihomo 订阅链接或本地配置</span>
               </div>
               <div className="spacer" />
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                disabled={importing}
+                disabled={!isTauri || globalBusy}
                 onClick={() => void pickFile()}
               >
                 <IconFolder size={13} />
@@ -383,7 +398,7 @@ export function ProfilesPage() {
                 className="input input-mono"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/api/v1/client/subscribe?token=…"
+                placeholder="粘贴订阅链接（https://…）"
                 spellCheck={false}
                 autoCapitalize="off"
                 autoCorrect="off"
@@ -400,7 +415,7 @@ export function ProfilesPage() {
               <button
                 type="submit"
                 className="btn btn-primary import-submit"
-                disabled={importing || !url.trim()}
+                disabled={globalBusy || !url.trim()}
               >
                 {importing ? (
                   <>
@@ -418,43 +433,19 @@ export function ProfilesPage() {
             <div className="import-foot">
               <span className="card-hint">支持 .yaml / .yml / .json，最大 10MB</span>
             </div>
-          </section>
+          </section>}
 
           {profiles.length > 0 ? (
-            <section className="card sub-table">
-              <div className="sub-head">
-                <span>订阅</span>
-                <span>流量 / 到期</span>
-                <span>自动更新 / 代理</span>
-                <span className="sub-head-actions">操作</span>
+            <section className="sub-list" aria-label="订阅列表">
+              <div className="sub-list-heading">
+                <h2 className="section-title">{activeProfile ? '其他订阅' : '我的订阅'}</h2>
+                <span>{editingId ? '编辑模式 · 拖动卡片或使用详情中的箭头排序' : '编辑订阅，或切换使用'}</span>
               </div>
-              <div className="sub-rows">
-              {profiles.map((p, index) => (
-                <ProfileRow
-                  key={p.id}
-                  onMove={(dir) => moveProfile(p.id, dir)}
-                  canMoveUp={index > 0}
-                  canMoveDown={index < profiles.length - 1}
-                  profile={p}
-                  active={p.id === activeId}
-                  busy={refreshingIds.includes(p.id)}
-                  confirming={confirmId === p.id}
-                  nodeCount={nodeCounts[p.id] ?? 0}
-                  refreshing={refreshingIds.includes(p.id)}
-                  onActivate={() => void activate(p.id)}
-                  onRefresh={() => void refreshProfile(p.id)}
-                  onDelete={() => askDelete(p.id)}
-                  onUpdate={(patch) => updateProfile(p.id, patch)}
-                  dragging={dragId === p.id}
-                  dropTarget={dragOverId === p.id && dragId !== p.id}
-                  onDragHandle={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDragOverId(null);
-                    setDragId(p.id);
-                  }}
-                />
-              ))}
+              <div className="sub-card-flow">
+              {profiles.filter(profile => profile.id !== activeId).map(renderProfile)}
+              <button type="button" className="card sub-add-card" disabled={globalBusy} onClick={() => {
+                setAdding(true); setEditingId(null); setConfirmId(null);
+              }}><span aria-hidden="true">＋</span><span>添加订阅或本地配置</span></button>
               </div>
             </section>
           ) : (
@@ -462,30 +453,22 @@ export function ProfilesPage() {
               <EmptyState
                 icon={<IconProfiles size={19} />}
                 title="还没有订阅"
-                desc="导入订阅链接。"
+                desc="支持订阅链接和本地配置文件"
               />
             </section>
           )}
 
           {stats && (
-            <section className="card">
-              <div className="row" style={{ gap: 10 }}>
-                <span className="section-title">订阅统计</span>
-                <div className="spacer" />
-              </div>
-              <div className="stat-grid">
+            <section className="profiles-stats" aria-label="当前配置统计">
+              <span>当前配置</span>
                 {[
                   { label: '节点', value: stats.proxyCount },
                   { label: '分组', value: stats.groupCount },
                   { label: '规则', value: stats.ruleCount },
                   { label: '防护规则', value: stats.guardRuleCount },
                 ].map((x) => (
-                  <div key={x.label} className="stat-item">
-                    <div className="stat-value">{x.value}</div>
-                    <div className="stat-label">{x.label}</div>
-                  </div>
+                  <span key={x.label}><strong>{x.value}</strong> {x.label}</span>
                 ))}
-              </div>
             </section>
           )}
         </div>
