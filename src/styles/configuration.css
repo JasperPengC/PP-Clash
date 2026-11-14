@@ -1,0 +1,81 @@
+/* 安全、内核、DNS：状态在前，连续表单按任务分节。 */
+.configuration-page { display: flex; flex-direction: column; gap: 16px; width: 100%; min-width: 0; }
+.configuration-page-count { color: var(--text-secondary); font-size: var(--type-meta); font-variant-numeric: tabular-nums; }
+.configuration-sheet { min-width: 0; border: 1px solid var(--border-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); overflow: hidden; }
+.configuration-section { padding: 20px; min-width: 0; }
+.configuration-section + .configuration-section { border-top: 1px solid var(--border); }
+.configuration-section-head { min-width: 0; margin: 0 0 8px; }
+.configuration-section-head .section-title,
+.configuration-check-head .section-title,
+.kernel-runtime-title .section-title { margin: 0; }
+.configuration-description { margin: 4px 0 0; max-width: 70ch; color: var(--text-secondary); font-size: var(--type-meta); line-height: var(--leading-body); }
+.configuration-notice { margin: 0; color: var(--text-secondary); font-size: var(--type-meta); line-height: var(--leading-body); }
+.configuration-page .field-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 13px 0; border-top: 1px solid var(--border-soft); }
+.configuration-page .configuration-section-head + .field-row { border-top: 0; }
+.configuration-page .field-row:last-child { padding-bottom: 0; }
+.configuration-page .field-main { min-width: 0; }
+.configuration-page .field-label { color: var(--text-primary); font-size: var(--type-label); font-weight: var(--weight-medium); line-height: var(--leading-body); }
+.configuration-page .field-hint { max-width: 65ch; margin-top: 4px; color: var(--text-secondary); font-size: var(--type-meta); line-height: var(--leading-body); overflow-wrap: anywhere; }
+.configuration-page .field-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; max-width: none; }
+.configuration-page .field-control > .input { max-width: 100%; }
+.configuration-page .field-control .select { max-width: 100%; }
+.configuration-page .field-control .card-hint { max-width: 46ch; text-align: right; overflow-wrap: anywhere; }
+.configuration-page .field-control > .row { flex-wrap: wrap; justify-content: flex-end; }
+.configuration-state { flex: none; color: var(--text-secondary); font-size: var(--type-meta); font-weight: var(--weight-medium); line-height: var(--leading-body); }
+.configuration-state.ok { color: var(--success); }
+.configuration-state.warn,
+.configuration-warning { color: var(--warning); }
+.configuration-state.bad { color: var(--danger); }
+
+/* 防护是同一份策略；六个控制共享一条清晰的标签轴线。 */
+.security-policies { padding: 0 20px; }
+.security-policy-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 18px 0 14px; border-bottom: 1px solid var(--border); }
+.security-policy-list { min-width: 0; }
+.configuration-page .security-policy-row { min-height: 64px; padding: 12px 0; }
+.configuration-page .security-policy-row:first-child { border-top: 0; }
+.configuration-page .security-policy-row:last-child { padding-bottom: 14px; }
+.security-policy-risk { display: flex; align-items: baseline; gap: 6px; margin-top: 5px; color: var(--warning); font-size: var(--type-meta); line-height: var(--leading-body); }
+.security-policy-risk svg { flex: none; align-self: flex-start; margin-top: 2px; }
+.security-checks { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; }
+.configuration-check { min-width: 0; padding: 18px 20px; border: 1px solid var(--border-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.configuration-check-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.configuration-check-title { min-width: 0; flex: 1 1 auto; }
+.configuration-check .report { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft); }
+.configuration-check .report > p { margin: 0 0 10px; }
+.configuration-check .report-row { align-items: baseline; padding: 6px 0; font-size: var(--type-meta); overflow-wrap: anywhere; }
+.configuration-check .report-mark { flex: 0 0 14px; background: transparent; border: 0; }
+.configuration-check .audit-list { display: flex; flex-direction: column; margin: 14px 0 0; gap: 0; }
+.configuration-check .audit-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border-soft); }
+.configuration-check .audit-row:first-child { border-top: 0; }
+.configuration-check .audit-msg { min-width: 0; color: var(--text-primary); font-size: var(--type-meta); line-height: var(--leading-body); overflow-wrap: anywhere; }
+.configuration-check .audit-tag { flex: none; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); font-size: var(--type-meta); white-space: nowrap; }
+.configuration-check .audit-tag.configuration-warning { color: var(--warning); }
+.configuration-check .audit-empty { padding: 16px 0 0; color: var(--text-secondary); font-size: var(--type-meta); }
+
+/* 运行摘要只保留当前事实与常用动作，版本详情在下方连续表单。 */
+.configuration-runtime { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; min-width: 0; padding: 18px 20px; border: 1px solid var(--border-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); }
+.kernel-runtime-main { flex: 1 1 280px; min-width: 0; }
+.kernel-runtime-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+.kernel-runtime-path { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; color: var(--text-secondary); font-size: var(--type-meta); line-height: var(--leading-body); }
+.kernel-runtime-path > span { min-width: 0; overflow-wrap: anywhere; }
+.kernel-runtime-facts { display: flex; align-items: baseline; gap: 20px; color: var(--text-secondary); font-size: var(--type-meta); }
+.kernel-runtime-facts > div { display: flex; flex-direction: column; gap: 4px; }
+.kernel-runtime-facts strong { color: var(--text-primary); font-size: var(--type-body); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kernel-runtime-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.kernel-configuration .kernel-path-input { width: 280px; max-width: 100%; }
+.kernel-configuration .read-error { margin-block: 10px; }
+@media (max-width: 1000px) {
+  .configuration-section { padding: 18px; }
+  .configuration-page .field-row { gap: 16px; }
+  .configuration-runtime { gap: 14px 18px; }
+  .security-checks { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .configuration-page .field-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .configuration-page .field-control,
+  .configuration-page .field-control > .row { justify-content: flex-start; }
+  .configuration-page .security-policy-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .configuration-page .field-control .card-hint { text-align: left; }
+  .kernel-runtime-main { flex-basis: 100%; }
+  .kernel-runtime-actions { margin-left: auto; }
+}

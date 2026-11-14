@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { EmptyState, navigate, Pill, Spinner } from '../components/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { EmptyState, navigate, ReadError, Spinner } from '../components/ui';
 import {
   IconActivity,
   IconChevronDown,
@@ -11,6 +11,7 @@ import {
 import { useApp } from '../store/app';
 import { api } from '../core/api';
 import { formatBytes } from '../core/format';
+import { startPolling } from '../core/polling';
 
 interface RawConn {
   id: string;
@@ -37,7 +38,7 @@ function hostOf(c: RawConn): string {
   return `${host}${port}`;
 }
 
-export function ConnectionsPage() {
+export function ConnectionsPage({ active = true }: { active?: boolean }) {
   const kernelPhase = useApp((s) => s.kernelPhase);
   const notify = useApp((s) => s.notify);
   const connected = kernelPhase === 'running';
@@ -45,6 +46,13 @@ export function ConnectionsPage() {
   const [conns, setConns] = useState<RawConn[]>([]);
   const [totals, setTotals] = useState({ up: 0, down: 0 });
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const inFlight = useRef(false);
+  const readEpoch = useRef(0);
+  const operation = useRef(false);
+  const available = useRef(active && connected);
+  available.current = active && connected;
   const [closing, setClosing] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'time' | 'down' | 'up'>('time');
@@ -55,25 +63,46 @@ export function ConnectionsPage() {
   const [closingProcess, setClosingProcess] = useState<string | null>(null);
   const [confirmProcess, setConfirmProcess] = useState<string | null>(null);
 
+  const mutating = closing !== null || closingProcess !== null || closingAll;
   const load = async () => {
+    if (!available.current || inFlight.current || operation.current) return;
+    inFlight.current = true;
+    const epoch = readEpoch.current;
+    setLoading(true);
     try {
       const data: any = await api.mihomo('GET', '/connections');
+      if (!available.current || epoch !== readEpoch.current) return;
       setConns(data?.connections ?? []);
       setTotals({ up: data?.uploadTotal ?? 0, down: data?.downloadTotal ?? 0 });
-    } catch {
-      /* 内核没起来时保持空列表 */
+      setLoadedAt(Date.now());
+      setReadError(null);
+    } catch (error) {
+      if (available.current && epoch === readEpoch.current) setReadError(String(error));
     } finally {
-      setLoading(false);
+      inFlight.current = false;
+      if (available.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    void load();
-    const timer = window.setInterval(load, 2000);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (!connected) {
+      setConns([]); setTotals({ up: 0, down: 0 }); setLoadedAt(null); setReadError(null);
+    }
+    if (!active || !connected) return;
+    const stop = startPolling(load, 2000);
+    return () => { readEpoch.current += 1; stop(); };
+  }, [active, connected]);
+
+  const beginClose = () => {
+    if (!available.current || operation.current) return false;
+    operation.current = true;
+    readEpoch.current += 1;
+    setConfirmCloseAll(false); setConfirmProcess(null);
+    return true;
+  };
 
   const close = async (id: string) => {
+    if (!beginClose()) return;
     setClosing(id);
     try {
       await api.mihomo('DELETE', `/connections/${encodeURIComponent(id)}`);
@@ -81,6 +110,7 @@ export function ConnectionsPage() {
     } catch (e) {
       notify('error', `关闭连接失败：${String(e)}`);
     } finally {
+      operation.current = false;
       setClosing(null);
     }
   };
@@ -136,37 +166,39 @@ export function ConnectionsPage() {
   }, [conns, query, sortBy]);
 
   const closeProcess = async (name: string, items: RawConn[]) => {
+    if (!available.current || operation.current) return;
     if (confirmProcess !== name) {
       setConfirmProcess(name);
       window.setTimeout(() => setConfirmProcess((cur) => (cur === name ? null : cur)), 3000);
       return;
     }
-    setConfirmProcess(null);
+    if (!beginClose()) return;
     setClosingProcess(name);
     try {
-      await Promise.all(
-        items.map((c) =>
-          api.mihomo('DELETE', `/connections/${encodeURIComponent(c.id)}`).catch(() => null)
-        )
+      const results = await Promise.allSettled(
+        items.map((c) => api.mihomo('DELETE', `/connections/${encodeURIComponent(c.id)}`))
       );
-      const ids = new Set(items.map((c) => c.id));
-      setConns((prev) => prev.filter((c) => !ids.has(c.id)));
-      if (expandedProcess === name) setExpandedProcess(null);
-      notify('success', `已关闭 ${name} 的 ${items.length} 条连接`);
-    } catch (e) {
-      notify('error', `关闭连接失败：${String(e)}`);
+      const closedIds = new Set(items.filter((_, index) => results[index].status === 'fulfilled').map(c => c.id));
+      const failed = items.length - closedIds.size;
+      setConns((prev) => prev.filter((c) => !closedIds.has(c.id)));
+      if (!failed && expandedProcess === name) setExpandedProcess(null);
+      notify(failed ? 'error' : 'success', failed
+        ? `已关闭 ${closedIds.size} 条连接，${failed} 条失败，可重试`
+        : `已关闭 ${name} 的 ${closedIds.size} 条连接`);
     } finally {
+      operation.current = false;
       setClosingProcess(null);
     }
   };
 
   const closeAll = async () => {
+    if (!available.current || operation.current) return;
     if (!confirmCloseAll) {
       setConfirmCloseAll(true);
       window.setTimeout(() => setConfirmCloseAll(false), 3000);
       return;
     }
-    setConfirmCloseAll(false);
+    if (!beginClose()) return;
     setClosingAll(true);
     try {
       await api.mihomo('DELETE', '/connections');
@@ -175,6 +207,7 @@ export function ConnectionsPage() {
     } catch (e) {
       notify('error', `操作失败：${String(e)}`);
     } finally {
+      operation.current = false;
       setClosingAll(false);
     }
   };
@@ -192,7 +225,7 @@ export function ConnectionsPage() {
           <button
             type="button"
             className="btn"
-            disabled={!connected || conns.length === 0 || closingAll}
+            disabled={!active || !connected || conns.length === 0 || mutating}
             onClick={() => void closeAll()}
           >
             {closingAll ? <Spinner small /> : null}
@@ -203,6 +236,8 @@ export function ConnectionsPage() {
             className="icon-btn"
             title="刷新"
             aria-label="刷新"
+            aria-busy={loading}
+            disabled={!active || !connected || loading || mutating}
             onClick={() => void load()}
           >
             <IconRefresh size={15} />
@@ -210,14 +245,15 @@ export function ConnectionsPage() {
         </div>
       </header>
 
-      <div className="page-scroll page-fixed">
-        <div className="page-inner">
+      <div className="page-scroll page-fixed dp-page dp-connections">
+        <div className="page-inner dp-connections-content">
+          {connected && readError && <ReadError message={`${readError}${loadedAt ? '；当前为上次读取的数据' : ''}`} onRetry={() => void load()} busy={loading || mutating || !active} />}
           {!connected ? (
             <section className="card">
               <EmptyState
                 icon={<IconActivity size={19} />}
                 title="内核未运行"
-                desc="开启接管后显示连接。"
+                desc="连接后显示网络连接"
                 action={
                   <button type="button" className="btn btn-primary" onClick={() => navigate('overview')}>
                     去概览
@@ -225,22 +261,17 @@ export function ConnectionsPage() {
                 }
               />
             </section>
-          ) : conns.length === 0 ? (
+          ) : !loadedAt && readError ? null : conns.length === 0 ? (
             <section className="card">
               <EmptyState
                 icon={<IconActivity size={19} />}
-                title={loading ? '读取中…' : '暂无活动连接'}
-                desc={loading ? '' : ''}
+                title={!loadedAt && loading ? '正在读取连接…' : '暂无活动连接'}
+                loading={!loadedAt && loading}
               />
             </section>
           ) : (
             <>
-              <div className="row conn-toolbar" style={{ gap: 8 }}>
-                <Pill tone="accent">
-                  <IconActivity size={11} />
-                  {conns.length} 条
-                </Pill>
-                <span className="card-hint">本会话 {formatBytes(totals.up + totals.down)}</span>
+              <div className="row conn-toolbar dp-table-toolbar">
                 <div className="seg" role="group" aria-label="连接视图">
                   {(
                     [
@@ -252,12 +283,14 @@ export function ConnectionsPage() {
                       key={value}
                       type="button"
                       className={`seg-btn${view === value ? ' active' : ''}`}
+                      aria-pressed={view === value}
                       onClick={() => setView(value)}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
+                <span className="dp-tool-label">排序</span>
                 <div className="seg" role="group" aria-label="连接排序">
                   {(
                     [
@@ -270,6 +303,7 @@ export function ConnectionsPage() {
                       key={value}
                       type="button"
                       className={`seg-btn${sortBy === value ? ' active' : ''}`}
+                      aria-pressed={sortBy === value}
                       onClick={() => setSortBy(value)}
                     >
                       {label}
@@ -282,6 +316,7 @@ export function ConnectionsPage() {
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
                     placeholder="搜索主机 / 进程 / 规则"
                     aria-label="搜索连接"
                     spellCheck={false}
@@ -297,19 +332,26 @@ export function ConnectionsPage() {
                     </button>
                   )}
                 </div>
+                <span className="dp-table-count">{view === 'conn' ? visible.length : processGroups.length} {view === 'conn' ? '条连接' : '个进程'} · 本会话 {formatBytes(totals.up + totals.down)}</span>
               </div>
 
               <section className="card card-flush connections-card">
+                <div className={`dp-connection-columns${view === 'process' ? ' is-process' : ''}`} aria-hidden="true">
+                  <span>{view === 'process' ? '进程与路由' : '目标与路由'}</span>
+                  <span className="dp-traffic-columns"><span>上传</span><span>下载</span></span>
+                  <span>操作</span>
+                </div>
                 {view === 'conn' ? (
                   <div className="list conn-list">
                     {visible.length === 0 && (
-                      <div className="node-empty">没有匹配的连接</div>
+                      <EmptyState icon={<IconSearch size={19} />} title="没有匹配的连接" action={<button type="button" className="btn btn-sm" onClick={() => setQuery('')}>清除筛选</button>} />
                     )}
                     {visible.map((c) => (
                       <div key={c.id} className="conn-row">
                         <span className="conn-main">
                           <span className="conn-host">{hostOf(c)}</span>
                           <span className="conn-sub">
+                            {c.metadata?.process ? `${c.metadata.process} · ` : ''}
                             {c.metadata?.network ?? 'tcp'}
                             {c.chains && c.chains.length > 0
                               ? ` · ${c.chains.join(' → ')}`
@@ -318,14 +360,14 @@ export function ConnectionsPage() {
                           </span>
                         </span>
                         <span className="conn-traffic">
-                          ↑ {formatBytes(c.upload)} ↓ {formatBytes(c.download)}
+                          <span className="dp-conn-up">↑ {formatBytes(c.upload)}</span><span className="dp-conn-down">↓ {formatBytes(c.download)}</span>
                         </span>
                         <button
                           type="button"
                           className="icon-btn danger"
                           title="断开此连接"
                           aria-label="断开此连接"
-                          disabled={closing === c.id}
+                          disabled={mutating || !active}
                           onClick={() => void close(c.id)}
                         >
                           {closing === c.id ? <Spinner small /> : <IconX size={12} />}
@@ -336,7 +378,7 @@ export function ConnectionsPage() {
                 ) : (
                   <div className="list conn-list">
                     {processGroups.length === 0 && (
-                      <div className="node-empty">没有匹配的连接</div>
+                      <EmptyState icon={<IconSearch size={19} />} title="没有匹配的连接" action={<button type="button" className="btn btn-sm" onClick={() => setQuery('')}>清除筛选</button>} />
                     )}
                     {processGroups.map((g) => {
                       const open = expandedProcess === g.process;
@@ -346,7 +388,8 @@ export function ConnectionsPage() {
                             <button
                               type="button"
                               className="proc-expand"
-                              aria-label={open ? '收起进程连接' : '展开进程连接'}
+                              aria-label={`${open ? '收起' : '展开'} ${g.process} 的连接`}
+                              aria-expanded={open}
                               onClick={() => setExpandedProcess(open ? null : g.process)}
                             >
                               {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
@@ -359,15 +402,15 @@ export function ConnectionsPage() {
                               </span>
                             </span>
                             <span className="conn-traffic">
-                              ↑ {formatBytes(g.up)} ↓ {formatBytes(g.down)}
+                              <span className="dp-conn-up">↑ {formatBytes(g.up)}</span><span className="dp-conn-down">↓ {formatBytes(g.down)}</span>
                             </span>
                             <button
                               type="button"
                               className="btn btn-sm"
-                              disabled={closingProcess === g.process}
+                              disabled={mutating || !active}
                               onClick={() => void closeProcess(g.process, g.conns)}
                             >
-                              {confirmProcess === g.process ? '确认关闭' : '关闭进程连接'}
+                              {closingProcess === g.process ? '关闭中…' : confirmProcess === g.process ? '确认关闭' : '关闭进程连接'}
                             </button>
                           </div>
                           {open && (
@@ -382,7 +425,7 @@ export function ConnectionsPage() {
                                     </span>
                                   </span>
                                   <span className="conn-traffic">
-                                    ↑ {formatBytes(c.upload)} ↓ {formatBytes(c.download)}
+                                    <span className="dp-conn-up">↑ {formatBytes(c.upload)}</span><span className="dp-conn-down">↓ {formatBytes(c.download)}</span>
                                   </span>
                                 </div>
                               ))}

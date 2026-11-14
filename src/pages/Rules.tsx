@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { EmptyState, MiniSwitch, Select, Spinner } from '../components/ui';
-import { IconInfo, IconPlus, IconRefresh, IconRules, IconSearch, IconTrash, IconX } from '../components/icons';
-import { useApp, type CustomRule } from '../store/app';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { EmptyState, MiniSwitch, ReadError, Select, Spinner } from '../components/ui';
+import { IconChevronDown, IconInfo, IconPlus, IconRefresh, IconRules, IconSearch, IconTrash, IconX } from '../components/icons';
+import { getLifecycleToken, isLifecycleCurrent, useApp, type CustomRule } from '../store/app';
 import { parseSubscriptionRules } from '../core/subscription';
 import type { RuleEditState } from '../core/generator';
 import { api } from '../core/api';
@@ -31,6 +31,7 @@ function newId() {
 
 export function RulesPage() {
   const connected = useApp((s) => s.kernelPhase === 'running');
+  const connectedAt = useApp((s) => s.connectedAt);
   const settings = useApp((s) => s.settings);
   const groups = useApp((s) => s.groups);
   const profiles = useApp((s) => s.profiles);
@@ -42,6 +43,11 @@ export function RulesPage() {
   const rules = settings.customRules;
 
   const [kernelRules, setKernelRules] = useState<KernelRule[]>([]);
+  const [kernelLoading, setKernelLoading] = useState(connected);
+  const [kernelError, setKernelError] = useState<string | null>(null);
+  const kernelRequest = useRef(0);
+  const kernelReading = useRef(false);
+  const mutationBusy = useRef(false);
   const [query, setQuery] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -55,6 +61,7 @@ export function RulesPage() {
   const [ioText, setIoText] = useState('');
   const [subQuery, setSubQuery] = useState('');
   const [ruleSaving, setRuleSaving] = useState(false);
+  const busy = saving || ruleSaving;
 
   const targetOptions = useMemo(() => {
     const base = [
@@ -119,58 +126,88 @@ export function RulesPage() {
   };
 
   const saveRuleEdit = async (index: number, patch: { enabled?: boolean; target?: string }) => {
-    if (!activeProfile || ruleSaving) return;
+    if (!activeProfile || mutationBusy.current) return;
     const prev = activeProfile.ruleEdits ?? { order: fullOrder, edits: {} };
     const next: RuleEditState = {
       order: prev.order.length ? prev.order : fullOrder,
       edits: { ...prev.edits, [index]: { ...prev.edits[index], ...patch } },
     };
+    mutationBusy.current = true;
     setRuleSaving(true);
     try {
       await updateRuleEdits(next);
+    } catch (error) {
+      notify('error', `订阅规则保存失败：${String(error)}`);
     } finally {
+      mutationBusy.current = false;
       setRuleSaving(false);
     }
   };
 
   const moveSubscriptionRule = async (index: number, dir: -1 | 1) => {
-    if (!activeProfile || ruleSaving) return;
+    if (!activeProfile || mutationBusy.current) return;
     const pos = fullOrder.indexOf(index);
     const targetPos = pos + dir;
     if (pos < 0 || targetPos < 0 || targetPos >= fullOrder.length) return;
     const order = [...fullOrder];
     [order[pos], order[targetPos]] = [order[targetPos], order[pos]];
     const prev = activeProfile.ruleEdits ?? { order: [], edits: {} };
+    mutationBusy.current = true;
     setRuleSaving(true);
     try {
       await updateRuleEdits({ ...prev, order });
+    } catch (error) {
+      notify('error', `订阅规则保存失败：${String(error)}`);
     } finally {
+      mutationBusy.current = false;
       setRuleSaving(false);
     }
   };
 
   const resetSubscriptionRules = async () => {
-    if (!activeProfile || ruleSaving) return;
+    if (!activeProfile || mutationBusy.current) return;
+    mutationBusy.current = true;
     setRuleSaving(true);
     try {
       await updateRuleEdits({ order: [], edits: {} });
+    } catch (error) {
+      notify('error', `订阅规则重置失败：${String(error)}`);
     } finally {
+      mutationBusy.current = false;
       setRuleSaving(false);
     }
   };
 
-  const loadKernelRules = async () => {
+  const loadKernelRules = useCallback(async () => {
+    if (!connected || kernelReading.current) return;
+    kernelReading.current = true;
+    const request = ++kernelRequest.current;
+    setKernelLoading(true);
+    setKernelError(null);
     try {
       const data: any = await api.mihomo('GET', '/rules');
-      setKernelRules(data?.rules ?? []);
-    } catch {
-      /* 内核未运行时忽略 */
+      if (!Array.isArray(data?.rules)) throw new Error('内核返回的规则列表无效');
+      if (request === kernelRequest.current) setKernelRules(data.rules);
+    } catch (error) {
+      if (request === kernelRequest.current) setKernelError(`生效规则读取失败：${String(error)}`);
+    } finally {
+      if (request === kernelRequest.current) {
+        kernelReading.current = false;
+        setKernelLoading(false);
+      }
     }
-  };
+  }, [connected, settings.controllerPort, settings.controllerSecret]);
 
   useEffect(() => {
+    setKernelRules([]);
+    setKernelError(null);
+    setKernelLoading(connected);
     void loadKernelRules();
-  }, []);
+    return () => {
+      kernelRequest.current += 1;
+      kernelReading.current = false;
+    };
+  }, [loadKernelRules, connected, connectedAt, activeId]);
 
   const resetEditor = () => {
     setEditingId(null);
@@ -181,22 +218,46 @@ export function RulesPage() {
   };
 
   const persist = async (next: CustomRule[], note: string) => {
-    updateSettings({ customRules: next });
-    const st = useApp.getState();
-    await st.applyConfig();
-    if (st.kernelPhase === 'running') {
-      const ok = await st.restartKernel(true);
-      if (!ok) return;
+    if (mutationBusy.current) return false;
+    mutationBusy.current = true;
+    setSaving(true);
+    const token = getLifecycleToken();
+    const previous = useApp.getState().settings.customRules;
+    try {
+      updateSettings({ customRules: next });
+      const st = useApp.getState();
+      if (!st.profiles.some((profile) => profile.id === st.activeId)) {
+        notify('info', `${note}，导入订阅并连接后生效`);
+        return true;
+      }
+      const applied = await st.applyConfig();
+      if (!isLifecycleCurrent(token)) return false;
+      if (!applied) throw new Error('配置生成失败，请检查活动订阅后重试');
+      if (st.kernelPhase === 'running' && !await st.restartKernel(true, token, true)) {
+        throw new Error('内核重启失败，请检查内核状态后重试');
+      }
+      if (!isLifecycleCurrent(token)) return false;
+      notify('success', note);
+      void loadKernelRules();
+      return true;
+    } catch (error) {
+      if (!isLifecycleCurrent(token)) return false;
+      updateSettings({ customRules: previous });
+      useApp.setState({ configPath: '' });
+      notify('error', `规则应用失败：${String(error)}`);
+      return false;
+    } finally {
+      mutationBusy.current = false;
+      setSaving(false);
     }
-    notify('success', note);
   };
 
   const saveRule = async () => {
+    if (mutationBusy.current) return;
     if (type !== 'MATCH' && !payload.trim()) {
       notify('error', '规则内容不能为空');
       return;
     }
-    setSaving(true);
     const rule: CustomRule = {
       id: editingId ?? newId(),
       type,
@@ -207,9 +268,7 @@ export function RulesPage() {
     const next = editingId
       ? rules.map((r) => (r.id === editingId ? rule : r))
       : [...rules, rule];
-    await persist(next, editingId ? '规则已更新' : '规则已添加');
-    setSaving(false);
-    resetEditor();
+    if (await persist(next, editingId ? '规则已更新' : '规则已添加')) resetEditor();
   };
 
   const toggleRule = async (id: string, on: boolean) => {
@@ -220,11 +279,11 @@ export function RulesPage() {
   };
 
   const removeRule = async (id: string) => {
-    await persist(
+    const ok = await persist(
       rules.filter((r) => r.id !== id),
       '规则已删除'
     );
-    if (editingId === id) resetEditor();
+    if (ok && editingId === id) resetEditor();
   };
 
   const exportRules = () => {
@@ -242,19 +301,30 @@ export function RulesPage() {
   };
 
   const importRules = async () => {
+    if (mutationBusy.current) return;
     try {
       const parsed = JSON.parse(ioText);
       if (!Array.isArray(parsed)) throw new Error('需要一个数组');
-      const next: CustomRule[] = parsed.map((r: any, i: number) => ({
+      const imported: CustomRule[] = parsed.map((r: any, i: number) => ({
         id: newId() + i,
         type: String(r.type ?? 'DOMAIN-SUFFIX'),
         payload: String(r.payload ?? ''),
         target: String(r.target ?? 'DIRECT'),
         enabled: r.enabled !== false,
       }));
-      await persist(next, `已导入 ${next.length} 条规则`);
-      setShowIO(false);
-      setIoText('');
+      const key = (rule: CustomRule) => JSON.stringify([rule.type, rule.payload, rule.target]);
+      const next = [...useApp.getState().settings.customRules];
+      const seen = new Set(next.map(key));
+      let added = 0;
+      for (const rule of imported) {
+        if (seen.has(key(rule))) continue;
+        seen.add(key(rule)); next.push(rule); added += 1;
+      }
+      if (added === 0) { notify('info', '没有新增规则，原规则已保留'); return; }
+      if (await persist(next, `已合并 ${added} 条新规则`)) {
+        setShowIO(false);
+        setIoText('');
+      }
     } catch (e) {
       notify('error', `导入失败：${(e as Error).message}`);
     }
@@ -278,10 +348,10 @@ export function RulesPage() {
           </div>
         </div>
         <div className="page-actions">
-          <button type="button" className="btn" onClick={exportRules} disabled={rules.length === 0}>
+          <button type="button" className="btn" onClick={exportRules} disabled={busy || rules.length === 0}>
             导出
           </button>
-          <button type="button" className="btn" onClick={() => setShowIO((v) => !v)}>
+          <button type="button" className="btn" disabled={busy} onClick={() => setShowIO((v) => !v)}>
             导入
           </button>
           <button
@@ -289,6 +359,7 @@ export function RulesPage() {
             className="icon-btn"
             title="刷新生效规则"
             aria-label="刷新生效规则"
+            disabled={!connected || kernelLoading || busy}
             onClick={() => void loadKernelRules()}
           >
             <IconRefresh size={15} />
@@ -296,14 +367,14 @@ export function RulesPage() {
         </div>
       </header>
 
-      <div className="page-scroll">
-        <div className="page-inner">
-          <section className="card">
-            <div className="row" style={{ gap: 10 }}>
+      <div className="page-scroll dp-page dp-rules">
+        <div className="page-inner dp-rule-workspace">
+          <section className="dp-rule-section dp-rule-editor">
+            <div className="dp-section-heading">
               <span className="section-title">{editingId ? '编辑规则' : '添加规则'}</span>
               <div className="spacer" />
               <span className="card-hint">启用</span>
-              <MiniSwitch on={enabled} onChange={setEnabled} label="启用规则" />
+              <MiniSwitch on={enabled} onChange={setEnabled} label="启用规则" disabled={busy} />
             </div>
 
             <div className="rule-builder">
@@ -312,6 +383,7 @@ export function RulesPage() {
                 options={RULE_TYPES}
                 onChange={(v) => setType(v)}
                 ariaLabel="规则类型"
+                disabled={busy}
                 className="rule-type-select"
               />
               {type !== 'MATCH' && (
@@ -323,6 +395,7 @@ export function RulesPage() {
                     type === 'GEOIP' ? 'CN' : type === 'DST-PORT' ? '443' : '填写域名 / IP / 关键字'
                   }
                   aria-label="规则内容"
+                  disabled={busy}
                   spellCheck={false}
                 />
               )}
@@ -331,49 +404,49 @@ export function RulesPage() {
                 options={targetOptions}
                 onChange={(v) => setTarget(v)}
                 ariaLabel="规则目标"
+                disabled={busy}
                 className="rule-target-select"
               />
               <button
                 type="button"
                 className="btn btn-primary"
                 onClick={() => void saveRule()}
-                disabled={saving}
+                disabled={busy}
               >
                 {saving ? <Spinner small /> : editingId ? null : <IconPlus size={12} />}
                 {editingId ? '保存修改' : '添加'}
               </button>
               {editingId && (
-                <button type="button" className="btn btn-ghost" onClick={resetEditor}>
+                <button type="button" className="btn btn-ghost" disabled={busy} onClick={resetEditor}>
                   取消
                 </button>
               )}
             </div>
-            <div className="rule-hint">
-              {type === 'MATCH'
-                ? 'MATCH 兜底；目标可选当前节点。'
-                : 'MATCH 为兜底；目标可用当前节点。'}
-            </div>
+            <div className="rule-hint">MATCH 匹配其余流量</div>
           </section>
 
           {showIO && (
-            <section className="card">
-              <div className="row" style={{ gap: 10 }}>
+            <section className="dp-rule-section dp-rule-import">
+              <div className="dp-section-heading">
                 <span className="section-title">导入 / 导出</span>
                 <div className="spacer" />
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
                   onClick={() => void importRules()}
+                  disabled={busy}
                 >
                   从文本导入
                 </button>
-                <button type="button" className="btn btn-sm" onClick={() => setShowIO(false)}>
+                <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setShowIO(false)}>
                   关闭
                 </button>
               </div>
               <textarea
                 className="override-editor rule-io"
                 value={ioText}
+                disabled={busy}
+                aria-label="规则导入内容"
                 onChange={(e) => setIoText(e.target.value)}
                 placeholder='在这里粘贴规则 JSON，例如 [{"type":"DOMAIN-SUFFIX","payload":"example.com","target":"DIRECT","enabled":true}]'
                 spellCheck={false}
@@ -381,9 +454,9 @@ export function RulesPage() {
             </section>
           )}
 
-          <section className="card">
-            <div className="row" style={{ gap: 10 }}>
-              <span className="section-title">自定义规则</span>
+          <section className="dp-rule-section dp-rule-custom">
+            <div className="dp-section-heading">
+              <div className="dp-section-title"><h2 className="section-title">自定义规则</h2><p>手动维护的匹配内容与目标</p></div>
               <div className="spacer" />
               <span className="card-hint">{rules.length} 条</span>
             </div>
@@ -404,10 +477,12 @@ export function RulesPage() {
                       on={r.enabled}
                       onChange={(v) => void toggleRule(r.id, v)}
                       label="启用规则"
+                      disabled={busy}
                     />
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
+                      disabled={busy}
                       onClick={() => {
                         setEditingId(r.id);
                         setType(r.type);
@@ -423,6 +498,7 @@ export function RulesPage() {
                       className="icon-btn danger"
                       title="删除规则"
                       aria-label="删除规则"
+                      disabled={busy}
                       onClick={() => void removeRule(r.id)}
                     >
                       <IconTrash size={13} />
@@ -433,9 +509,9 @@ export function RulesPage() {
             )}
           </section>
 
-          <section className="card">
-            <div className="row" style={{ gap: 10 }}>
-              <span className="section-title">订阅规则</span>
+          <section className="dp-rule-section dp-rule-subscription">
+            <div className="dp-section-heading">
+              <div className="dp-section-title"><h2 className="section-title">订阅规则</h2><p>{activeProfile ? `来自 ${activeProfile.name}` : '来自活动订阅'}</p></div>
               <div className="spacer" />
               <span className="card-hint">
                 {activeProfile
@@ -446,7 +522,7 @@ export function RulesPage() {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  disabled={ruleSaving}
+                  disabled={busy}
                   onClick={() => void resetSubscriptionRules()}
                 >
                   重置
@@ -456,10 +532,10 @@ export function RulesPage() {
             {!activeProfile ? (
               <div className="rule-empty">还没有活动订阅。</div>
             ) : orderedSubscriptionRules.length === 0 ? (
-              <div className="rule-empty">当前订阅没有 rules。</div>
+              <div className="rule-empty">当前订阅没有规则</div>
             ) : (
               <>
-                <div className="row" style={{ gap: 10, marginTop: 10 }}>
+                <div className="dp-rule-filter">
                   <div className="node-search">
                     <IconSearch size={12} />
                     <input
@@ -495,6 +571,7 @@ export function RulesPage() {
                           on={on}
                           onChange={(v) => void saveRuleEdit(r.index, { enabled: v })}
                           label="启用订阅规则"
+                          disabled={busy}
                         />
                         <span className="tag">{r.type}</span>
                         <span className="sub-rule-payload" title={r.raw}>
@@ -505,6 +582,7 @@ export function RulesPage() {
                           options={ruleTargetOptions(target)}
                           onChange={(v) => void saveRuleEdit(r.index, { target: v })}
                           ariaLabel={`规则目标 ${r.type}`}
+                          disabled={busy}
                           className="sub-rule-target"
                         />
                         <div className="sub-rule-move">
@@ -512,19 +590,19 @@ export function RulesPage() {
                             type="button"
                             className="icon-btn"
                             aria-label="上移订阅规则"
-                            disabled={ruleSaving}
+                            disabled={busy}
                             onClick={() => void moveSubscriptionRule(r.index, -1)}
                           >
-                            ↑
+                            <IconChevronDown className="dp-move-up" size={13} />
                           </button>
                           <button
                             type="button"
                             className="icon-btn"
                             aria-label="下移订阅规则"
-                            disabled={ruleSaving}
+                            disabled={busy}
                             onClick={() => void moveSubscriptionRule(r.index, 1)}
                           >
-                            ↓
+                            <IconChevronDown size={13} />
                           </button>
                         </div>
                       </div>
@@ -535,17 +613,19 @@ export function RulesPage() {
             )}
           </section>
 
-          <section className="card">
-            <div className="row" style={{ gap: 10 }}>
-              <span className="section-title">当前生效规则</span>
+          <section className="dp-rule-section dp-rule-effective">
+            <div className="dp-section-heading">
+              <div className="dp-section-title"><h2 className="section-title">当前生效规则</h2><p>内核当前返回的规则，只读</p></div>
               <div className="spacer" />
               <span className="card-hint">
-                {connected ? `${kernelRules.length} 条` : '内核未运行'}
+                {!connected ? '内核未运行' : kernelLoading ? '读取中…' : kernelError ? '读取失败' : `${kernelRules.length} 条`}
               </span>
             </div>
+            {connected && kernelError && <ReadError message={`${kernelError}${kernelRules.length ? '；当前为上次读取的规则' : ''}`} onRetry={() => void loadKernelRules()} busy={kernelLoading || busy} />}
+            {connected && kernelLoading && <EmptyState icon={<IconRules size={19} />} title="正在读取生效规则" desc={kernelRules.length ? '当前为上次读取的规则' : undefined} loading />}
             {connected && kernelRules.length > 0 ? (
               <>
-                <div className="row" style={{ gap: 10, marginTop: 10 }}>
+                <div className="dp-rule-filter">
                   <div className="node-search">
                     <IconSearch size={12} />
                     <input
@@ -587,21 +667,21 @@ export function RulesPage() {
                       </span>
                     </div>
                   ))}
-                  {filteredKernel.length === 0 && <div className="rule-empty">没有匹配的规则</div>}
+                  {filteredKernel.length === 0 && <EmptyState icon={<IconSearch size={19} />} title="没有匹配的规则" action={<button type="button" className="btn btn-sm" onClick={() => setQuery('')}>清空筛选</button>} />}
                 </div>
               </>
-            ) : (
+            ) : !connected || (!kernelLoading && !kernelError) ? (
               <EmptyState
                 icon={<IconRules size={19} />}
                 title={connected ? '暂无规则' : '内核未运行'}
-                desc={connected ? '无可用规则。' : '未接管流量。'}
+                desc={connected ? '内核已连接，但尚未返回规则。' : '连接内核后可查看当前生效规则。'}
               />
-            )}
+            ) : null}
           </section>
 
-          <div className="banner">
+          <div className="banner dp-rule-note">
             <IconInfo size={13} />
-            <span>订阅规则可排序/启停；安全规则始终只读，其它配置用覆写。</span>
+            <span>安全规则只读；其他配置请在覆写页修改。</span>
           </div>
         </div>
       </div>

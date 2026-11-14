@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Pill, Spinner, Toggle } from '../components/ui';
-import { IconAlert, IconSecurity } from '../components/icons';
+import { useEffect, useRef, useState } from 'react';
+import { ReadError, Spinner, Toggle } from '../components/ui';
+import { IconAlert, IconCheck, IconInfo, IconX } from '../components/icons';
 import { useApp } from '../store/app';
 import { api } from '../core/api';
-import { checkWebRtc } from '../core/selfcheck';
+import { checkWebRtc, describeWebRtc } from '../core/selfcheck';
+import { checkWebRtcProtection } from '../core/webrtc-protection';
 import { POLICY_META, type SecurityPolicy } from '../core/security';
 
 /** UI 上的开关语义与策略字段不一定同向，这里集中做映射。 */
@@ -43,30 +44,45 @@ interface CheckRow {
   text: string;
 }
 
-const ROW_META: Record<RowStatus, { mark: string }> = {
-  ok: { mark: '✓' },
-  warn: { mark: '!' },
-  bad: { mark: '✕' },
-  info: { mark: '·' },
+const ROW_META = {
+  ok: { mark: <IconCheck size={12} /> },
+  warn: { mark: <IconAlert size={12} /> },
+  bad: { mark: <IconX size={12} /> },
+  info: { mark: <IconInfo size={12} /> },
 };
 
 /** 泄漏自检（M3-3）：出口 IP / DNS 接管 / WebRTC，一键实测。 */
 function LeakCheckCard() {
+  const connected = useApp(s => s.kernelPhase === 'running');
+  const revision = useApp(s => s.routeRevision);
+  const policy = useApp(s => s.policy);
+  const checkEpoch = useRef(0);
+  const running = useRef(false);
   const mixedPort = useApp((s) => s.settings.mixedPort);
   const dnsPort = useApp((s) => s.settings.dnsPort);
   const tunEnabled = useApp((s) => s.tunEnabled);
   const [phase, setPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [rows, setRows] = useState<CheckRow[] | null>(null);
 
+  useEffect(() => {
+    checkEpoch.current += 1; running.current = false; setRows(null); setPhase('idle');
+    return () => { checkEpoch.current += 1; };
+  }, [revision, policy, mixedPort, dnsPort, tunEnabled, connected]);
+
   const run = async () => {
+    if (running.current || !connected) return;
+    const epoch = ++checkEpoch.current;
+    running.current = true;
     setPhase('running');
     setRows(null);
-    const [ip, dns, webrtc] = await Promise.all([
+    const [ip, dns, webrtc, protection] = await Promise.all([
       api.leakCheckIp(mixedPort, tunEnabled).catch(() => null),
       api.leakCheckDns('www.apple.com', dnsPort).catch(() => null),
-      checkWebRtc(),
+      checkWebRtc(7000, { stun: !policy.blockWebRtc }).catch(() => null),
+      policy.blockWebRtc ? checkWebRtcProtection() : Promise.resolve({ status: 'info' as const, text: '未启用 STUN 防护' }),
     ]);
 
+    if (epoch !== checkEpoch.current) return;
     let ipRow: CheckRow;
     if (!ip) ipRow = { status: 'warn', text: '检测失败' };
     else if (!ip.proxied) ipRow = { status: 'warn', text: '代理端口不可达' };
@@ -85,40 +101,34 @@ function LeakCheckCard() {
       dnsRow = { status: 'info', text: '内核可达，未返回 Fake-IP' };
     else dnsRow = { status: 'warn', text: '内核 DNS 不可达' };
 
-    let wr: CheckRow;
-    if (!webrtc.supported) wr = { status: 'info', text: '当前环境不支持' };
-    else if (webrtc.publicIps.length === 0) wr = { status: 'ok', text: '无公网候选' };
-    else if (ip?.direct && webrtc.publicIps.includes(ip.direct))
-      wr = { status: 'bad', text: `检测到真实 IP ${webrtc.publicIps.join('、')}` };
-    else if (ip?.proxied && webrtc.publicIps.every((x) => ip.proxied!.includes(x)))
-      wr = { status: 'info', text: `代理 IP ${webrtc.publicIps.join('、')}` };
-    else wr = { status: 'info', text: `出口 ${webrtc.publicIps.join('、') || '无候选'}` };
+    const wr: CheckRow = describeWebRtc(webrtc, { ...ip, tun: tunEnabled, blockWebRtc: policy.blockWebRtc });
 
     setRows([
       { status: ipRow.status, text: `出口 IP · ${ipRow.text}` },
       { status: dnsRow.status, text: `DNS 接管 · ${dnsRow.text}` },
-      { status: wr.status, text: `WebRTC · ${wr.text}` },
+      { status: protection.status, text: `STUN 防护 · ${protection.text}` },
+      { status: wr.status, text: `WebRTC 候选 · ${wr.text}` },
     ]);
     setPhase('done');
+    running.current = false;
   };
 
   const hasBad = rows?.some((r) => r.status === 'bad') ?? false;
-  const hasWarn = rows?.some((r) => r.status === 'warn') ?? false;
+  const hasWarn = rows?.some((r) => r.status === 'warn' || r.status === 'info') ?? false;
 
   return (
-    <section className="card">
-      <div className="row" style={{ gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div className="section-title">泄漏检查</div>
-          <div className="section-desc">出口 IP、DNS、WebRTC</div>
+    <section className="configuration-check" aria-label="泄漏检查">
+      <div className="configuration-check-head">
+        <div className="configuration-check-title">
+          <h2 className="section-title">泄漏检查</h2>
+          <p className="configuration-description">{connected ? '出口 IP、DNS、WebRTC' : '连接后可检测出口 IP、DNS、WebRTC'}</p>
         </div>
-        <div className="spacer" />
         {phase === 'done' && rows && (
-          <Pill tone={hasBad ? 'bad' : hasWarn ? 'warn' : 'ok'}>
-            {hasBad ? '有泄漏风险' : hasWarn ? '部分未通过' : '通过'}
-          </Pill>
+          <span className={`configuration-state ${hasBad ? 'bad' : hasWarn ? 'warn' : 'ok'}`} role="status">
+            {hasBad ? '有泄漏风险' : hasWarn ? '部分未验证' : '通过'}
+          </span>
         )}
-        <button type="button" className="btn" onClick={() => void run()} disabled={phase === 'running'}>
+        <button type="button" className="btn" onClick={() => void run()} disabled={!connected || phase === 'running'}>
           {phase === 'running' ? (
             <>
               <Spinner small />
@@ -134,9 +144,10 @@ function LeakCheckCard() {
 
       {rows && (
         <div className="report">
+          <p className="card-hint">WebRTC 检测仅限本应用。STUN 防护按内核运行规则检查。</p>
           {rows.map((r) => (
             <div key={r.text} className="report-row">
-              <span className={`report-mark ${r.status}`}>{ROW_META[r.status].mark}</span>
+              <span className={`report-mark ${r.status}`} aria-hidden="true">{ROW_META[r.status].mark}</span>
               <span>{r.text}</span>
             </div>
           ))}
@@ -149,7 +160,13 @@ function LeakCheckCard() {
 export function SecurityPage() {
   const policy = useApp((s) => s.policy);
   const setPolicy = useApp((s) => s.setPolicy);
+  const policyApplying = useApp(s => s.policyApplying);
+  const policyError = useApp(s => s.policyError);
+  const phase = useApp(s => s.kernelPhase);
+  const busy = policyApplying || phase === 'starting' || phase === 'stopping';
   const audit = useApp((s) => s.audit);
+  const conflicts = audit.filter(finding => finding.code.startsWith('FINAL_'));
+  const hasConflict = conflicts.length > 0;
 
   const enabled = SWITCHES.filter((s) => s.on(policy)).length;
   const total = SWITCHES.length;
@@ -160,72 +177,69 @@ export function SecurityPage() {
       <header className="page-head">
         <div className="page-heading">
           <h1 className="page-title">安全</h1>
-          <div className="page-sub">默认开启</div>
+          <div className="page-sub">网络防护与泄漏检测</div>
         </div>
         <div className="page-actions">
-          <Pill tone={allOn ? 'ok' : 'warn'}>
-            {enabled}/{total} 项生效
-          </Pill>
+          <span className="configuration-page-count">
+            {enabled}/{total} 项已启用{busy ? ' · 应用中' : policyError ? ' · 未生效' : phase !== 'running' ? ' · 连接后生效' : ''}
+          </span>
         </div>
       </header>
 
       <div className="page-scroll">
-        <div className="page-inner">
-          <section className="card protection-card">
-            <span className={`icon-tile ${allOn ? 'success' : 'warn'}`}>
-              <IconSecurity size={16} />
-            </span>
-            <div className="protection-main">
-              <div className="protection-title">
-                {allOn ? '防护完整' : '有防护被关闭'}
-                <Pill tone={allOn ? 'ok' : 'warn'}>
-                  {enabled}/{total}
-                </Pill>
+        <div className="page-inner configuration-page security-page">
+          {policyError && <ReadError message={policyError} busy={busy} onRetry={() => void setPolicy({})} />}
+          <section className="configuration-sheet security-policies" aria-label="网络防护策略">
+            <div className="configuration-section-head security-policy-head">
+              <div>
+                <h2 className="section-title">网络防护</h2>
+                <p className={`configuration-description${hasConflict || policyError ? ' configuration-warning' : ''}`} role="status">
+                {busy ? '正在应用策略…' : policyError ? '修改未生效，请重试' : hasConflict ? '最终配置与防护设置不一致，请检查覆写' : phase !== 'running' ? '策略已保存，连接后生效' : '配置已应用；实际接管见下方检测'}
+                </p>
               </div>
-              <div className="protection-sub">
-                {allOn ? '危险配置已覆盖' : '有项目被关闭'}
-              </div>
+              <span className={`configuration-state ${allOn && !hasConflict && !policyError ? 'ok' : 'warn'}`}>{allOn ? '全部策略已开启' : `${enabled}/${total} 项已开启`}</span>
             </div>
-            <div className="spacer" />
-          </section>
-
-          <div className="policy-grid">
+          <div className="security-policy-list">
             {SWITCHES.map((sw) => {
               const meta = POLICY_META[sw.key];
               const on = sw.on(policy);
               return (
-                <div key={sw.key} className="policy-card">
-                  <div className="policy-head">
-                    <div className="policy-title-wrap">
-                      <span className="policy-title">{meta.label}</span>
-                    </div>
+                <div key={sw.key} className="field-row security-policy-row" role="group" aria-labelledby={`security-${sw.key}-label`} aria-describedby={`security-${sw.key}-hint`}>
+                  <div className="field-main">
+                    <div className="field-label" id={`security-${sw.key}-label`}>{meta.label}</div>
+                    <div className="field-hint" id={`security-${sw.key}-hint`}>{meta.desc}</div>
+                    {!on && (
+                      <div className="security-policy-risk">
+                        <IconAlert size={12} />
+                        <span>{meta.risk}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="field-control">
                     <Toggle
+                      disabled={busy}
                       on={on}
                       onChange={(v) => setPolicy(sw.apply(v))}
                       label={meta.label}
                     />
                   </div>
-                  <div className="policy-desc">{meta.desc}</div>
-                  {!on && (
-                    <div className="policy-risk">
-                      <IconAlert size={11} />
-                      <span>{meta.risk}</span>
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
+          </section>
 
-          <div className="settings-grid">
+          <div className="security-checks">
             <LeakCheckCard />
 
-            <section className="card">
-              <div className="row" style={{ gap: 10 }}>
-                <span className="section-title">订阅配置</span>
-                <div className="spacer" />
-                <span className="card-hint">
-                  {audit.length ? `${audit.length} 项已覆盖` : '无异常'}
+            <section className="configuration-check" aria-label="配置检查">
+              <div className="configuration-check-head">
+                <div className="configuration-check-title">
+                  <h2 className="section-title">配置检查</h2>
+                  <p className="configuration-description">订阅原配置与最终生效配置</p>
+                </div>
+                <span className={`configuration-state${hasConflict ? ' warn' : ''}`}>
+                  {hasConflict ? `${conflicts.length} 项不一致` : '未发现配置冲突'}
                 </span>
               </div>
               {audit.length > 0 ? (
@@ -233,12 +247,14 @@ export function SecurityPage() {
                   {audit.map((f) => (
                     <div key={f.code} className="audit-row">
                       <span className="audit-msg">{AUDIT_LABELS[f.code] ?? f.message}</span>
-                      <span className="audit-tag">已覆盖</span>
+                      <span className={`audit-tag${f.code.startsWith('FINAL_') ? ' configuration-warning' : ''}`}>
+                        {f.code.startsWith('FINAL_') ? '不一致' : '订阅原配置'}
+                      </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="audit-empty">无</div>
+                <div className="audit-empty">没有发现需要检查的配置项</div>
               )}
             </section>
           </div>

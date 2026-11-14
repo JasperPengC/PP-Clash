@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { EmptyState } from '../components/ui';
-import { IconActivity, IconDownload, IconUpload } from '../components/icons';
+import { EmptyState, ReadError } from '../components/ui';
+import { IconActivity, IconDownload, IconRefresh, IconUpload } from '../components/icons';
 import { api } from '../core/api';
 import { formatBytes } from '../core/format';
 import { useApp } from '../store/app';
+import { startPolling } from '../core/polling';
 
 interface RawConn {
   id: string;
@@ -35,36 +36,51 @@ function aggregate(conns: RawConn[], pick: (c: RawConn) => string): Row[] {
   );
 }
 
-export function TrafficPage() {
+export function TrafficPage({ active = true }: { active?: boolean }) {
   const connected = useApp((s) => s.kernelPhase === 'running');
   const [conns, setConns] = useState<RawConn[]>([]);
   const [totals, setTotals] = useState({ up: 0, down: 0 });
   const [icons, setIcons] = useState<Record<string, string>>({});
   const requestedIcons = useRef<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const inFlight = useRef(false);
+  const readEpoch = useRef(0);
+  const available = useRef(active && connected);
+  available.current = active && connected;
+
+  const load = async () => {
+    if (!available.current || inFlight.current) return;
+    inFlight.current = true;
+    const epoch = readEpoch.current;
+    setLoading(true);
+    try {
+      const data: any = await api.mihomo('GET', '/connections');
+      if (!available.current || epoch !== readEpoch.current) return;
+      setConns(data?.connections ?? []);
+      setTotals({ up: data?.uploadTotal ?? 0, down: data?.downloadTotal ?? 0 });
+      setReadError(null); setLoadedAt(Date.now());
+    } catch (error) {
+      if (available.current && epoch === readEpoch.current) setReadError(String(error));
+    } finally {
+      inFlight.current = false;
+      if (available.current) setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!connected) {
-      setConns([]);
+      setConns([]); setTotals({ up: 0, down: 0 }); setLoadedAt(null); setReadError(null);
       return;
     }
-    let alive = true;
-    const load = async () => {
-      try {
-        const data: any = await api.mihomo('GET', '/connections');
-        if (!alive) return;
-        setConns(data?.connections ?? []);
-        setTotals({ up: data?.uploadTotal ?? 0, down: data?.downloadTotal ?? 0 });
-      } catch {
-        /* ignore */
-      }
-    };
-    void load();
-    const timer = window.setInterval(load, 2000);
+    if (!active) return;
+    const stop = startPolling(load, 2000);
     return () => {
-      alive = false;
-      window.clearInterval(timer);
+      readEpoch.current += 1;
+      stop();
     };
-  }, [connected]);
+  }, [connected, active]);
 
   const byNode = useMemo(
     () => aggregate(conns, (c) => c.chains?.[0] || 'DIRECT'),
@@ -94,6 +110,7 @@ export function TrafficPage() {
   );
 
   useEffect(() => {
+    if (!active) return;
     for (const [name, path] of Object.entries(processPaths)) {
       if (requestedIcons.current.has(name)) continue;
       requestedIcons.current.add(name);
@@ -106,7 +123,7 @@ export function TrafficPage() {
           /* 拿不到图标就保持文字 */
         });
     }
-  }, [processPaths]);
+  }, [processPaths, active]);
 
   return (
     <>
@@ -117,10 +134,12 @@ export function TrafficPage() {
             {connected ? `本会话 ${formatBytes(totals.up + totals.down)}` : '内核未运行'}
           </div>
         </div>
+        <div className="page-actions"><button type="button" className="icon-btn" aria-label="刷新流量" aria-busy={loading} disabled={!active || !connected || loading} onClick={() => void load()}><IconRefresh size={15} /></button></div>
       </header>
 
-      <div className="page-scroll">
+      <div className="page-scroll dp-page dp-traffic">
         <div className="page-inner">
+          {connected && readError && <ReadError message={`${readError}${loadedAt ? '；当前为上次读取的数据' : ''}`} onRetry={() => void load()} busy={loading || !active} />}
           {!connected ? (
             <section className="card">
               <EmptyState
@@ -129,10 +148,12 @@ export function TrafficPage() {
                 desc="未接管流量。"
               />
             </section>
+          ) : !loadedAt && readError ? null : !loadedAt ? (
+            <section className="card"><EmptyState icon={<IconActivity size={19} />} title="正在读取流量…" loading /></section>
           ) : (
             <>
-              <div className="traffic-stats">
-                <div className="card traffic-stat">
+              <div className="traffic-stats dp-session-summary" aria-label="本会话流量统计">
+                <div className="traffic-stat">
                   <span className="icon-tile up">
                     <IconUpload size={15} />
                   </span>
@@ -141,7 +162,7 @@ export function TrafficPage() {
                     <div className="traffic-stat-value">{formatBytes(totals.up)}</div>
                   </div>
                 </div>
-                <div className="card traffic-stat">
+                <div className="traffic-stat">
                   <span className="icon-tile down">
                     <IconDownload size={15} />
                   </span>
@@ -150,7 +171,7 @@ export function TrafficPage() {
                     <div className="traffic-stat-value">{formatBytes(totals.down)}</div>
                   </div>
                 </div>
-                <div className="card traffic-stat">
+                <div className="traffic-stat">
                   <span className="icon-tile">
                     <IconActivity size={15} />
                   </span>
@@ -161,10 +182,10 @@ export function TrafficPage() {
                 </div>
               </div>
 
-              <section className="card">
-                <div className="section-title">按节点</div>
+              <section className="card dp-traffic-table">
+                <div className="dp-section-heading"><h2 className="section-title">活动连接 · 按节点</h2><span className="dp-table-count">{byNode.length} 个节点</span></div>
                 {byNode.length === 0 ? (
-                  <div className="rule-empty">暂无流量</div>
+                  <div className="rule-empty">暂无活动连接</div>
                 ) : (
                   <div className="traffic-list">
                     <div className="traffic-row traffic-head">
@@ -187,10 +208,10 @@ export function TrafficPage() {
                 )}
               </section>
 
-              <section className="card">
-                <div className="section-title">按进程</div>
+              <section className="card dp-traffic-table">
+                <div className="dp-section-heading"><h2 className="section-title">活动连接 · 按进程</h2><span className="dp-table-count">{byProcess.length} 个进程</span></div>
                 {byProcess.length === 0 ? (
-                  <div className="rule-empty">暂无流量</div>
+                  <div className="rule-empty">暂无活动连接</div>
                 ) : (
                   <div className="traffic-list">
                     <div className="traffic-row traffic-head">

@@ -1,31 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { startPolling } from '../core/polling';
 import type { ReactNode } from 'react';
-import { Segmented, Select, Spinner, Toggle } from '../components/ui';
-import { IconChip, IconFolder, IconGlobe, IconRefresh, IconTun } from '../components/icons';
+import { EmptyState, ReadError, Segmented, Select, Spinner, Toggle } from '../components/ui';
+import { IconChip, IconFolder, IconRefresh, IconTun } from '../components/icons';
 import { api, DATA_DIR, type HelperInfo, type KernelInfo, type KernelVersionInfo } from '../core/api';
-import { useApp, type OutboundMode } from '../store/app';
+import { getLifecycleToken, isLifecycleCurrent, useApp, type OutboundMode } from '../store/app';
+import { isLoopbackAddress } from '../core/listen-address';
 
 function Section({
   title,
   desc,
-  icon,
   children,
   className = '',
 }: {
   title: string;
   desc?: string;
-  icon?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
   return (
-    <section className={`card ${className}`.trim()}>
-      <div className="section-head">
-        {icon && <span className="icon-tile">{icon}</span>}
-        <div className="section-head-text">
-          <div className="section-title">{title}</div>
-          {desc && <div className="section-desc">{desc}</div>}
-        </div>
+    <section className={`configuration-section ${className}`.trim()} aria-label={title}>
+      <div className="configuration-section-head">
+        <h2 className="section-title">{title}</h2>
+        {desc && <p className="configuration-description">{desc}</p>}
       </div>
       {children}
     </section>
@@ -41,11 +38,12 @@ function Row({
   hint?: string;
   control: ReactNode;
 }) {
+  const id = useId();
   return (
-    <div className="field-row">
+    <div className="field-row" role="group" aria-labelledby={`${id}-label`} aria-describedby={hint ? `${id}-hint` : undefined}>
       <div className="field-main">
-        <div className="field-label">{label}</div>
-        {hint && <div className="field-hint">{hint}</div>}
+        <div className="field-label" id={`${id}-label`}>{label}</div>
+        {hint && <div className="field-hint" id={`${id}-hint`}>{hint}</div>}
       </div>
       <div className="field-control">{control}</div>
     </div>
@@ -66,13 +64,17 @@ function shortVersion(value: string | null | undefined): string {
 }
 
 function PortField({
+  label,
   value,
   onCommit,
   allowZero = false,
+  disabled = false,
 }: {
+  label: string;
   value: number;
-  onCommit: (n: number) => void;
+  onCommit: (n: number) => Promise<boolean>;
   allowZero?: boolean;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(String(value));
 
@@ -83,16 +85,17 @@ function PortField({
   return (
     <input
       className="input input-mono"
+      disabled={disabled}
       style={{ width: 110 }}
       value={draft}
       inputMode="numeric"
-      aria-label="端口"
+      aria-label={label}
       spellCheck={false}
       onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ''))}
-      onBlur={() => {
+      onBlur={async () => {
         const n = Number(draft);
         if (Number.isInteger(n) && n >= (allowZero ? 0 : 1) && n < 65536) {
-          if (n !== value) onCommit(n);
+          if (n !== value && !await onCommit(n)) setDraft(String(value));
         } else {
           setDraft(String(value));
         }
@@ -108,7 +111,7 @@ function PortField({
   );
 }
 
-export function KernelPage() {
+export function KernelPage({ active = true }: { active?: boolean }) {
   const settings = useApp((s) => s.settings);
   const updateSettings = useApp((s) => s.updateSettings);
   const notify = useApp((s) => s.notify);
@@ -121,37 +124,65 @@ export function KernelPage() {
   const [helper, setHelper] = useState<HelperInfo | null>(null);
   const [helperBusy, setHelperBusy] = useState(false);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
+  const [errors, setErrors] = useState({ info: '', versions: '', helper: '' });
+  const [loading, setLoading] = useState({ info: true, versions: true, helper: true });
+  const [versionsLoaded, setVersionsLoaded] = useState(false);
+  const pendingReads = useRef<Partial<Record<'info' | 'versions' | 'helper', Promise<void>>>>({});
+  const alive = useRef(true);
+  const operation = useRef(false);
+  const [operationBusy, setOperationBusy] = useState(false);
 
   const running = kernelPhase === 'running';
 
-  const loadVersions = async () => {
-    try {
-      const list = await api.listKernelVersions();
-      setVersions(Array.isArray(list) ? list : []);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
+  const load = (kind: 'info' | 'versions' | 'helper'): Promise<void> => {
+    if (pendingReads.current[kind]) return pendingReads.current[kind]!;
+    setLoading(previous => ({ ...previous, [kind]: true }));
+    const request = (async () => {
       try {
-        const next = await api.kernelInfo();
-        if (alive) setInfo(next);
-      } catch {
-        /* ignore */
+        if (kind === 'info') {
+          const value = await api.kernelInfo();
+          if (!value || typeof value.running !== 'boolean') throw new Error('内核状态响应格式异常');
+          if (alive.current) setInfo(value);
+        } else if (kind === 'versions') {
+          const value = await api.listKernelVersions();
+          if (!Array.isArray(value)) throw new Error('版本列表响应格式异常');
+          if (alive.current) { setVersions(value); setVersionsLoaded(true); }
+        } else {
+          const value = await api.systemHelperInfo();
+          if (!value || typeof value.installed !== 'boolean') throw new Error('提权内核响应格式异常');
+          if (alive.current) setHelper(value);
+        }
+        if (alive.current) setErrors(previous => ({ ...previous, [kind]: '' }));
+      } catch (error) {
+        if (alive.current) setErrors(previous => ({ ...previous, [kind]: String(error) }));
+      } finally {
+        delete pendingReads.current[kind];
+        if (alive.current) setLoading(previous => ({ ...previous, [kind]: false }));
       }
-    };
-    void load();
-    void loadVersions();
-    void api.systemHelperInfo().then(setHelper).catch(() => {});
-    const timer = window.setInterval(load, 5000);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, []);
+    })();
+    pendingReads.current[kind] = request;
+    return request;
+  };
+  const refresh = () => Promise.all([load('info'), load('versions'), load('helper')]);
+
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => {
+    if (!active) return;
+    void load('versions'); void load('helper');
+    return startPolling(() => operation.current ? undefined : load('info'), 5000);
+  }, [active]);
+  const beginOperation = () => {
+    if (operation.current || ['starting', 'stopping'].includes(useApp.getState().kernelPhase)) return false;
+    operation.current = true; setOperationBusy(true); return true;
+  };
+  const endOperation = () => { operation.current = false; setOperationBusy(false); };
+  const settleReads = () => Promise.all(Object.values(pendingReads.current));
+  const reading = Object.values(loading).some(Boolean);
+  const busy = operationBusy || kernelPhase === 'starting' || kernelPhase === 'stopping';
+  const lanAuthReady = Boolean(settings.authUser.trim() && settings.authPass.trim());
+  const lanListenReady = Boolean(settings.bindAddress.trim()) && !isLoopbackAddress(settings.bindAddress);
+  const lanReady = lanAuthReady && lanListenReady;
+  const statusLabel = info ? (info.running ? '运行中' : '未运行') : loading.info ? '读取中…' : '状态未知';
 
   const builtinVersion = versions.find((v) => v.builtin)?.version ?? '';
   const custom = settings.kernelPath;
@@ -169,8 +200,10 @@ export function KernelPage() {
   ];
 
   const downloadLatest = async () => {
+    if (!beginOperation()) return;
     setDownloading(true);
     try {
+      await settleReads();
       const proxyUrl =
         settings.githubProxy === 'auto' && running
           ? `http://127.0.0.1:${settings.mixedPort}`
@@ -180,7 +213,7 @@ export function KernelPage() {
           ? settings.githubProxy
           : undefined;
       const v = await api.downloadKernelVersion(proxyUrl, mirrorPrefix);
-      await loadVersions();
+      await load('versions');
       updateSettings({ kernelPath: v.path });
       notify(
         'success',
@@ -190,17 +223,41 @@ export function KernelPage() {
       notify('error', `下载失败：${String(e)}`);
     } finally {
       setDownloading(false);
+      endOperation();
     }
   };
 
   const changeRuntime = async (patch: Partial<typeof settings>, note: string) => {
-    updateSettings(patch);
-    const st = useApp.getState();
-    await st.applyConfig();
-    if (st.kernelPhase === 'running') {
-      await st.restartKernel(true);
-      st.notify('info', note);
+    if (!beginOperation()) return false;
+    const token = getLifecycleToken();
+    let previous: Partial<typeof settings> | null = null;
+    try {
+      await settleReads();
+      if (!isLifecycleCurrent(token)) return false;
+      const current = useApp.getState();
+      previous = Object.fromEntries(Object.keys(patch).map(key => [key, current.settings[key as keyof typeof settings]]));
+      updateSettings(patch);
+      const st = useApp.getState();
+      if (st.kernelPhase !== 'running' && !st.profiles.some(profile => profile.id === st.activeId)) {
+        st.notify('info', '设置已保存，导入并启用订阅后生效');
+        return true;
+      }
+      const applied = await st.applyConfig();
+      if (!isLifecycleCurrent(token)) return false;
+      if (!applied) throw new Error('配置生成失败，原设置已恢复');
+      if (st.kernelPhase === 'running') {
+        if (!await st.restartKernel(true, token, true)) throw new Error('内核重启失败，原设置已恢复');
+        if (!isLifecycleCurrent(token)) return false;
+        st.notify('info', note);
+      } else st.notify('info', '设置已保存，下次启动生效');
+      return true;
+    } catch (error) {
+      if (!isLifecycleCurrent(token)) return false;
+      if (previous) { updateSettings(previous); useApp.setState({ configPath: '' }); }
+      notify('error', `设置应用失败：${String(error)}`);
+      return false;
     }
+    finally { endOperation(); }
   };
 
   const changePorts = (patch: Partial<typeof settings>) =>
@@ -208,49 +265,69 @@ export function KernelPage() {
 
   const restart = async () => {
     const st = useApp.getState();
-    if (st.kernelPhase !== 'running') return;
-    await st.restartKernel(true);
+    if (st.kernelPhase !== 'running' || !beginOperation()) return;
+    const token = getLifecycleToken();
+    try { await settleReads(); if (isLifecycleCurrent(token) && await st.restartKernel(true, token)) await refresh(); }
+    catch (error) { notify('error', `重启失败：${String(error)}`); }
+    finally { endOperation(); }
   };
 
   const reinstall = async () => {
+    if (!beginOperation()) return;
     setReinstalling(true);
     try {
+      await settleReads();
       const version = await api.reinstallResources();
+      await refresh();
       notify('success', `已重新解压：${shortVersion(version)}`);
     } catch (e) {
       notify('error', `解压失败：${String(e)}`);
     } finally {
       setReinstalling(false);
+      endOperation();
     }
   };
 
   const installHelper = async () => {
+    if (!beginOperation()) return;
     setHelperBusy(true);
     try {
-      setHelper(await api.installSystemHelper());
+      await settleReads();
+      const installed = await api.installSystemHelper();
+      setHelper(installed);
+      if (!installed?.installed) throw new Error('未确认安装完成，请刷新状态后重试');
+      setErrors(previous => ({ ...previous, helper: '' }));
       notify('success', 'TUN 提权内核已安装');
     } catch (e) {
       notify('error', `安装失败：${String(e)}`);
     } finally {
       setHelperBusy(false);
+      endOperation();
     }
   };
 
   const uninstallHelper = async () => {
+    if (operation.current) return;
     if (!confirmUninstall) {
       setConfirmUninstall(true);
       window.setTimeout(() => setConfirmUninstall(false), 3000);
       return;
     }
     setConfirmUninstall(false);
+    if (!beginOperation()) return;
     setHelperBusy(true);
     try {
-      setHelper(await api.uninstallSystemHelper());
+      await settleReads();
+      const uninstalled = await api.uninstallSystemHelper();
+      setHelper(uninstalled);
+      if (!uninstalled || uninstalled.installed) throw new Error('未确认卸载完成，请刷新状态后重试');
+      setErrors(previous => ({ ...previous, helper: '' }));
       notify('success', '提权内核已卸载，TUN 将回退到系统授权启动');
     } catch (e) {
       notify('error', `卸载失败：${String(e)}`);
     } finally {
       setHelperBusy(false);
+      endOperation();
     }
   };
 
@@ -262,54 +339,55 @@ export function KernelPage() {
           <div className="page-sub">
             {shortVersion(info?.version ?? info?.bundledVersion ?? undefined)}
             {' · '}
-            {info?.running ? '运行中' : '未运行'}
+            {statusLabel}{errors.info && info ? ' · 上次读取结果' : ''}
           </div>
+        </div>
+        <div className="page-actions">
+          <button type="button" className="icon-btn" title="刷新内核状态" aria-label="刷新内核状态" aria-busy={reading} disabled={reading || operationBusy} onClick={() => void refresh()}>
+            {reading ? <Spinner small /> : <IconRefresh size={15} />}
+          </button>
         </div>
       </header>
 
       <div className="page-scroll">
-        <div className="page-inner kernel-page">
-          <section className="card kernel-summary">
-            <div className="kernel-summary-main">
-              <span className="kernel-summary-icon"><IconChip size={18} /></span>
-              <div className="kernel-summary-text">
-                <div className="kernel-summary-title">
-                  mihomo {shortVersion(info?.version ?? info?.bundledVersion ?? undefined)}
-                </div>
-                <div className="kernel-summary-sub">
-                  {info?.running ? '运行中' : '未运行'}
-                  {info?.pid ? ` · PID ${info.pid}` : ''}
-                  {info?.binary ? ` · ${info.binary}` : ''}
-                </div>
+        <div className="page-inner configuration-page kernel-configuration">
+          {errors.info && <ReadError message={`内核状态：${errors.info}${info ? '；以下显示上次读取结果' : ''}`} onRetry={() => void load('info')} busy={loading.info || operationBusy} />}
+          {loading.info && !info && <EmptyState icon={<IconChip size={19} />} title="正在读取内核状态…" loading />}
+          <section className="configuration-runtime" aria-label="内核运行状态">
+            <div className="kernel-runtime-main">
+              <div className="kernel-runtime-title">
+                <h2 className="section-title">mihomo {shortVersion(info?.version ?? info?.bundledVersion ?? undefined)}</h2>
+                <span className={`configuration-state${errors.info ? ' warn' : info?.running ? ' ok' : ''}`}>{statusLabel}</span>
+              </div>
+              <div className="kernel-runtime-path">
+                {info?.pid ? <span>PID {info.pid}</span> : null}
+                <span>{info?.binary ?? '尚未读取到内核路径'}</span>
               </div>
             </div>
-            <div className="kernel-summary-metrics">
+            <div className="kernel-runtime-facts">
               <div>
                 <span>内存</span>
                 <strong>{info?.rssKb ? `${(info.rssKb / 1024).toFixed(0)} MB` : '—'}</strong>
               </div>
-              <div>
-                <span>内置版本</span>
-                <strong>{shortVersion(info?.bundledVersion)}</strong>
-              </div>
             </div>
-            <div className="kernel-summary-actions">
-              <button type="button" className="btn" disabled={!running} onClick={() => void restart()}>
+            <div className="kernel-runtime-actions">
+              <button type="button" className="btn" disabled={!running || busy} onClick={() => void restart()}>
                 <IconRefresh size={13} />重启
               </button>
-              <button type="button" className="btn btn-primary" disabled={downloading} onClick={() => void downloadLatest()}>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void downloadLatest()}>
                 {downloading ? <Spinner small /> : null}
                 {downloading ? '下载中…' : '下载最新'}
               </button>
             </div>
           </section>
 
-          <div className="kernel-grid">
+          <div className="configuration-sheet">
           <Section
-            title="版本管理"
-            desc="内置与已下载版本"
-            icon={<IconChip size={15} />}
+            title="版本与文件"
+            desc="选择内核版本、指定文件位置并管理内置资源"
           >
+            {errors.versions && <ReadError message={`版本列表：${errors.versions}${versionsLoaded ? '；以下显示上次读取结果' : ''}`} onRetry={() => void load('versions')} busy={loading.versions || operationBusy} />}
+            {loading.versions && !versionsLoaded && <EmptyState icon={<IconChip size={19} />} title="正在读取版本列表…" loading />}
             <Row
               label="使用版本"
               hint="重启后生效"
@@ -318,6 +396,7 @@ export function KernelPage() {
                   value={settings.kernelPath}
                   options={versionOptions}
                   ariaLabel="内核版本"
+                  disabled={busy || loading.versions || !!errors.versions}
                   onChange={(v) => {
                     updateSettings({ kernelPath: v });
                     if (running) notify('info', '重启后生效');
@@ -325,15 +404,14 @@ export function KernelPage() {
                 />
               }
             />
-          </Section>
 
-          <Section title="运行位置" desc="内核路径与数据目录" icon={<IconFolder size={15} />}>
             <Row
               label="自定义内核路径"
               hint="留空使用内置"
               control={
                 <input
                   className="input kernel-path-input"
+                  disabled={busy}
                   defaultValue={settings.kernelPath}
                   key={settings.kernelPath}
                   placeholder="自动查找"
@@ -353,75 +431,14 @@ export function KernelPage() {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => void api.openDataDir(DATA_DIR)}
+                  onClick={() => void api.openDataDir(DATA_DIR).catch(error => notify('error', `打开目录失败：${String(error)}`))}
                 >
                   <IconFolder size={13} />
                   在 Finder 打开
                 </button>
               }
             />
-          </Section>
 
-          <Section
-            title="TUN 提权内核"
-            desc="首次启用 TUN 时安装的系统内核副本"
-            icon={<IconTun size={15} />}
-          >
-            <Row
-              label="状态"
-              hint={
-                helper?.installed
-                  ? `已安装${helper.version ? ` · ${helper.version}` : ''}${helper.needsUpdate ? ' · 需要更新' : ''}`
-                  : '未安装；TUN 将使用系统授权启动'
-              }
-              control={
-                <span className={`pill ${helper?.installed ? (helper.needsUpdate ? 'warn' : 'ok') : ''}`}>
-                  {helper?.installed ? (helper.needsUpdate ? '需要更新' : '已安装') : '未安装'}
-                </span>
-              }
-            />
-            <Row
-              label="安装 / 更新"
-              hint="会弹一次管理员授权"
-              control={
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={helperBusy}
-                  onClick={() => void installHelper()}
-                >
-                  {helperBusy ? <Spinner small /> : null}
-                  {helperBusy ? '处理中…' : helper?.needsUpdate ? '更新' : '安装'}
-                </button>
-              }
-            />
-            <Row
-              label="卸载"
-              hint="删除系统副本，之后 TUN 会重新弹授权"
-              control={
-                <button
-                  type="button"
-                  className={`btn btn-ghost${confirmUninstall ? ' danger' : ''}`}
-                  disabled={helperBusy || !helper?.installed}
-                  onClick={() => void uninstallHelper()}
-                >
-                  {confirmUninstall ? '确认卸载' : '卸载'}
-                </button>
-              }
-            />
-            <Row
-              label="系统路径"
-              hint="仅 root 可写"
-              control={<span className="card-hint input-mono" style={{ fontSize: 10 }}>{helper?.path ?? '—'}</span>}
-            />
-          </Section>
-
-
-          <Section
-            title="内置资源"
-            desc="内核与 Geo 数据"
-            icon={<IconGlobe size={15} />}
-          >
             <Row
               label="内置内核版本"
               hint=""
@@ -431,28 +448,28 @@ export function KernelPage() {
               label="重新解压"
               hint="重新解压内置内核与 Geo"
               control={
-                <button type="button" className="btn" disabled={reinstalling} onClick={() => void reinstall()}>
+                <button type="button" className="btn" disabled={busy} onClick={() => void reinstall()}>
                   {reinstalling ? <Spinner small /> : null}
                   重新解压
                 </button>
               }
             />
           </Section>
-          </div>
 
           <Section
             className="kernel-network"
-            title="网络"
-            desc={running ? '改端口重启内核' : '端口、出站模式与局域网'}
-            icon={<IconGlobe size={15} />}
+            title="运行参数"
+            desc={running ? '修改端口会重启内核' : '端口、出站模式与局域网'}
           >
             <Row
               label="混合端口"
               hint="系统代理指向这里"
               control={
                 <PortField
+                  label="混合端口"
+                  disabled={busy}
                   value={settings.mixedPort}
-                  onCommit={(n) => void changePorts({ mixedPort: n })}
+                  onCommit={(n) => changePorts({ mixedPort: n })}
                 />
               }
             />
@@ -461,8 +478,10 @@ export function KernelPage() {
               hint="API 端口"
               control={
                 <PortField
+                  label="控制端口"
+                  disabled={busy}
                   value={settings.controllerPort}
-                  onCommit={(n) => void changePorts({ controllerPort: n })}
+                  onCommit={(n) => changePorts({ controllerPort: n })}
                 />
               }
             />
@@ -471,9 +490,11 @@ export function KernelPage() {
               hint="内核 DNS 监听端口，默认 1053"
               control={
                 <PortField
+                  label="DNS 端口"
+                  disabled={busy}
                   value={settings.dnsPort}
                   onCommit={(n) =>
-                    void changeRuntime({ dnsPort: n }, 'DNS 端口已更新，内核已重启')
+                    changeRuntime({ dnsPort: n }, 'DNS 端口已更新，内核已重启')
                   }
                 />
               }
@@ -483,9 +504,11 @@ export function KernelPage() {
               hint="0 关闭"
               control={
                 <PortField
+                  label="SOCKS 端口"
+                  disabled={busy}
                   value={settings.socksPort}
                   allowZero
-                  onCommit={(n) => void changeRuntime({ socksPort: n }, '端口已更新，内核已重启')}
+                  onCommit={(n) => changeRuntime({ socksPort: n }, '端口已更新，内核已重启')}
                 />
               }
             />
@@ -494,9 +517,11 @@ export function KernelPage() {
               hint="0 关闭"
               control={
                 <PortField
+                  label="HTTP 端口"
+                  disabled={busy}
                   value={settings.httpPort}
                   allowZero
-                  onCommit={(n) => void changeRuntime({ httpPort: n }, '端口已更新，内核已重启')}
+                  onCommit={(n) => changeRuntime({ httpPort: n }, '端口已更新，内核已重启')}
                 />
               }
             />
@@ -505,9 +530,11 @@ export function KernelPage() {
               hint="0 关闭"
               control={
                 <PortField
+                  label="Redir 端口"
+                  disabled={busy}
                   value={settings.redirPort}
                   allowZero
-                  onCommit={(n) => void changeRuntime({ redirPort: n }, '端口已更新，内核已重启')}
+                  onCommit={(n) => changeRuntime({ redirPort: n }, '端口已更新，内核已重启')}
                 />
               }
             />
@@ -522,6 +549,7 @@ export function KernelPage() {
                   key={settings.bindAddress}
                   spellCheck={false}
                   aria-label="监听地址"
+                  disabled={busy}
                   onBlur={(e) => {
                     const v = e.target.value.trim() || '127.0.0.1';
                     if (v !== settings.bindAddress) {
@@ -543,6 +571,7 @@ export function KernelPage() {
                     key={`u-${settings.authUser}`}
                     placeholder="用户名"
                     aria-label="认证用户名"
+                    disabled={busy}
                     onBlur={(e) => {
                       const v = e.target.value.trim();
                       if (v !== settings.authUser) void changeRuntime({ authUser: v }, '认证已更新');
@@ -556,6 +585,7 @@ export function KernelPage() {
                     key={`p-${settings.authPass}`}
                     placeholder="密码"
                     aria-label="认证密码"
+                    disabled={busy}
                     onBlur={(e) => {
                       const v = e.target.value;
                       if (v !== settings.authPass) void changeRuntime({ authPass: v }, '认证已更新');
@@ -570,6 +600,7 @@ export function KernelPage() {
               control={
                 <Segmented
                   ariaLabel="出站模式"
+                  disabled={busy}
                   options={MODES}
                   value={settings.mode}
                   onChange={(v) => void changeRuntime({ mode: v }, '出站模式已切换')}
@@ -578,16 +609,73 @@ export function KernelPage() {
             />
             <Row
               label="允许局域网连接"
-              hint="同网段设备可用"
+              hint={!lanAuthReady ? '先填写认证用户名和密码' : !lanListenReady ? '先将监听地址设为 0.0.0.0 或本机局域网地址' : '允许同一局域网的设备使用代理'}
               control={
                 <Toggle
-                  on={settings.allowLan}
+                  on={settings.allowLan && lanReady}
                   onChange={(v) => void changeRuntime({ allowLan: v }, '局域网访问已更新')}
                   label="允许局域网连接"
+                  disabled={busy || !lanReady}
                 />
               }
             />
           </Section>
+
+          <Section
+            title="系统服务"
+            desc="管理 TUN 提权内核；安装和卸载需要系统授权"
+          >
+            {errors.helper && <ReadError message={`提权内核：${errors.helper}${helper ? '；以下显示上次读取结果' : ''}`} onRetry={() => void load('helper')} busy={loading.helper || operationBusy} />}
+            {loading.helper && !helper && <EmptyState icon={<IconTun size={19} />} title="正在读取提权内核…" loading />}
+            <Row
+              label="状态"
+              hint={
+                !helper ? (loading.helper ? '正在读取安装状态' : '安装状态未知，请重试') : helper.installed
+                  ? `已安装${helper.version ? ` · ${helper.version}` : ''}${helper.needsUpdate ? ' · 需要更新' : ''}`
+                  : '未安装；TUN 将使用系统授权启动'
+              }
+              control={
+                <span className={`configuration-state ${helper?.installed ? (helper.needsUpdate ? 'warn' : 'ok') : ''}`}>
+                  {!helper ? (loading.helper ? '读取中' : '未知') : helper.installed ? (helper.needsUpdate ? '需要更新' : '已安装') : '未安装'}
+                </span>
+              }
+            />
+            <Row
+              label="安装 / 更新"
+              hint="需要管理员授权"
+              control={
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy || loading.helper || !!errors.helper || !helper}
+                  onClick={() => void installHelper()}
+                >
+                  {helperBusy ? <Spinner small /> : null}
+                  {helperBusy ? '处理中…' : helper?.needsUpdate ? '更新' : '安装'}
+                </button>
+              }
+            />
+            <Row
+              label="卸载"
+              hint="移除后，开启 TUN 需重新授权"
+              control={
+                <button
+                  type="button"
+                  className={`btn btn-ghost${confirmUninstall ? ' danger' : ''}`}
+                  disabled={busy || loading.helper || !!errors.helper || !helper?.installed}
+                  onClick={() => void uninstallHelper()}
+                >
+                  {confirmUninstall ? '确认卸载' : '卸载'}
+                </button>
+              }
+            />
+            <Row
+              label="系统路径"
+              hint="仅 root 可写"
+              control={<span className="card-hint input-mono">{helper?.path ?? '—'}</span>}
+            />
+          </Section>
+          </div>
 
 
         </div>

@@ -1,28 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Select, Toggle } from '../components/ui';
-import { IconGlobe, IconSliders } from '../components/icons';
-import { useApp, type DnsNameserverMode } from '../store/app';
+import { ReadError, Select, Toggle } from '../components/ui';
+import { getLifecycleToken, isLifecycleCurrent, useApp, type DnsNameserverMode } from '../store/app';
 
 function Section({
   title,
   desc,
-  icon,
   children,
 }: {
   title: string;
   desc?: string;
-  icon?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="card">
-      <div className="section-head">
-        {icon && <span className="icon-tile">{icon}</span>}
-        <div className="section-head-text">
-          <div className="section-title">{title}</div>
-          {desc && <div className="section-desc">{desc}</div>}
-        </div>
+    <section className="configuration-section" aria-label={title}>
+      <div className="configuration-section-head">
+        <h2 className="section-title">{title}</h2>
+        {desc && <p className="configuration-description">{desc}</p>}
       </div>
       {children}
     </section>
@@ -38,11 +32,12 @@ function Row({
   hint?: string;
   control: ReactNode;
 }) {
+  const id = useId();
   return (
-    <div className="field-row">
+    <div className="field-row" role="group" aria-labelledby={`${id}-label`} aria-describedby={hint ? `${id}-hint` : undefined}>
       <div className="field-main">
-        <div className="field-label">{label}</div>
-        {hint && <div className="field-hint">{hint}</div>}
+        <div className="field-label" id={`${id}-label`}>{label}</div>
+        {hint && <div className="field-hint" id={`${id}-hint`}>{hint}</div>}
       </div>
       <div className="field-control">{control}</div>
     </div>
@@ -50,7 +45,7 @@ function Row({
 }
 
 const NAMESERVERS: Array<{ value: DnsNameserverMode; label: string }> = [
-  { value: 'auto', label: '自动（安全默认）' },
+  { value: 'auto', label: '自动' },
   { value: 'cloudflare', label: 'Cloudflare DoH' },
   { value: 'google', label: 'Google DoH' },
   { value: 'quad9', label: 'Quad9 DoH' },
@@ -64,6 +59,14 @@ export function DnsPage() {
   const setPolicy = useApp((s) => s.setPolicy);
   const notify = useApp((s) => s.notify);
 
+  const policyApplying = useApp(s => s.policyApplying);
+  const policyError = useApp(s => s.policyError);
+  const phase = useApp(s => s.kernelPhase);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const applyLock = useRef(false);
+  const busy = applying || policyApplying || phase === 'starting' || phase === 'stopping';
+
   const [custom, setCustom] = useState(settings.dnsCustom);
 
   useEffect(() => {
@@ -71,12 +74,34 @@ export function DnsPage() {
   }, [settings.dnsCustom]);
 
   const changeRuntime = async (patch: Partial<typeof settings>, note: string) => {
+    if (applyLock.current || busy) return;
+    const token = getLifecycleToken();
+    applyLock.current = true;
+    setApplying(true);
+    setApplyError(null);
     updateSettings(patch);
-    const st = useApp.getState();
-    await st.applyConfig();
-    if (st.kernelPhase === 'running') {
-      const ok = await st.restartKernel(true);
-      if (ok) notify('info', note);
+    try {
+      const st = useApp.getState();
+      if (!st.profiles.some(p => p.id === st.activeId)) {
+        notify('info', '设置已保存，导入订阅并连接后生效');
+        return;
+      }
+      const applied = await st.applyConfig();
+      if (!isLifecycleCurrent(token)) return;
+      if (!applied) throw new Error('配置生成失败');
+      if (st.kernelPhase === 'running') {
+        if (!await st.restartKernel(true, token, true)) throw new Error('内核重启失败');
+        if (!isLifecycleCurrent(token)) return;
+        notify('info', note);
+      } else notify('info', '设置已保存，连接后生效');
+    } catch (e) {
+      if (!isLifecycleCurrent(token)) return;
+      const message = `设置已保存但未生效：${String(e)}，请重试`;
+      setApplyError(message);
+      notify('error', message);
+    } finally {
+      applyLock.current = false;
+      setApplying(false);
     }
   };
 
@@ -85,18 +110,23 @@ export function DnsPage() {
       <header className="page-head page-head-wide">
         <div className="page-heading">
           <h1 className="page-title">DNS 与嗅探</h1>
-          <div className="page-sub">DNS 服务器、Fake-IP、IPv6 与域名嗅探</div>
+          <div className="page-sub">解析与域名识别</div>
         </div>
       </header>
 
       <div className="page-scroll">
-        <div className="page-inner kernel-page">
-          <Section title="DNS" desc="加密 DNS" icon={<IconGlobe size={15} />}>
+        <div className="page-inner configuration-page dns-page">
+          <p className="configuration-notice" role="status">{busy ? '正在应用设置…' : phase === 'running' ? '修改设置后将重启内核，现有连接会短暂中断' : '设置将在连接后生效'}</p>
+          {applyError && <ReadError message={applyError} busy={busy} onRetry={() => void changeRuntime({}, '设置已生效')} />}
+          {policyError && <ReadError message={policyError} busy={busy} onRetry={() => void setPolicy({})} />}
+          <div className="configuration-sheet">
+          <Section title="DNS 解析" desc="选择上游服务器并设置域名解析方式">
             <Row
               label="DNS 服务器"
               hint="自定义支持 DoH / DoT"
               control={
                 <Select
+                  disabled={busy}
                   value={settings.dnsNameserver}
                   options={NAMESERVERS}
                   ariaLabel="DNS 服务器"
@@ -111,6 +141,7 @@ export function DnsPage() {
                 control={
                   <input
                     className="input input-mono"
+                    disabled={busy}
                     style={{ width: 260 }}
                     value={custom}
                     onChange={(e) => setCustom(e.target.value)}
@@ -129,9 +160,10 @@ export function DnsPage() {
             )}
             <Row
               label="Fake-IP 模式"
-              hint="延迟到代理解析"
+              hint="连接时由代理解析域名"
               control={
                 <Toggle
+                  disabled={busy}
                   on={policy.fakeIp}
                   onChange={(v) => setPolicy({ fakeIp: v })}
                   label="Fake-IP 模式"
@@ -140,9 +172,9 @@ export function DnsPage() {
             />
             <Row
               label="启用 IPv6"
-              hint="关闭以避免绕过 TUN"
+              hint="关闭后不使用 IPv6"
               control={
-                <Toggle on={policy.ipv6} onChange={(v) => setPolicy({ ipv6: v })} label="启用 IPv6" />
+                <Toggle disabled={busy} on={policy.ipv6} onChange={(v) => setPolicy({ ipv6: v })} label="启用 IPv6" />
               }
             />
           </Section>
@@ -150,13 +182,13 @@ export function DnsPage() {
           <Section
             title="嗅探"
             desc="从握手提取域名"
-            icon={<IconSliders size={15} />}
           >
             <Row
               label="启用嗅探"
-              hint="默认开启；按域名匹配规则，减少纯 IP 误判"
+              hint="从连接中识别域名，用于匹配规则"
               control={
                 <Toggle
+                  disabled={busy}
                   on={settings.snifferEnabled}
                   onChange={(v) => void changeRuntime({ snifferEnabled: v }, '已更新，内核已重启')}
                   label="启用嗅探"
@@ -168,6 +200,7 @@ export function DnsPage() {
               hint="用域名重写目标"
               control={
                 <Toggle
+                  disabled={busy}
                   on={settings.snifferOverrideDestination}
                   onChange={(v) =>
                     void changeRuntime({ snifferOverrideDestination: v }, '已更新，内核已重启')
@@ -182,6 +215,7 @@ export function DnsPage() {
               control={<span className="card-hint">HTTP · TLS · QUIC</span>}
             />
           </Section>
+          </div>
         </div>
       </div>
     </>

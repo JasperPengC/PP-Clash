@@ -1,62 +1,71 @@
-import { useEffect, useRef, useState } from 'react';
-import { EmptyState } from '../components/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { EmptyState, ReadError } from '../components/ui';
 import { IconDownload, IconSearch, IconX } from '../components/icons';
 import { IconLog } from '../components/icons';
 import { useApp } from '../store/app';
 import { api, isTauri } from '../core/api';
 import { save } from '@tauri-apps/plugin-dialog';
+import { startPolling } from '../core/polling';
 
-function levelClass(line: string): string {
-  if (/level=(fatal|error)/i.test(line)) return 'log-line err';
-  if (/level=warn/i.test(line)) return 'log-line warn';
-  if (/level=debug/i.test(line)) return 'log-line debug';
-  return 'log-line';
-}
+import { logLineLevel, parseLogLine } from '../core/log-format';
 
-export function LogsPage() {
+export function LogsPage({ active = true }: { active?: boolean }) {
   const kernelPhase = useApp((s) => s.kernelPhase);
   const connected = kernelPhase === 'running';
 
   const [text, setText] = useState('');
+  const [rawView, setRawView] = useState(false);
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState<'all' | 'info' | 'warn' | 'error'>('all');
   const [query, setQuery] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const inFlight = useRef(false);
+  const readEpoch = useRef(0);
+  const available = useRef(active && !paused);
+  available.current = active && !paused;
   const viewRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
-  useEffect(() => {
-    if (paused) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const next = await api.readKernelLog(400);
-        if (alive) setText(next);
-      } catch {
-        /* 忽略 */
+  const load = async () => {
+    if (!available.current || inFlight.current) return;
+    inFlight.current = true;
+    const epoch = readEpoch.current;
+    setLoading(true);
+    try {
+      const next = await api.readKernelLog(400);
+      if (available.current && epoch === readEpoch.current) {
+        setText(next); setReadError(null); setLoadedAt(Date.now());
       }
-    };
-    void load();
-    const timer = window.setInterval(load, 1500);
+    } catch (error) {
+      if (available.current && epoch === readEpoch.current) setReadError(String(error));
+    } finally {
+      inFlight.current = false;
+      if (active) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (paused || !active) return;
+    const stop = startPolling(load, 1500);
     return () => {
-      alive = false;
-      window.clearInterval(timer);
+      readEpoch.current += 1;
+      stop();
     };
-  }, [paused]);
+  }, [paused, active]);
 
   useEffect(() => {
     const el = viewRef.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
   }, [text]);
 
-  const lines = text ? text.split('\n') : [];
-  const shown = lines.filter((line) => {
-    if (!line.trim()) return false;
-    if (query && !line.toLowerCase().includes(query.toLowerCase())) return false;
+  const lines = useMemo(() => text.split('\n').filter(line => line.trim()).map(parseLogLine), [text]);
+  const shown = lines.filter(entry => {
+    if (query && !entry.raw.toLowerCase().includes(query.toLowerCase())) return false;
     if (level === 'all') return true;
-    if (level === 'error') return /level=(fatal|error)/i.test(line);
-    if (level === 'warn') return /level=warn/i.test(line);
-    return /level=info/i.test(line);
+    return logLineLevel(entry) === level;
   });
 
   const exportLogs = async () => {
@@ -71,7 +80,7 @@ export function LogsPage() {
         filters: [{ name: '日志', extensions: ['log', 'txt'] }],
       });
       if (!path) return;
-      await api.exportLogFile(path, shown.join('\n') + '\n');
+      await api.exportLogFile(path, shown.map(entry => entry.raw).join('\n') + '\n');
       useApp.getState().notify('success', '日志已导出');
     } catch (e) {
       useApp.getState().notify('error', `导出失败：${String(e)}`);
@@ -90,6 +99,7 @@ export function LogsPage() {
           </div>
         </div>
         <div className="page-actions">
+          <button type="button" className="btn" aria-pressed={rawView} onClick={() => setRawView(value => !value)}>原始日志</button>
           {isTauri && (
             <button
               type="button"
@@ -101,16 +111,16 @@ export function LogsPage() {
               {exporting ? '导出中' : '导出'}
             </button>
           )}
-          <button type="button" className="btn" onClick={() => setPaused((v) => !v)}>
+          <button type="button" className="btn" aria-pressed={paused} onClick={() => setPaused((v) => !v)}>
             {paused ? '继续刷新' : '暂停'}
           </button>
         </div>
       </header>
 
-      <div className="page-scroll page-fixed">
-        <div className="page-inner">
-          {lines.length > 0 && (
-            <div className="row log-toolbar" style={{ gap: 10 }}>
+      <div className="page-scroll page-fixed dp-page dp-logs">
+        <div className="page-inner dp-log-workspace">
+          {readError && <ReadError message={`${readError}${loadedAt ? '；当前为上次读取的日志' : ''}`} onRetry={() => { if (paused) setPaused(false); else void load(); }} busy={loading || !active} />}
+            <div className="row log-toolbar dp-table-toolbar">
               <div className="seg" role="group" aria-label="日志级别">
                 {(
                   [
@@ -124,6 +134,7 @@ export function LogsPage() {
                     key={value}
                     type="button"
                     className={`seg-btn${level === value ? ' active' : ''}`}
+                    aria-pressed={level === value}
                     onClick={() => setLevel(value)}
                   >
                     {label}
@@ -135,6 +146,7 @@ export function LogsPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
                   placeholder="搜索日志"
                   aria-label="搜索日志"
                   spellCheck={false}
@@ -154,43 +166,42 @@ export function LogsPage() {
                 显示 {shown.length} / {lines.length}
               </span>
               <div className="spacer" />
+              <span className={`dp-log-status${paused ? ' is-paused' : ''}`} role="status">{paused ? '已暂停' : loading ? '读取中…' : '自动刷新'}</span>
             </div>
-          )}
 
-          {lines.length === 0 ? (
+          {!loadedAt && readError ? null : lines.length === 0 ? (
             <section className="card">
               <EmptyState
                 icon={<IconLog size={19} />}
-                title={connected ? '暂无日志' : '内核未运行'}
-                desc={
-                  connected
-                    ? '暂无日志。'
-                    : '未接管流量。'
-                }
+                title={!loadedAt && loading && !paused ? '正在读取日志…' : connected ? '暂无日志' : '暂无日志 · 内核未运行'}
+                loading={!loadedAt && loading && !paused}
               />
+            </section>
+          ) : shown.length === 0 ? (
+            <section className="card">
+              <EmptyState icon={<IconSearch size={19} />} title="没有匹配的日志" action={<button type="button" className="btn btn-sm" onClick={() => { setLevel('all'); setQuery(''); }}>清除筛选</button>} />
             </section>
           ) : (
             <section className="card card-flush log-card">
               <div
-                className="log-view"
+                className={`log-view${rawView ? ' log-view-raw' : ''}`}
                 ref={viewRef}
                 onScroll={(e) => {
                   const el = e.currentTarget;
                   atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
                 }}
               >
-                {shown.map((line, i) => (
-                  <div key={`${i}-${line.slice(0, 24)}`} className={levelClass(line)}>
-                    {line}
+                {shown.map((entry, i) => (
+                  <div key={`${i}-${entry.raw.slice(0, 24)}`} className={`log-line${rawView || entry.level === 'plain' ? ' log-plain' : ' log-entry'}`}>
+                    {rawView || entry.level === 'plain' ? entry.raw : <>
+                      <time className="log-time" title={entry.timestamp} dateTime={entry.timestamp || undefined}>{entry.time || '—'}</time>
+                      <span className={`log-level ${entry.level}`}>{({ info: '信息', warn: '警告', error: '错误', debug: '调试', plain: '' })[entry.level]}</span>
+                      <div className="log-content"><span>{entry.message}</span>{entry.details && <span className="log-details">{entry.details}</span>}</div>
+                    </>}
                   </div>
                 ))}
               </div>
             </section>
-          )}
-          {lines.length > 0 && shown.length === 0 && (
-            <div className="card-hint" style={{ textAlign: 'center', padding: '8px 0' }}>
-              没有匹配的日志
-            </div>
           )}
         </div>
       </div>

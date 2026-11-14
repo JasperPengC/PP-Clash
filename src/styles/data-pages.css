@@ -1,0 +1,139 @@
+/* 数据工作区：固定工具轴线、双行信息和轻量分隔，页面局部使用 dp-*。 */
+.dp-page .page-inner { gap: 14px; }
+.dp-page .card { box-shadow: var(--shadow-card); }
+.dp-table-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; min-height: 31px; }
+.dp-table-toolbar .seg { flex: none; }
+.dp-tool-label { color: var(--text-muted); font-size: var(--type-meta); }
+.dp-table-count { margin-left: auto; color: var(--text-muted); font-size: var(--type-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dp-move-up { transform: rotate(180deg); }
+
+/* 连接：目标列和上下行数据形成稳定比较轴，操作永远在末端。 */
+.dp-connections { --dp-transfer-width: calc(var(--type-meta) * 16 + 12px); }
+.dp-connections-content { gap: 12px; }
+.dp-connections .dp-connections-content > .card:only-child { flex: none; }
+.dp-connections .connections-card { border-radius: var(--radius-card); overflow: hidden; }
+.dp-connection-columns { display: grid; grid-template-columns: minmax(0, 1fr) var(--dp-transfer-width) 30px; gap: 12px; align-items: center; padding: 8px 16px 7px; border-bottom: 1px solid var(--border-soft); color: var(--text-muted); font-size: var(--type-meta); }
+.dp-connection-columns > :last-child { text-align: right; }
+.dp-traffic-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; text-align: right; }
+.dp-connection-columns.is-process { grid-template-columns: minmax(0, 1fr) var(--dp-transfer-width) 120px; }
+.dp-connections .conn-row { display: grid; grid-template-columns: minmax(0, 1fr) var(--dp-transfer-width) 30px; gap: 12px; align-items: center; }
+.dp-connections .conn-row.proc-row { grid-template-columns: 20px minmax(0, 1fr) var(--dp-transfer-width) 120px; }
+.dp-connections .conn-row.proc-child { grid-template-columns: minmax(0, 1fr) var(--dp-transfer-width); }
+.dp-connections .conn-traffic { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; text-align: right; }
+.dp-connections .conn-traffic > span { min-width: 0; white-space: nowrap; }
+.dp-conn-up, .dp-conn-down { font-variant-numeric: tabular-nums; }
+.dp-conn-up { color: color-mix(in srgb, var(--up) 78%, var(--text-secondary)); }
+.dp-conn-down { color: color-mix(in srgb, var(--down) 78%, var(--text-secondary)); }
+.dp-connections .conn-host { font-weight: var(--weight-medium); }
+.dp-connections .conn-sub { overflow-wrap: anywhere; white-space: normal; }
+.dp-connections .conn-list { min-height: 0; }
+
+/* 日志：工具栏和正文共享同一容器，减少空白首屏。 */
+.dp-log-workspace { gap: 10px; }
+.dp-logs .log-toolbar { flex: none; padding: 7px 0; border-bottom: 1px solid var(--border-soft); }
+.dp-log-status { color: var(--text-muted); font-size: var(--type-meta); }
+.dp-log-status.is-paused { color: var(--warning); }
+.dp-logs .log-card { flex: 1; min-height: 0; border-radius: var(--radius-card); }
+.dp-logs .log-view { max-height: none; padding: 10px 16px; }
+.dp-logs .log-entry { display: grid; grid-template-columns: 8ch 3em minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 7px 0; }
+.dp-logs .log-time, .dp-logs .log-level { font-size: var(--type-meta); font-variant-numeric: tabular-nums; }
+.dp-logs .log-content { min-width: 0; }
+.dp-logs .log-details { display: block; margin-top: 2px; color: var(--text-muted); }
+.dp-logs .log-plain { padding: 5px 0; }
+
+/* 规则：编辑、来源分组和只读生效规则在一条纵向轴线上。 */
+.dp-rules .dp-rule-workspace { gap: 0; overflow: hidden; border: 1px solid var(--border-soft); border-radius: var(--radius-card); background: var(--surface); }
+.dp-rule-section { min-width: 0; padding: 18px 16px; }
+.dp-rule-section + .dp-rule-section { border-top: 1px solid var(--border-soft); }
+.dp-section-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.dp-section-heading h2 { margin: 0; }
+.dp-section-title { min-width: 0; }
+.dp-section-title p { margin: 3px 0 0; color: var(--text-muted); font-size: var(--type-meta); }
+.dp-rule-editor .rule-builder { margin-top: 14px; }
+.dp-rule-editor .rule-hint { margin-top: 7px; }
+.dp-rule-import textarea { display: block; width: 100%; margin-top: 12px; }
+.dp-rule-custom .custom-rule-list, .dp-rule-subscription .sub-rule-list, .dp-rule-effective .kernel-rule-list { margin-top: 14px; }
+.dp-rule-custom .custom-rule-row, .dp-rule-subscription .sub-rule-row { min-height: 38px; }
+.dp-rules .custom-rule-payload, .dp-rules .sub-rule-payload, .dp-rules .rule-row .rule-payload { height: auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.dp-rules .sub-rule-row.is-off { opacity: 1; }
+.dp-rules .sub-rule-row.is-off .sub-rule-payload { color: var(--text-muted); }
+.dp-rule-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 14px; }
+.dp-rule-effective .rule-row { grid-template-columns: 140px minmax(0, 1fr) minmax(130px, 180px); }
+.dp-rule-note { margin: 0; padding: 12px 16px; border: 0; border-top: 1px solid var(--border-soft); border-radius: 0; background: transparent; }
+
+/* 覆写：列表和连续编辑文档是同一工作区，编辑区不再套多重边框。 */
+.dp-override .page-inner { min-height: 0; }
+.dp-override-workspace { grid-template-columns: 220px minmax(0, 1fr); gap: 14px; }
+.dp-override .override-files { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.dp-override .override-files-head { padding: 7px 10px 10px; }
+.dp-override .override-file { padding-inline: 10px; }
+.dp-override .override-file-name { white-space: normal; overflow-wrap: anywhere; }
+.dp-override .override-editor-card { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.dp-override-document { padding: 0; }
+.dp-override-document .override-editor { display: block; min-height: min(52vh, 480px); padding: 18px 16px; border: 0; border-radius: 0; background: var(--surface); resize: vertical; }
+.dp-override-document .override-editor:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+.dp-override-document .override-error { margin: 0; padding: 0 16px 12px; }
+.dp-override .override-foot { padding: 12px 16px; }
+
+/* 资源：URL 是主信息，状态和更新动作各自固定到末列。 */
+.dp-resource-summary { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.dp-resource-error-link { color: var(--danger); text-decoration: underline; text-underline-offset: 3px; }
+.dp-resources .page-inner { gap: 14px; }
+.dp-resources .resource-tabs { align-self: flex-start; }
+.dp-resource-panel { padding: 16px; box-shadow: var(--shadow-card); }
+.dp-resource-heading-icon { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: var(--radius-control); background: var(--accent-soft); color: var(--accent-text, var(--accent)); }
+.dp-geo-columns, .dp-resources .geo-source-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 100px 62px; gap: 12px; align-items: center; }
+.dp-geo-columns { padding: 0 0 5px; margin-top: 15px; color: var(--text-muted); font-size: var(--type-meta); }
+.dp-resources .geo-source-row { padding: 10px 0; }
+.dp-resources .geo-source-input { font-family: var(--font-mono); font-size: var(--type-meta); }
+.dp-provider-columns, .dp-resources .resource-provider { display: grid; grid-template-columns: minmax(0, 1fr) 80px 130px 62px; gap: 12px; align-items: center; }
+.dp-provider-columns { padding: 0 0 6px; margin-top: 14px; color: var(--text-muted); font-size: var(--type-meta); }
+.dp-resources .resource-provider { padding: 10px 0; }
+.dp-provider-identity { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.dp-provider-identity .resource-name { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.dp-provider-type { flex: none; color: var(--text-muted); font-size: var(--type-meta); }
+.dp-resources .resource-meta { text-align: right; }
+.dp-resources .resource-provider .btn { justify-self: end; }
+
+/* 流量：统计摘要轻量化，表格列统一右对齐。 */
+.dp-session-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 13px 0; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.dp-session-summary .traffic-stat { min-width: 0; padding: 0 18px; }
+.dp-session-summary .traffic-stat + .traffic-stat { border-left: 1px solid var(--border-soft); }
+.dp-session-summary .icon-tile { width: 20px; height: 20px; border: 0; background: transparent; border-radius: 0; box-shadow: none; }
+.dp-traffic-table { padding: 15px 16px; }
+.dp-traffic-table .traffic-list { margin-top: 12px; }
+.dp-traffic-table .traffic-row { grid-template-columns: minmax(0, 1fr) 80px 120px 120px; padding: 9px 0; }
+.dp-traffic-table .traffic-name { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.dp-traffic-table .traffic-name-text { white-space: normal; overflow-wrap: anywhere; }
+.dp-traffic-table .traffic-head { border-bottom: 1px solid var(--border-soft); border-top: 0; }
+
+@media (max-width: 900px) {
+  .dp-traffic-columns, .dp-connections .conn-traffic { gap: 8px; }
+  .dp-override-workspace { grid-template-columns: 180px minmax(0, 1fr); }
+  .dp-geo-columns, .dp-resources .geo-source-row { grid-template-columns: 125px minmax(0, 1fr) 86px 58px; gap: 8px; }
+}
+@media (max-width: 700px) {
+  .dp-table-toolbar .dp-table-count { width: 100%; margin-left: 0; }
+  .dp-connection-columns { display: none; }
+  .dp-connections .conn-row, .dp-connections .conn-row.proc-child { grid-template-columns: minmax(0, 1fr) auto; }
+  .dp-connections .conn-row.proc-row { grid-template-columns: 20px minmax(0, 1fr) auto; }
+  .dp-connections .conn-traffic { grid-column: 1 / 2; grid-row: 2; justify-content: start; text-align: left; }
+  .dp-connections .conn-row > .icon-btn, .dp-connections .conn-row.proc-row > .btn { grid-column: 2; grid-row: 1 / 3; }
+  .dp-connections .conn-row.proc-row > .btn { grid-column: 3; }
+  .dp-connections .conn-row.proc-row .conn-traffic { grid-column: 2; }
+  .dp-logs .log-entry { grid-template-columns: 70px 36px minmax(0, 1fr); gap: 8px; }
+  .dp-override-workspace { grid-template-columns: 1fr; }
+  .dp-geo-columns { display: none; }
+  .dp-resources .geo-source-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .dp-resources .geo-source-label, .dp-resources .geo-source-input { grid-column: 1 / -1; }
+  .dp-resources .geo-source-status { grid-column: 1; justify-content: flex-start; }
+  .dp-provider-columns { display: none; }
+  .dp-resources .resource-provider { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .dp-provider-identity { grid-column: 1 / -1; }
+  .dp-resources .resource-provider .resource-meta { text-align: left; }
+  .dp-resources .resource-provider .resource-time { grid-column: 1; }
+  .dp-session-summary { grid-template-columns: 1fr; }
+  .dp-session-summary .traffic-stat { padding-block: 10px; }
+  .dp-session-summary .traffic-stat + .traffic-stat { border-left: 0; border-top: 1px solid var(--border-soft); }
+  .dp-traffic-table .traffic-row { grid-template-columns: minmax(0, 1fr) 55px 82px 82px; gap: 8px; }
+}
