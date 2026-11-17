@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # 跨平台 CI 入口。
-# GitHub Actions / GitLab CI / Woodpecker 只做 checkout、装工具链、然后调用这里。
-# 这样换 CI 平台时不需要重写构建步骤。
+# GitHub Actions 负责 checkout 和工具链，构建与检查逻辑统一放在这里。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

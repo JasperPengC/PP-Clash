@@ -27,7 +27,7 @@ def fetch(item, cache):
         data = path.read_bytes()
         if len(data) <= LIMIT and hashlib.sha256(data).hexdigest() == expected:
             return data
-    request = urllib.request.Request(url, headers={"User-Agent": "PPClash-resource-builder/0.2.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "PPClash-resource-builder"})
     deadline = time.monotonic() + 180
     chunks, length = [], 0
     with urllib.request.urlopen(request, timeout=30) as response:
