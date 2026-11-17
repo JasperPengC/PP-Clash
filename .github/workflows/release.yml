@@ -218,6 +218,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: installer-*
@@ -232,5 +235,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts
           (cd artifacts && sha256sum --check SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag --title "PP Clash $GITHUB_REF_NAME" --notes "macOS Intel / Apple Silicon、Windows x64 / ARM64、Linux x64 / ARM64。每个安装包内置对应架构的 mihomo。macOS 测试包尚未公证。"

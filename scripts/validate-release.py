@@ -4,6 +4,7 @@ import argparse
 import hashlib
 from pathlib import Path
 import re
+import shutil
 
 
 def validate_ref(version, ref, publish):
@@ -17,14 +18,42 @@ def validate_files(version, directory):
     names.update(f"PP_Clash-{version}-windows-{arch}-setup.exe" for arch in ("amd64", "arm64"))
     names.update(f"PP_Clash-{version}-linux-{arch}.{ext}"
                  for arch in ("amd64", "arm64") for ext in ("deb", "rpm", "AppImage"))
-    actual = {p.name for p in directory.iterdir() if p.name != "SHA256SUMS"}
-    if names != actual:
-        raise ValueError(f"安装包清单不匹配；缺少 {sorted(names - actual)}；多出 {sorted(actual - names)}")
+    found = {}
+    unexpected = []
+    for path in directory.rglob("*"):
+        if path.is_dir() and not path.is_symlink():
+            continue
+        if path.name == "SHA256SUMS" and path.parent == directory:
+            continue
+        if path.name in names:
+            found.setdefault(path.name, []).append(path)
+        else:
+            unexpected.append(path.relative_to(directory).as_posix())
+    duplicates = sorted(name for name, paths in found.items() if len(paths) > 1)
+    missing = sorted(names - found.keys())
+    if duplicates:
+        raise ValueError(f"安装包存在重复文件名：{duplicates}")
+    if missing or unexpected:
+        raise ValueError(f"安装包清单不匹配；缺少 {missing}；多出 {sorted(unexpected)}")
+
     lines = []
     for name in sorted(names):
-        path = directory / name
+        path = found[name][0]
         if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
             raise ValueError(f"安装包必须是非空普通文件：{name}")
+    for name in sorted(names):
+        path = found[name][0]
+        if path.parent != directory:
+            shutil.move(str(path), str(directory / name))
+    for path in sorted((p for p in directory.rglob("*") if p.is_dir() and not p.is_symlink()),
+                       key=lambda p: len(p.parts), reverse=True):
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+
+    for name in sorted(names):
+        path = directory / name
         digest = hashlib.sha256()
         with path.open("rb") as source:
             for chunk in iter(lambda: source.read(1024 * 1024), b""):

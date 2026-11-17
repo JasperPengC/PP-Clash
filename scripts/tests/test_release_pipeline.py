@@ -58,6 +58,30 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertEqual(self.run_gate("files", "--version", "0.2.1",
                                           "--directory", tmp).returncode, 0)
 
+    def test_complete_package_set_from_nested_workflow_artifacts_is_flattened(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for index, name in enumerate(PACKAGES):
+                nested = root / f"runner-{index}" / "release" / "bundle"
+                nested.mkdir(parents=True)
+                (nested / name).write_bytes(b"release fixture")
+            result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual({path.name for path in root.iterdir()}, set(PACKAGES) | {"SHA256SUMS"})
+            self.assertEqual(len((root / "SHA256SUMS").read_text().splitlines()), 10)
+
+    def test_duplicate_nested_package_names_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in PACKAGES:
+                (root / name).write_bytes(b"release fixture")
+            duplicate = root / "nested" / PACKAGES[0]
+            duplicate.parent.mkdir()
+            duplicate.write_bytes(b"duplicate package")
+            result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("重复", result.stderr)
+
     def test_missing_wrong_version_architecture_or_empty_package_is_rejected(self):
         for replacement in [None, "PP_Clash-0.2.0-windows-arm64-setup.exe",
                             "PP_Clash-0.2.1-windows-x86-setup.exe", "empty"]:
