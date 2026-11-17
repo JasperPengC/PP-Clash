@@ -55,8 +55,6 @@ MOUNTED=1
 /usr/bin/swift -suppress-warnings scripts/make-dmg-bookmark.swift "$MOUNT/.background/background.tiff" "$STAGE/background-ref"
 "$DMG_PYTHON" scripts/layout-dmg.py "$MOUNT" "$STAGE/background-ref"
 /usr/bin/SetFile -a C "$MOUNT"
-# Finder 打开镜像时直接展示安装窗口。
-bless --folder "$MOUNT" --openfolder "$MOUNT"
 hdiutil detach "$MOUNT" -quiet
 MOUNTED=0
 hdiutil convert "$STAGE/installer.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$OUT"
