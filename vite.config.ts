@@ -32,5 +32,21 @@ export default defineConfig({
     target: 'safari15',
     minify: 'esbuild',
     sourcemap: false,
+    // QuickJS 的 single-file WASM 运行时约 684 KB，仅在 JS 覆写执行时懒加载；初始包由 bundleBudget 单独限额。
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalized = id.replaceAll('\\\\', '/');
+          if (normalized.includes('/node_modules/@codemirror/lang-yaml/')
+            || normalized.includes('/node_modules/@lezer/yaml/')) return 'code-editor-yaml';
+          if (normalized.includes('/node_modules/@codemirror/lang-javascript/')
+            || normalized.includes('/node_modules/@lezer/javascript/')
+            || normalized.includes('/node_modules/acorn/')) return 'code-editor-javascript';
+          if (normalized.includes('/node_modules/@codemirror/')
+            || normalized.includes('/node_modules/@lezer/')) return 'code-editor-core';
+        },
+      },
+    },
   },
 });

@@ -13,7 +13,7 @@ def validate_ref(version, ref, publish):
         raise ValueError(f"发布标签必须与应用版本一致：需要 {expected}，实际 {ref}")
 
 
-def validate_files(version, directory):
+def validate_files(version, directory, verify_checksums=False):
     names = {f"PP_Clash-{version}-macos-{arch}.dmg" for arch in ("x86_64", "aarch64")}
     names.update(f"PP_Clash-{version}-windows-{arch}-setup.exe" for arch in ("amd64", "arm64"))
     names.update(f"PP_Clash-{version}-linux-{arch}.{ext}"
@@ -36,11 +36,26 @@ def validate_files(version, directory):
     if missing or unexpected:
         raise ValueError(f"安装包清单不匹配；缺少 {missing}；多出 {sorted(unexpected)}")
 
+    manifest = directory / "SHA256SUMS"
+    if manifest.is_symlink():
+        raise ValueError("校验清单不能是符号链接")
+    if verify_checksums and not manifest.is_file():
+        raise ValueError("发布前缺少 SHA256SUMS 校验清单")
+
     lines = []
     for name in sorted(names):
         path = found[name][0]
         if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
             raise ValueError(f"安装包必须是非空普通文件：{name}")
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        lines.append(f"{digest.hexdigest()}  {name}\n")
+    checksums = "".join(lines).encode("utf-8")
+    if manifest.exists() and manifest.read_bytes() != checksums:
+        raise ValueError("安装包与 SHA256SUMS 不一致，保留原校验清单并停止发布")
+
     for name in sorted(names):
         path = found[name][0]
         if path.parent != directory:
@@ -52,17 +67,8 @@ def validate_files(version, directory):
         except OSError:
             pass
 
-    for name in sorted(names):
-        path = directory / name
-        digest = hashlib.sha256()
-        with path.open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                digest.update(chunk)
-        lines.append(f"{digest.hexdigest()}  {name}\n")
-    manifest = directory / "SHA256SUMS"
-    if manifest.is_symlink():
-        raise ValueError("校验清单不能是符号链接")
-    manifest.write_text("".join(lines), encoding="utf-8")
+    if not manifest.exists():
+        manifest.write_bytes(checksums)
 
 
 def main():
@@ -75,6 +81,8 @@ def main():
     files = commands.add_parser("files")
     files.add_argument("--version", required=True)
     files.add_argument("--directory", type=Path, required=True)
+    files.add_argument("--verify-checksums", action="store_true",
+                       help="校验已有 SHA256SUMS；缺失或不匹配时禁止发布")
     args = parser.parse_args()
     try:
         if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", args.version):
@@ -82,7 +90,7 @@ def main():
         if args.command == "ref":
             validate_ref(args.version, args.ref, args.publish == "true")
         else:
-            validate_files(args.version, args.directory)
+            validate_files(args.version, args.directory, args.verify_checksums)
     except (ValueError, OSError) as error:
         parser.exit(1, f"发布校验失败：{error}\n")
     print("发布校验通过")

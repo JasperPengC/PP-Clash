@@ -236,6 +236,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts
+          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts --verify-checksums
           (cd artifacts && sha256sum --check SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag --title "PP Clash $GITHUB_REF_NAME" --notes "macOS Intel / Apple Silicon、Windows x64 / ARM64、Linux x64 / ARM64。每个安装包内置对应架构的 mihomo。macOS 测试包尚未公证。"
+          gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag --title "PP Clash $GITHUB_REF_NAME" --notes-file scripts/release-notes.md

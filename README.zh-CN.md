@@ -7,9 +7,15 @@
 
 <h1 align="center">PP Clash</h1>
 
-<p align="center">一款用于管理 mihomo 订阅、代理分组和流量路由的桌面客户端。</p>
-<p align="center">macOS · Windows · Linux &nbsp; / &nbsp; 系统代理 · TUN · 规则分流</p>
+<p align="center"><strong>在一个桌面工作台中管理 mihomo 订阅、路由与实时连接。</strong></p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
+
+<p align="center">
+  <a href="https://github.com/JasperPengC/PP-Clash/releases/latest"><img src="https://img.shields.io/github/v/release/JasperPengC/PP-Clash?display_name=tag&style=flat-square&label=最新版本" alt="最新版本"></a>
+  <a href="https://github.com/JasperPengC/PP-Clash/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/JasperPengC/PP-Clash/release.yml?style=flat-square&label=Release%20构建" alt="Release 构建状态"></a>
+  <img src="https://img.shields.io/badge/平台-macOS%20%7C%20Windows%20%7C%20Linux-46505f?style=flat-square" alt="支持 macOS、Windows 和 Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/JasperPengC/PP-Clash?style=flat-square" alt="AGPL-3.0-only 许可证"></a>
+</p>
 
 > **重要：PP Clash 不提供代理节点或订阅服务。** 请自行准备订阅或配置文件。
 
@@ -33,14 +39,14 @@
 
 ## 下载安装
 
-前往 [GitHub Releases](https://github.com/JasperPengC/PP-Clash/releases)，根据操作系统和处理器架构选择安装包：
+打开[最新 Release](https://github.com/JasperPengC/PP-Clash/releases/latest)，根据操作系统和处理器架构选择安装包：
 
 | 平台 | 安装包 |
 | :--- | :--- |
-| macOS · Intel | `PP_Clash-<版本>-macos-x86_64.dmg` |
-| macOS · Apple 芯片 | `PP_Clash-<版本>-macos-aarch64.dmg` |
-| Windows · x64 | `PP_Clash-<版本>-windows-amd64-setup.exe` |
-| Windows · ARM64 | `PP_Clash-<版本>-windows-arm64-setup.exe` |
+| macOS · Intel | DMG · x86_64 |
+| macOS · Apple 芯片 | DMG · aarch64（ARM64） |
+| Windows · x64 | 安装程序 · amd64 |
+| Windows · ARM64 | 安装程序 · ARM64 |
 | Linux · x64 / ARM64 | `.deb`、`.rpm` 或 `.AppImage` |
 
 目前已完成 macOS Intel 和 Windows x64 实机测试；Apple 芯片、Windows ARM64 和 Linux 构建仍待实机验证。

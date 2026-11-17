@@ -97,6 +97,7 @@ secrets/
 !/README.md
 !/README.zh-CN.md
 !/THIRD_PARTY_NOTICES.md
+!/scripts/release-notes.md
 
 # Local assistant state and verification output
 .agents/

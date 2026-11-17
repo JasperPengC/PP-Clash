@@ -82,6 +82,55 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("重复", result.stderr)
 
+    def test_changed_package_or_manifest_is_rejected_without_overwriting_checksums(self):
+        for changed in ["package", "manifest"]:
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for name in PACKAGES:
+                    (root / name).write_bytes(b"release fixture")
+                result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                manifest = root / "SHA256SUMS"
+                if changed == "package":
+                    (root / PACKAGES[0]).write_bytes(b"changed after verification")
+                else:
+                    manifest.write_bytes(b"invalid checksum manifest\n")
+                original = manifest.read_bytes()
+                result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("SHA256SUMS", result.stderr)
+                self.assertEqual(manifest.read_bytes(), original)
+
+    def test_publish_requires_an_existing_checksum_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in PACKAGES:
+                (root / name).write_bytes(b"release fixture")
+            result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp,
+                                   "--verify-checksums")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("缺少 SHA256SUMS", result.stderr)
+            self.assertFalse((root / "SHA256SUMS").exists())
+
+    def test_publish_verifies_nested_packages_against_existing_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            lines = []
+            for index, name in enumerate(sorted(PACKAGES)):
+                nested = root / f"runner-{index}" / "bundle" / name
+                nested.parent.mkdir(parents=True)
+                payload = name.encode()
+                nested.write_bytes(payload)
+                lines.append(f"{hashlib.sha256(payload).hexdigest()}  {name}\n")
+            manifest = root / "SHA256SUMS"
+            manifest.write_bytes("".join(lines).encode())
+            original = manifest.read_bytes()
+            result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp,
+                                   "--verify-checksums")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual({path.name for path in root.iterdir()}, set(PACKAGES) | {"SHA256SUMS"})
+
     def test_missing_wrong_version_architecture_or_empty_package_is_rejected(self):
         for replacement in [None, "PP_Clash-0.2.0-windows-arm64-setup.exe",
                             "PP_Clash-0.2.1-windows-x86-setup.exe", "empty"]:

@@ -7,9 +7,15 @@
 
 <h1 align="center">PP Clash</h1>
 
-<p align="center">A desktop client for managing mihomo profiles, proxy groups, and routing.</p>
-<p align="center">macOS · Windows · Linux &nbsp; / &nbsp; System Proxy · TUN · Rule-based routing</p>
+<p align="center"><strong>Your mihomo profiles, routes, and live connections in one desktop workspace.</strong></p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
+
+<p align="center">
+  <a href="https://github.com/JasperPengC/PP-Clash/releases/latest"><img src="https://img.shields.io/github/v/release/JasperPengC/PP-Clash?display_name=tag&style=flat-square&label=latest%20release" alt="Latest release"></a>
+  <a href="https://github.com/JasperPengC/PP-Clash/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/JasperPengC/PP-Clash/release.yml?style=flat-square&label=release%20build" alt="Release build status"></a>
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-46505f?style=flat-square" alt="macOS, Windows, and Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/JasperPengC/PP-Clash?style=flat-square" alt="AGPL-3.0-only license"></a>
+</p>
 
 > **Important — PP Clash does not provide proxy servers or subscription services.** Bring your own subscription or configuration file.
 
@@ -33,14 +39,14 @@
 
 ## Downloads
 
-Download from [GitHub Releases](https://github.com/JasperPengC/PP-Clash/releases) and choose the package that matches your operating system and processor:
+Open the [latest release](https://github.com/JasperPengC/PP-Clash/releases/latest) and choose the package that matches your operating system and processor:
 
 | Platform | Package |
 | :--- | :--- |
-| macOS · Intel | `PP_Clash-<version>-macos-x86_64.dmg` |
-| macOS · Apple silicon | `PP_Clash-<version>-macos-aarch64.dmg` |
-| Windows · x64 | `PP_Clash-<version>-windows-amd64-setup.exe` |
-| Windows · ARM64 | `PP_Clash-<version>-windows-arm64-setup.exe` |
+| macOS · Intel | DMG · x86_64 |
+| macOS · Apple silicon | DMG · aarch64 (ARM64) |
+| Windows · x64 | Setup · amd64 |
+| Windows · ARM64 | Setup · ARM64 |
 | Linux · x64 / ARM64 | `.deb`, `.rpm`, or `.AppImage` |
 
 macOS Intel and Windows x64 have been tested on physical devices. Apple silicon, Windows ARM64, and Linux builds still need device testing.
