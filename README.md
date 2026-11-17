@@ -33,7 +33,7 @@
 
 ## Downloads
 
-Choose the package that matches your operating system and processor:
+Download from [GitHub Releases](https://github.com/JasperPengC/PP-Clash/releases) and choose the package that matches your operating system and processor:
 
 | Platform | Package |
 | :--- | :--- |

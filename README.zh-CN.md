@@ -33,7 +33,7 @@
 
 ## 下载安装
 
-请根据操作系统和处理器架构选择安装包：
+前往 [GitHub Releases](https://github.com/JasperPengC/PP-Clash/releases)，根据操作系统和处理器架构选择安装包：
 
 | 平台 | 安装包 |
 | :--- | :--- |
