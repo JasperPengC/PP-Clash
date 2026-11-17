@@ -125,10 +125,11 @@ mod tests {
 
     #[test]
     fn finds_app_bundle() {
-        let path = PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
-        assert_eq!(
-            find_bundle(&path).map(|p| p.display().to_string()),
-            Some("/Applications/Google Chrome.app".to_string())
-        );
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("Test Browser.app");
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        let path = PathBuf::from(format!("{}/Contents/MacOS/browser", bundle.display()));
+        assert_eq!(find_bundle(&path), Some(bundle));
+        assert!(find_bundle(&dir.path().join("plain-executable")).is_none());
     }
 }

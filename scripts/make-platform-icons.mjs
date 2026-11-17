@@ -20,7 +20,7 @@ function render(platform, size) {
     svg = svg.replaceAll(/ filter="url\(#(?:tileShadow|catShadow)\)"/g, '')
       .replace(/\s*<rect[^>]+fill="url\(#sheen\)"[^>]*\/>/, '');
   }
-  return new Resvg(svg, { fitTo: { mode: 'width', value: size } }).render().asPng();
+  return new Resvg(svg, { fitTo: { mode: 'width', value: size }, font: { loadSystemFonts: false } }).render().asPng();
 }
 
 function renderInstaller(size) {
@@ -32,7 +32,7 @@ function renderInstaller(size) {
     <circle cx="792" cy="792" r="216" fill="#3478f6" stroke="#f5f7fb" stroke-width="16"/>
     <path d="M792 648v176m-72-64 72 72 72-72M690 868v42h204v-42" fill="none" stroke="white" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
-  return new Resvg(svg, { fitTo: { mode: 'width', value: size } }).render().asPng();
+  return new Resvg(svg, { fitTo: { mode: 'width', value: size }, font: { loadSystemFonts: false } }).render().asPng();
 }
 
 function ico(frames) {

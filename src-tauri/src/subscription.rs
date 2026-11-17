@@ -493,7 +493,9 @@ mod config_transaction_tests {
         let digest = config_digest(Path::new(&receipt)).unwrap();
         mark_config_validated(Path::new(&receipt), &digest).unwrap();
         let committed = commit_config(receipt.clone()).unwrap();
-        assert_eq!(committed, target.to_string_lossy(), "传给 mihomo 的路径不能含 verbatim 前缀");
+        assert!(!committed.starts_with(r"\\?\"), "传给 mihomo 的路径不能含 verbatim 前缀");
+        assert_eq!(std::fs::canonicalize(&committed).unwrap(), std::fs::canonicalize(&target).unwrap(),
+            "传给 mihomo 的路径必须指向已提交的配置，兼容 Windows 短路径别名");
         assert_eq!(std::fs::read_to_string(&committed).unwrap(), "new-valid");
         finish_config(receipt, true).unwrap();
         assert_eq!(std::fs::read_to_string(&committed).unwrap(), "old-valid");

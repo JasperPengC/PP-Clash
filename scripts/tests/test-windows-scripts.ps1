@@ -1,4 +1,4 @@
-# 只在临时目录运行。系统注册表、进程与 WinINet 均替换为边界 mock。
+# Run only in a temporary directory; registry, processes and WinINet are mocked.
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $watchdog = Join-Path $repo 'src-tauri/src/watchdog-windows.ps1'
@@ -17,7 +17,7 @@ function Get-Process { param($Id, $ErrorAction) return $null }
 function Get-ItemProperty { param($LiteralPath, $ErrorAction) return $script:proxy }
 function Set-ItemProperty { param($LiteralPath, $Name, $Value, $ErrorAction) $script:writes += 1; $script:proxy.ProxyEnable = $Value }
 function Get-CimInstance { param($ClassName, $Filter, $ErrorAction) return @() }
-function Stop-Process { throw '测试不得结束任何真实进程' }
+function Stop-Process { throw 'Tests must not stop real processes' }
 function Assert($condition, $message) { if (-not $condition) { throw $message } }
 try {
     foreach ($case in @(
@@ -35,21 +35,23 @@ try {
         $script:proxy = [pscustomobject]@{ ProxyEnable=$case.Enabled; ProxyServer=$case.Server }
         $script:writes = 0
         [PPClashWatchdogWinInet]::Options.Clear()
-        & $watchdog -AppPid 1234 -DataDir $sandbox
+        # Keep the mock state and assertions in the same script scope.
+        . $watchdog -AppPid 1234 -DataDir $sandbox
         Assert ($script:writes -eq $case.Writes) ($case.Name + ': unexpected proxy write')
         Assert ($script:proxy.ProxyEnable -eq $(if ($case.Writes) { 0 } else { $case.Enabled })) ($case.Name + ': wrong final proxy state')
         Assert ([PPClashWatchdogWinInet]::Options.Count -eq (2 * $case.Writes)) ($case.Name + ': unexpected refresh')
         if ($case.Writes) { Assert (([PPClashWatchdogWinInet]::Options -join ',') -eq '39,37') 'must notify settings changed and refresh' }
         Assert (-not (Test-Path (Join-Path $sandbox 'watchdog.pid'))) 'pid marker must be removed'
     }
-    $hostExe = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
-    if (-not $hostExe) { $hostExe = (Get-Command powershell).Source }
+    # Use the current engine directly, bypassing Windows Store execution aliases.
+    $hostExe = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
     foreach ($case in @(@{ Name='success'; Result='return [pscustomobject]@{ Id=4321 }'; Exit=0 },
                          @{ Name='cancelled'; Result="throw 'UAC cancelled'"; Exit=1 },
                          @{ Name='missing-process'; Result='return $null'; Exit=1 })) {
         $wrapper = Join-Path $sandbox ('elevate-' + $case.Name + '.ps1')
-        $scriptText = "function Start-Process { param(`$FilePath, `$ArgumentList, `$Verb, `$WindowStyle, [switch]`$PassThru, `$ErrorAction) " + $case.Result + " }`n& '" + $elevate.Replace("'", "''") + "' -Binary 'mock.exe' -DataDir 'C:\Mock Data' -Config 'C:\Mock Data\config.yaml'"
-        Set-Content $wrapper $scriptText
+        # Match the app's inline invocation and preserve Unicode on Windows PowerShell 5.1.
+        $scriptText = "function Start-Process { param(`$FilePath, `$ArgumentList, `$Verb, `$WindowStyle, [switch]`$PassThru, `$ErrorAction) " + $case.Result + " }`n& {`n" + (Get-Content -LiteralPath $elevate -Raw -Encoding UTF8) + "`n} -Binary 'mock.exe' -DataDir 'C:\Mock Data' -Config 'C:\Mock Data\config.yaml'"
+        Set-Content $wrapper $scriptText -Encoding UTF8
         $ErrorActionPreference = 'Continue'
         & $hostExe -NoProfile -NonInteractive -File $wrapper 2>&1 | Out-Null
         $ErrorActionPreference = 'Stop'

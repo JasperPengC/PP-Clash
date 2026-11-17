@@ -34,8 +34,9 @@ it('Windows 图标在桌面常用尺寸占满画布，安装器与应用使用�
     if (![32, 48, 64, 256].includes(size)) continue;
     const length = app.readUInt32LE(entry + 8), start = app.readUInt32LE(entry + 12);
     const png = app.subarray(start, start + length);
-    const rendered = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><image width="${size}" height="${size}" href="data:image/png;base64,${png.toString('base64')}"/></svg>`).render();
-    const alpha = (x: number, y: number) => rendered.pixels[(y * size + x) * 4 + 3];
+    const rendered = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><image width="${size}" height="${size}" href="data:image/png;base64,${png.toString('base64')}"/></svg>`, { font: { loadSystemFonts: false } }).render();
+    const pixels = rendered.pixels;
+    const alpha = (x: number, y: number) => pixels[(y * size + x) * 4 + 3];
     const solid = Array.from({ length: size }, (_, x) => alpha(x, Math.floor(size / 2))).filter(value => value > 200).length;
     expect(solid / size).toBeGreaterThanOrEqual(0.97);
     expect(alpha(0, 0)).toBeLessThan(10);

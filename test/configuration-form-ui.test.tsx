@@ -8,6 +8,12 @@ import { KernelPage } from '../src/pages/Kernel';
 import { useApp } from '../src/store/app';
 import { api } from '../src/core/api';
 
+const platform = vi.hoisted(() => ({ isLinux: false }));
+vi.mock('../src/core/platform', () => ({
+  isWindows: false,
+  get isLinux() { return platform.isLinux; },
+}));
+
 vi.mock('../src/core/api', async original => {
   const actual = await original<typeof import('../src/core/api')>();
   return { ...actual, isTauri: false, api: { ...actual.api,
@@ -16,6 +22,7 @@ vi.mock('../src/core/api', async original => {
 });
 let host: HTMLDivElement; let root: Root;
 beforeEach(() => {
+  platform.isLinux = false;
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   useApp.setState({ ...useApp.getInitialState(), setPolicy: vi.fn(), updateSettings: vi.fn() });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
@@ -36,16 +43,19 @@ it.each([['安全', SecurityPage], ['DNS', DnsPage], ['内核', KernelPage]] as 
   }
 });
 
-it('内核提权卸载需要二次确认，确认前不执行卸载', async () => {
+it.each([false, true])('内核提权卸载需要二次确认，确认前不执行卸载（Linux=%s）', async linux => {
+  platform.isLinux = linux;
   vi.mocked(api.systemHelperInfo).mockResolvedValue({ installed: true, version: '1.0', needsUpdate: false, path: '/mock/helper' } as any);
   const uninstall = vi.fn().mockResolvedValue({ installed: false, version: null, needsUpdate: false, path: '/mock/helper' });
   (api as { uninstallSystemHelper: unknown }).uninstallSystemHelper = uninstall;
   await act(async () => root.render(createElement(KernelPage)));
   const click = async (element: HTMLButtonElement) => act(async () => element.click());
   const findButton = (text: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.trim() === text)!;
-  await click(findButton('卸载'));
-  expect(findButton('确认卸载')).toBeTruthy();
+  const action = linux ? '移除授权' : '卸载';
+  const confirmation = linux ? '确认移除' : '确认卸载';
+  await click(findButton(action));
+  expect(findButton(confirmation)).toBeTruthy();
   expect(uninstall).not.toHaveBeenCalled();
-  await click(findButton('确认卸载'));
+  await click(findButton(confirmation));
   expect(uninstall).toHaveBeenCalledTimes(1);
 });

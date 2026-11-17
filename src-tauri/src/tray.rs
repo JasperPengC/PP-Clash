@@ -998,6 +998,5 @@ mod tests {
         assert_eq!((img.width(), img.height()), (SPEED_W as u32, SPEED_H as u32));
         let opaque = img.rgba().chunks(4).filter(|p| p[3] > 0).count();
         assert!(opaque > 50, "speed icon should not be empty, opaque={opaque}");
-        std::fs::write("/tmp/speed-icon.raw", img.rgba()).unwrap();
     }
 }
