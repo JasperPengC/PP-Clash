@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { DEFAULT_LATENCY_URL, GITHUB_LATENCY_URL } from './latency';
+import type { TrafficInfo } from './subscription';
 
 /** 是否运行在 Tauri 里。浏览器里跑（纯前端预览）时用 mock，避免 invoke 直接抛错。 */
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -38,9 +40,31 @@ export interface TrayNode {
   selected: boolean;
 }
 
+export interface TrayGroup {
+  name: string;
+  type: string;
+  now: string | null;
+  manual: boolean;
+  total: number;
+  nodes: TrayNode[];
+}
+
+export type TrayActionValue = string | { group: string; node: string };
+
+export interface ServiceProbe {
+  id?: string;
+  ok: boolean;
+  latency_ms: number | null;
+  status?: 'reachable' | 'unreachable' | 'error';
+  detail?: string | null;
+}
+
 export interface TrayProfile {
   id: string;
   name: string;
+  userinfo?: TrafficInfo | null;
+  updatedAt?: number | null;
+  sourceType?: 'url' | 'file' | null;
 }
 
 export interface TraySnapshot {
@@ -56,6 +80,9 @@ export interface TraySnapshot {
   controllerPort: number;
   controllerSecret: string;
   nodes: TrayNode[];
+  /** 旧版本快照缺少组类型时，只提供只读浏览。 */
+  groups?: TrayGroup[];
+  groupsError?: string | null;
   profiles: TrayProfile[];
   activeProfile: string | null;
 }
@@ -72,6 +99,11 @@ export interface AppUpdateInfo {
   notes: string | null;
   url: string;
   sha256: string | null;
+}
+
+export interface KernelReleaseInfo {
+  version: string;
+  publishedAt: string | null;
 }
 
 export interface KernelVersionInfo {
@@ -124,6 +156,7 @@ function previewProxiesJson(): string {
     proxies[n.name] = {
       type: n.type,
       history: [{ delay: n.delay, time: new Date().toISOString() }],
+      extra: { [DEFAULT_LATENCY_URL]: { Alive: true, History: [{ delay: n.delay }] }, [GITHUB_LATENCY_URL]: { Alive: true, History: [{ delay: n.delay + 20 }] } },
     };
   }
   proxies['🚀 节点选择'] = {
@@ -147,7 +180,24 @@ function previewProxiesJson(): string {
 let previewT0 = Date.now();
 let previewTick = 0;
 
+// 开发态压力样本：保持稳定引用，不向生产数据写入，也不在每次轮询重新生成。
+const largePreview = previewMode && new URLSearchParams(window.location.search).get('fixtures') === 'large';
+const largePreviewRules = largePreview ? Array.from({ length: 10000 }, (_, i) => ({ type: 'Domain', payload: `effective-${i}.invalid`, proxy: 'DIRECT' })) : [];
+const largePreviewConnections = largePreview ? Array.from({ length: 10000 }, (_, i) => ({
+  id: `large-${i}`, upload: i * 2048, download: i * 8192, start: new Date(1800000000000 - i * 1000).toISOString(),
+  chains: ['DIRECT'], rule: 'Domain', rulePayload: `site-${i}.invalid`,
+  metadata: { network: 'tcp', host: `host-${i}.invalid`, destinationPort: 443, process: i < 8000 ? 'Browser' : `Process ${i}` },
+})) : [];
+
 function previewMihomo(method: string, path: string): unknown {
+  if (method === 'GET' && (path === '/providers/rules' || path === '/providers/proxies')) {
+    return { providers: {} };
+  }
+  if (path === '/configs' && method === 'GET') {
+    return { 'mixed-port': 7890, tun: { enable: true, device: 'utun7', stack: 'mixed' } };
+  }
+  if (largePreview && path === '/rules') return { rules: largePreviewRules };
+  if (largePreview && method === 'GET' && path === '/connections') return { connections: largePreviewConnections, uploadTotal: 20480000, downloadTotal: 81920000 };
   if (path.startsWith('/rules')) {
     return {
       rules: [
@@ -224,6 +274,23 @@ function previewMihomo(method: string, path: string): unknown {
   return {};
 }
 
+let previewKernelVersions: KernelVersionInfo[] = [
+  {
+    name: '内置内核',
+    version: 'v1.19.32',
+    path: '/Users/preview/Library/Application Support/PPClash/bin/mihomo',
+    builtin: true,
+    size: 61_386_224,
+  },
+  {
+    name: 'v1.19.31',
+    version: '1.19.31',
+    path: '/Users/preview/Library/Application Support/PPClash/kernels/v1.19.31/mihomo',
+    builtin: false,
+    size: 61_000_000,
+  },
+];
+
 function previewCall(cmd: string, args?: Record<string, unknown>): unknown {
   switch (cmd) {
     case 'mihomo_request': {
@@ -257,22 +324,23 @@ function previewCall(cmd: string, args?: Record<string, unknown>): unknown {
     case 'load_app_state':
       return null;
     case 'list_kernel_versions':
-      return [
-        {
-          name: '内置内核',
-          version: 'v1.19.32',
-          path: '/Users/preview/Library/Application Support/PPClash/bin/mihomo',
-          builtin: true,
-          size: 61_386_224,
-        },
-        {
-          name: 'v1.19.31',
-          version: '1.19.31',
-          path: '/Users/preview/Library/Application Support/PPClash/kernels/v1.19.31/mihomo',
-          builtin: false,
-          size: 61_000_000,
-        },
-      ];
+      return previewKernelVersions;
+    case 'list_kernel_releases': {
+      const page = Number(args?.page ?? 1);
+      const start = page === 1 ? 34 : page === 2 ? 14 : 10;
+      return page <= 3 ? Array.from({ length: Math.min(20, start + 1) }, (_, index) => ({ version: `v1.${page < 3 ? 19 : 18}.${start - index}`, publishedAt: '2026-11-01T00:00:00Z' })) : [];
+    }
+    case 'download_kernel_version': {
+      const tag = args?.version === 'Prerelease-Alpha' ? 'alpha-abcdef0-0123456789abcdef' : String(args?.version ?? 'v1.19.34');
+      const existing = previewKernelVersions.find(version => version.version.replace(/^v/, '') === tag.replace(/^v/, ''));
+      if (existing) return existing;
+      const downloaded = { name: tag, version: tag, path: `/preview/kernels/${tag}/mihomo`, builtin: false, size: 61000000 };
+      previewKernelVersions = [...previewKernelVersions, downloaded].sort((a, b) => Number(b.builtin) - Number(a.builtin) || b.version.localeCompare(a.version, undefined, { numeric: true }));
+      return downloaded;
+    }
+    case 'remove_kernel_version':
+      previewKernelVersions = previewKernelVersions.filter(version => version.builtin || version.path !== args?.path);
+      return null;
     case 'list_resource_files':
       return [
         { name: 'geosite.dat', size: 4_272_747, exists: true },
@@ -281,6 +349,13 @@ function previewCall(cmd: string, args?: Record<string, unknown>): unknown {
         { name: 'country.mmdb', size: 401_173, exists: true },
         { name: 'ASN.mmdb', size: 8_974_108, exists: true },
       ];
+    case 'system_helper_info':
+      return {
+        installed: true,
+        version: 'v1.19.32',
+        needsUpdate: false,
+        path: '/Library/PrivilegedHelperTools/ppclash/mihomo',
+      };
     case 'kernel_info':
       return {
         running: true,
@@ -290,36 +365,48 @@ function previewCall(cmd: string, args?: Record<string, unknown>): unknown {
         binary: '/Users/preview/Library/Application Support/PPClash/bin/mihomo',
         bundledVersion: 'v1.19.32',
       };
-    case 'tray_snapshot':
+    case 'tray_snapshot': {
+      const nodes: TrayNode[] = [
+        { name: '🇯🇵 东京 01', delay: 42, selected: true },
+        { name: '🇭🇰 香港 01', delay: 36, selected: false },
+        { name: '🇸🇬 新加坡 01', delay: 96, selected: false },
+        { name: '🇺🇸 洛杉矶 01', delay: 168, selected: false },
+        { name: '🇨🇳 台北 01', delay: 52, selected: false },
+        { name: '🇰🇷 首尔 01', delay: 74, selected: false },
+        { name: '🇬🇧 伦敦 01', delay: 196, selected: false },
+      ];
+      nodes.push(...Array.from({ length: (largePreview ? 1000 : 42) - nodes.length }, (_, i) => ({
+        name: `🇯🇵 专线 ${String(i + 1).padStart(3, '0')}`, delay: 50 + i * 3, selected: false,
+      })));
+      const groups: TrayGroup[] = [
+        { name: '自动选择', type: 'URLTest', now: '🇯🇵 东京 01', manual: false, total: nodes.length, nodes },
+        { name: 'Example Air', type: 'Selector', now: '自动选择', manual: true, total: 3, nodes: [
+          { name: '自动选择', delay: null, selected: true },
+          { name: '🇺🇸 洛杉矶 01', delay: 168, selected: false },
+          { name: 'DIRECT', delay: null, selected: false },
+        ] },
+        { name: '开发', type: 'Selector', now: '🇯🇵 东京 01', manual: true, total: nodes.length,
+          nodes: nodes.map(node => ({ ...node, delay: null })) },
+        { name: '分流均衡', type: 'LoadBalance', now: null, manual: false, total: nodes.length,
+          nodes: nodes.map(node => ({ ...node, selected: false })) },
+      ];
       return {
-        running: true,
-        sysProxy: false,
-        tun: true,
-        mode: 'rule',
-        node: '🇯🇵 东京 01',
-        group: '自动选择',
-        up: 185_000,
-        down: 2_450_000,
-        showSpeed: true,
-        controllerPort: 9090,
-        controllerSecret: 'preview',
-        nodes: [
-          { name: '🇯🇵 东京 01', delay: 42 },
-          { name: '🇭🇰 香港 01', delay: 36 },
-          { name: '🇸🇬 新加坡 01', delay: 96 },
-          { name: '🇺🇸 洛杉矶 01', delay: 168 },
-          { name: '🇨🇳 台北 01', delay: 52 },
-          { name: '🇰🇷 首尔 01', delay: 74 },
-          { name: '🇬🇧 伦敦 01', delay: 196 },
-        ],
+        running: true, sysProxy: false, tun: true, mode: 'rule',
+        node: '🇯🇵 东京 01', group: 'Example Air', up: 185_000, down: 2_450_000, showSpeed: true,
+        controllerPort: 9090, controllerSecret: 'preview', nodes, groups, groupsError: null,
         profiles: [
-          { id: 'preview-profile', name: 'Example Air' },
-          { id: 'preview-backup', name: 'Demo Backup' },
+          { id: 'preview-profile', name: 'Example Air', updatedAt: Date.now() - 42 * 60_000,
+            userinfo: { upload: 8 * 1024 ** 3, download: 36 * 1024 ** 3, total: 200 * 1024 ** 3, expire: 1805204537 } },
+          { id: 'preview-backup', name: 'Demo Backup', updatedAt: Date.now() - 86_400_000,
+            userinfo: { upload: 2 * 1024 ** 3, download: 58 * 1024 ** 3, total: 100 * 1024 ** 3, expire: 1802526137 } },
         ],
         activeProfile: 'preview-profile',
       };
-    case 'traffic_rates':
-      return [185_000, 2_450_000];
+    }
+    case 'traffic_rates': {
+      const t = (Date.now() - previewT0) / 1000;
+      return [185_000 * (0.7 + 0.3 * Math.sin(t / 2.4)), 2_450_000 * (0.7 + 0.3 * Math.sin(t / 3.1 + 1))];
+    }
     case 'check_ip_quality_auto':
       return {
         ip: '203.0.113.42',
@@ -426,8 +513,10 @@ export const api = {
     }),
 
   /** 并发探测单个服务：前端可以逐项渲染。 */
+  probeNodeHealth: (node: string) => call<Record<string, boolean | null>>('probe_node_health', { node }),
+
   probeService: (id: string, egressNode?: string | null) =>
-    call<{ id: string; ok: boolean; latency_ms: number | null }>('probe_service_auto', {
+    call<ServiceProbe>('probe_service_auto', {
       id,
       egressNode: egressNode ?? null,
     }),
@@ -457,6 +546,18 @@ export const api = {
 
   saveConfig: (content: string, dataDir: string) =>
     call<string>('save_config', { content, dataDir }),
+
+  prepareConfig: (content: string, dataDir: string) =>
+    call<string>('prepare_config', { content, dataDir }),
+
+  commitConfig: (candidatePath: string) =>
+    call<string>('commit_config', { candidatePath }),
+
+  finishConfig: (candidatePath: string, rollback: boolean) =>
+    call<void>('finish_config', { candidatePath, rollback }),
+
+  discardConfig: (candidatePath: string) =>
+    call<void>('discard_config', { candidatePath }),
 
   startKernel: (
     configPath: string,
@@ -493,9 +594,15 @@ export const api = {
   listResourceFiles: () =>
     call<Array<{ name: string; size: number; exists: boolean }>>('list_resource_files'),
 
-  /** 下载当前平台最新稳定版内核。 */
-  downloadKernelVersion: (proxyUrl?: string, mirrorPrefix?: string) =>
-    call<KernelVersionInfo>('download_kernel_version', { proxyUrl, mirrorPrefix }),
+  /** 按需读取适用于当前平台、可校验的官方稳定版本。 */
+  listKernelReleases: (proxyUrl?: string, page = 1) =>
+    call<KernelReleaseInfo[]>('list_kernel_releases', { proxyUrl, page }),
+
+  /** 下载指定官方稳定版本；留空为最新版本，不改变选用设置。 */
+  downloadKernelVersion: (proxyUrl?: string, mirrorPrefix?: string, version?: string) =>
+    call<KernelVersionInfo>('download_kernel_version', { proxyUrl, mirrorPrefix, version }),
+
+  removeKernelVersion: (path: string) => call<void>('remove_kernel_version', { path }),
 
   /** 从内置 MetaCubeX 在线源更新单个 Geo 文件。 */
   downloadGeoResource: (name: string, url: string, proxyUrl?: string, mirrorPrefix?: string) =>
@@ -541,11 +648,11 @@ export const api = {
   openDataDir: (dataDir: string) => call<void>('open_data_dir', { dataDir }),
 
   /** 落盘应用状态（订阅 / 活动订阅 / 策略 / 设置）。 */
-  saveAppState: (content: string, dataDir: string) =>
-    call<void>('save_app_state', { content, dataDir }),
+  saveAppState: (content: string, dataDir: string, session?: string) =>
+    call<void>('save_app_state', { content, dataDir, session }),
 
   /** 读取应用状态。没有则返回 null。 */
-  loadAppState: (dataDir: string) => call<string | null>('load_app_state', { dataDir }),
+  loadAppState: (dataDir: string, session?: string) => call<string | null>('load_app_state', { dataDir, session }),
 
   /** 转发一次 mihomo API 请求。base / secret 可配，默认走本机控制端口。 */
   mihomo: async (
@@ -578,7 +685,9 @@ export const api = {
     mode: string,
     showSpeed: boolean,
     hideDock: boolean,
-    controllerSecret: string
+    controllerSecret: string,
+    primaryGroup: string,
+    groupOrder: string[] = []
   ) =>
     call<void>('set_tray_flags', {
       tunEnabled,
@@ -588,11 +697,13 @@ export const api = {
       showSpeed,
       hideDock,
       controllerSecret,
+      primaryGroup,
+      groupOrder,
     }),
 
   traySnapshot: () => call<TraySnapshot>('tray_snapshot'),
 
-  trayAction: (action: string, value?: string) =>
+  trayAction: (action: string, value?: TrayActionValue) =>
     call<void>('tray_action', { action, value: value ?? null }),
 
   /** 泄漏自检：直连 vs 代理出口 IP。 */

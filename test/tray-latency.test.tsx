@@ -12,7 +12,7 @@ vi.mock('../src/core/runtime-display-events', () => ({ subscribeRuntimeDisplaySt
 vi.mock('../src/core/api', async original => {
   const actual = await original<typeof import('../src/core/api')>();
   return { ...actual, isTauri: true, api: {
-    traySnapshot: vi.fn(), trayAction: vi.fn(), mihomo: vi.fn(), getSystemProxy: vi.fn(),
+    traySnapshot: vi.fn(), trayAction: vi.fn(), trafficRates: vi.fn(), mihomo: vi.fn(), getSystemProxy: vi.fn(),
   } };
 });
 let host: HTMLDivElement; let root: Root; let snapshot: TraySnapshot;
@@ -31,6 +31,7 @@ beforeEach(() => {
     nodes: [{ name: '节点 A', delay: 21, selected: true }, { name: '节点 B', delay: 42, selected: false }] };
   vi.mocked(api.traySnapshot).mockImplementation(async () => snapshot);
   vi.mocked(api.trayAction).mockResolvedValue(undefined);
+  vi.mocked(api.trafficRates).mockResolvedValue([0, 0]);
   vi.mocked(api.getSystemProxy).mockResolvedValue({ enabled: true, host: '127.0.0.1', port: 17890 });
   vi.mocked(api.mihomo).mockImplementation(async (_method, path) => path.includes('/delay?') ? { delay: 82 }
     : { extra: { [GITHUB_LATENCY_URL]: { Alive: true, History: [{ delay: 82 }] } } });
@@ -41,7 +42,7 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 it.each(['GitHub', '开发', 'GitHub 固定出口'])('托盘 %s 组展示并使用 GitHub 目标，要求 HTTP 200', async group => {
   snapshot = { ...snapshot, group };
   await act(async () => root.render(createElement(TrayPanel)));
-  expect(host.textContent).toContain('GitHub');
+  expect(host.querySelector('.tp-test')?.getAttribute('title')).toContain('GitHub');
   await clickTest();
   const request = new URL(String(vi.mocked(api.mihomo).mock.calls[0][1]), 'http://mock.test');
   expect(request.searchParams.get('url')).toBe(GITHUB_LATENCY_URL);
@@ -79,7 +80,7 @@ it.each(['group', 'profile'])('托盘%s变化后丢弃旧测速回包，新目�
   await clickTest(); expect(testButton().disabled).toBe(true);
   snapshot = { ...snapshot, ...(change === 'group' ? { group: '开发' } : { activeProfile: 'profile-2' }),
     nodes: snapshot.nodes.map(node => ({ ...node, delay: null })) };
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(testButton().disabled).toBe(false);
   await clickTest(); expect(nodeRow().textContent).toContain('82 ms');
   await act(async () => old.resolve({ delay: 999 }));
@@ -112,7 +113,7 @@ it('托盘逐节点测速最多三个并发，旧批次失效后不再派发剩�
   await clickTest();
   expect(pending).toHaveLength(3);
   snapshot = { ...snapshot, activeProfile: 'profile-2' };
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   await clickTest();
   expect(pending).toHaveLength(3);
   await act(async () => { for (const request of pending.slice(0, 3)) request.resolve({ delay: 21 }); });
@@ -146,15 +147,17 @@ it.each(['blur', 'hidden', 'close'])('托盘%s后旧请求不再读取GitHub详�
     }
   });
   await act(async () => { for (const request of pending.slice(0, 3)) request.resolve({ delay: 82 }); });
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(api.mihomo).toHaveBeenCalledTimes(3);
   expect(vi.mocked(api.mihomo).mock.calls.every(([, path]) => path.includes('/delay?'))).toBe(true);
 });
 
-it('同订阅分组重新聚焦清除旧测速缓存且不自动测速', async () => {
+it('同订阅分组重新聚焦保留已完成测速和节点 DOM，立即刷新且不自动测速', async () => {
   snapshot = { ...snapshot, nodes: snapshot.nodes.map(node => ({ ...node, delay: null })) };
   await act(async () => root.render(createElement(TrayPanel)));
   await clickTest(); expect(nodeRow().textContent).toContain('82 ms');
+  const cachedRow = nodeRow();
+  const reads = vi.mocked(api.traySnapshot).mock.calls.length;
   await act(async () => {
     vi.mocked(document.hasFocus).mockReturnValue(false);
     window.dispatchEvent(new Event('blur'));
@@ -162,11 +165,62 @@ it('同订阅分组重新聚焦清除旧测速缓存且不自动测速', async (
   await act(async () => {
     vi.mocked(document.hasFocus).mockReturnValue(true);
     window.dispatchEvent(new Event('focus'));
-    await vi.advanceTimersByTimeAsync(900);
   });
-  expect(nodeRow().textContent).not.toContain('82 ms');
-  expect(nodeRow().textContent).toContain('未测');
+  expect(nodeRow()).toBe(cachedRow);
+  expect(nodeRow().textContent).toContain('82 ms');
+  expect(api.traySnapshot).toHaveBeenCalledTimes(reads + 1);
   expect(api.mihomo).toHaveBeenCalledTimes(2);
+});
+
+it('重复开合保持请求和计时器有界，隐藏一分钟不轮询，卸载清理所有计时器', async () => {
+  await act(async () => root.render(createElement(TrayPanel)));
+  for (let index = 0; index < 20; index++) {
+    await act(async () => {
+      vi.mocked(document.hasFocus).mockReturnValue(false);
+      window.dispatchEvent(new Event('blur'));
+    });
+    const reads = vi.mocked(api.traySnapshot).mock.calls.length;
+    const rates = vi.mocked(api.trafficRates).mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(api.traySnapshot).toHaveBeenCalledTimes(reads);
+    expect(api.trafficRates).toHaveBeenCalledTimes(rates);
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      vi.mocked(document.hasFocus).mockReturnValue(true);
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(api.traySnapshot).toHaveBeenCalledTimes(reads + 1);
+    expect(vi.getTimerCount()).toBe(2);
+  }
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="系统代理"]')!.click());
+  await act(async () => root.unmount());
+  expect(vi.getTimerCount()).toBe(0);
+  root = createRoot(host);
+});
+
+it('重开时只读展示缓存，慢快照串行完成后才恢复操作', async () => {
+  await act(async () => root.render(createElement(TrayPanel)));
+  const old = deferred<TraySnapshot>();
+  vi.mocked(api.traySnapshot).mockReturnValueOnce(old.promise);
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
+  const reads = vi.mocked(api.traySnapshot).mock.calls.length;
+  await act(async () => {
+    vi.mocked(document.hasFocus).mockReturnValue(false); window.dispatchEvent(new Event('blur'));
+    vi.mocked(document.hasFocus).mockReturnValue(true); window.dispatchEvent(new Event('focus'));
+  });
+  expect(host.textContent).toContain('节点 B');
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="系统代理"]')!.disabled).toBe(true);
+  expect(api.traySnapshot).toHaveBeenCalledTimes(reads);
+  await act(async () => old.resolve({ ...snapshot, activeProfile: 'obsolete' }));
+  expect(api.traySnapshot).toHaveBeenCalledTimes(reads + 1);
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="系统代理"]')!.disabled).toBe(false);
+});
+
+it('实时网速单独刷新，完整快照每三秒读取一次', async () => {
+  await act(async () => root.render(createElement(TrayPanel)));
+  await act(async () => vi.advanceTimersByTimeAsync(9000));
+  expect(api.traySnapshot).toHaveBeenCalledTimes(4);
+  expect(api.trafficRates).toHaveBeenCalledTimes(11);
 });
 
 it('隐藏前的慢快照不能在重新聚焦后恢复旧节点延迟', async () => {
@@ -179,16 +233,17 @@ it('隐藏前的慢快照不能在重新聚焦后恢复旧节点延迟', async (
     window.dispatchEvent(new Event('blur'));
     vi.mocked(document.hasFocus).mockReturnValue(true);
     window.dispatchEvent(new Event('focus'));
+    snapshot = { ...snapshot, nodes: snapshot.nodes.map(node => ({ ...node, delay: null })) };
     old.resolve(oldSnapshot);
   });
   expect(host.textContent).not.toContain('42 ms');
   snapshot = { ...snapshot, nodes: snapshot.nodes.map(node => ({ ...node, delay: null })) };
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(nodeRow().textContent).toContain('未测');
   expect(api.mihomo).not.toHaveBeenCalled();
 });
 
-it('托盘显示实际端口和 TUN 接口，900ms 新快照不重复读配置且不自动测速', async () => {
+it('托盘显示实际端口和 TUN 接口，3 秒 新快照不重复读配置且不自动测速', async () => {
   snapshot = { ...snapshot, tun: true };
   vi.mocked(api.mihomo).mockResolvedValue({ 'mixed-port': 7890, tun: { enable: true, device: 'utun7', stack: 'mixed' } });
   vi.mocked(api.traySnapshot).mockImplementation(async () => ({ ...snapshot }));
@@ -204,15 +259,15 @@ it('托盘显示实际端口和 TUN 接口，900ms 新快照不重复读配置�
 it('托盘分组/节点快照不使生效参数失效，订阅或控制端变化会重新确认', async () => {
   await act(async () => root.render(createElement(TrayPanel)));
   snapshot = { ...snapshot, group: '开发', node: '节点 B' };
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(api.getSystemProxy).toHaveBeenCalledTimes(1);
   vi.mocked(api.getSystemProxy).mockResolvedValue({ enabled: true, host: '127.0.0.1', port: 28901 });
   snapshot = { ...snapshot, activeProfile: 'profile-2' };
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(host.textContent).toContain('端口 28901');
   expect(api.getSystemProxy).toHaveBeenCalledTimes(2);
   snapshot = { ...snapshot, controllerPort: 9091 };
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(api.getSystemProxy).toHaveBeenCalledTimes(3);
 });
 
@@ -243,7 +298,7 @@ it('托盘隐藏后迟到的端口不能写回，重新显示后独立确认', a
   await act(async () => {
     vi.mocked(document.hasFocus).mockReturnValue(true);
     window.dispatchEvent(new Event('focus'));
-    await vi.advanceTimersByTimeAsync(900);
+    await vi.advanceTimersByTimeAsync(3000);
   });
   expect(host.textContent).toContain('端口 17890');
   expect(api.getSystemProxy).toHaveBeenCalledTimes(2);
@@ -261,7 +316,7 @@ it('同订阅配置重载事件使旧端口失效，沿已有快照循环确认�
   vi.mocked(api.getSystemProxy).mockResolvedValue({ enabled: true, host: '127.0.0.1', port: 27890 });
   await act(async () => receive({ revision: 'test:3', transitioning: false }));
   expect(host.textContent).not.toContain('端口 17890');
-  await act(async () => vi.advanceTimersByTimeAsync(900));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(host.textContent).toContain('端口 27890');
   await act(async () => vi.advanceTimersByTimeAsync(2700));
   expect(api.getSystemProxy).toHaveBeenCalledTimes(reads + 1);

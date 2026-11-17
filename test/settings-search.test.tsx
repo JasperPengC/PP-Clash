@@ -2,6 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { SettingsPage } from '../src/pages/Settings';
 import { DEFAULT_SETTINGS, useApp } from '../src/store/app';
 
@@ -18,6 +19,7 @@ beforeEach(async () => {
     activeId: null, updateSettings: update, checkingUpdate: false, updateInfo: null });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(createElement(SettingsPage)));
+  await click('下载');
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 async function enter(label: string, value: string) {
@@ -32,6 +34,57 @@ async function click(text: string) {
   expect(button).toBeTruthy(); await act(async () => button.click());
 }
 const proxyChoice = () => host.querySelector<HTMLButtonElement>('[aria-label="GitHub 下载代理"]')!;
+it('默认只打开外观分类，主题拥有完整区域；搜索跨分类且清空后回到原分类', async () => {
+  await act(async () => root.render(null));
+  await act(async () => root.render(createElement(SettingsPage)));
+  expect([...host.querySelectorAll('.settings-section')].map(section => section.getAttribute('aria-label'))).toEqual(['外观']);
+  expect(host.querySelector('.settings-category[aria-pressed="true"]')?.textContent).toBe('外观');
+  expect(host.querySelectorAll('.settings-theme-option')).toHaveLength(3);
+  expect([...host.querySelectorAll('.settings-category')].some(button => button.textContent === '全部')).toBe(false);
+  await enter('搜索设置', 'backup');
+  expect(host.querySelector('.settings-section')?.getAttribute('aria-label')).toBe('备份与恢复');
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="清空设置搜索"]')!.click());
+  expect(host.querySelector('.settings-section')?.getAttribute('aria-label')).toBe('外观');
+  expect(update).not.toHaveBeenCalled();
+});
+it('设置工作区使用页面完整内容宽度，不单独居中限宽', () => {
+  const style = document.createElement('style');
+  style.textContent = readFileSync('src/styles/settings.css', 'utf8');
+  document.head.append(style);
+  try {
+    const workspace = host.querySelector<HTMLElement>('.settings-workspace')!;
+    expect(getComputedStyle(workspace).width).toBe('100%');
+    expect(getComputedStyle(workspace).maxWidth).toBe('none');
+    expect(getComputedStyle(workspace).marginInline).toBe('0');
+  } finally { style.remove(); }
+});
+it('设置区内容容器限定视口高度并独立滚动', () => {
+  const style = document.createElement('style');
+  style.textContent = readFileSync('src/styles/settings.css', 'utf8');
+  const desktop = document.createElement('style');
+  desktop.textContent = readFileSync('src/styles/theme.css', 'utf8');
+  document.head.append(style);
+  document.head.append(desktop);
+  try {
+    const page = document.createElement('div');
+    page.className = 'page-anim';
+    host.append(page);
+    const scroll = document.createElement('div');
+    scroll.className = 'page-scroll';
+    page.append(scroll);
+    expect(getComputedStyle(page).minHeight).toBe('0');
+    expect(getComputedStyle(scroll).overflowY).toBe('auto');
+    expect(getComputedStyle(scroll).flex).toContain('1');
+  } finally { style.remove(); desktop.remove(); }
+});
+it('分类导航只显示当前分类，且不提供应用自带的固定出口开关', async () => {
+  const category = [...host.querySelectorAll<HTMLButtonElement>('.settings-category')]
+    .find(button => button.textContent?.trim() === '诊断与日志')!;
+  await act(async () => category.click());
+  expect([...host.querySelectorAll('.settings-section')].map(section => section.getAttribute('aria-label')))
+    .toEqual(['诊断与日志']);
+  expect(host.querySelector('[aria-label="GitHub 固定出口"]')).toBeNull();
+});
 async function chooseProxy(text: string) {
   await act(async () => proxyChoice().click());
   const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(button => button.textContent === text)!;
@@ -42,15 +95,17 @@ async function startWithProxy(value: string) {
   await act(async () => root.render(null));
   useApp.setState(state => ({ settings: { ...state.settings, githubProxy: value } }));
   await act(async () => root.render(createElement(SettingsPage)));
+  await click('下载');
 }
-it('字号同义词只显示文字大小，清空后恢复全部分类且不改变设置', async () => {
+it('字号同义词只显示文字大小，清空后回到原分类且不改变设置', async () => {
   await enter('搜索设置', '字号');
   expect(host.querySelectorAll('.settings-section')).toHaveLength(1);
   expect(host.querySelector('.settings-section')?.getAttribute('aria-label')).toBe('外观');
   expect(host.querySelector('[aria-label="文字大小"]')).not.toBeNull();
   expect(host.querySelector('[aria-label="开机自启"]')).toBeNull();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="清空设置搜索"]')!.click());
-  expect(host.querySelectorAll('.settings-section')).toHaveLength(7);
+  expect(host.querySelectorAll('.settings-section')).toHaveLength(1);
+  expect(host.querySelector('.settings-section')?.getAttribute('aria-label')).toBe('下载');
   expect(update).not.toHaveBeenCalled();
 });
 it('分类搜索跨分类找到备份，未知词提供清除入口', async () => {
@@ -61,7 +116,8 @@ it('分类搜索跨分类找到备份，未知词提供清除入口', async () =
   await enter('搜索设置', '不会存在的设置');
   expect(host.querySelector('.settings-section')).toBeNull();
   await click('清除搜索');
-  expect(host.querySelectorAll('.settings-section')).toHaveLength(7);
+  expect(host.querySelectorAll('.settings-section')).toHaveLength(1);
+  expect(host.querySelector('.settings-section')?.getAttribute('aria-label')).toBe('下载');
 });
 it('切分类和搜索保留自定义前缀草稿，只在明确保存时提交', async () => {
   await enter('自定义 GitHub 下载代理', 'https://draft.example/');
@@ -148,6 +204,7 @@ it('设置搜索框是有名称的真实输入，清空后焦点回到搜索框'
   await enter('搜索设置', '字号');
   expect(host.querySelectorAll('.settings-section')).toHaveLength(1);
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="清空设置搜索"]')!.click());
-  expect(host.querySelectorAll('.settings-section')).toHaveLength(7);
+  expect(host.querySelectorAll('.settings-section')).toHaveLength(1);
+  expect(host.querySelector('.settings-section')?.getAttribute('aria-label')).toBe('下载');
   expect(document.activeElement).toBe(input);
 });

@@ -2,8 +2,8 @@
 /**
  * 从矢量母版 icon.svg 生成全套 macOS 图标并合成 .icns。
  *
- * 相比 make-icon-raster.py 的位图缩小：SVG 在每个尺寸直接栅格化更锐利，
- * 且母版自带 Apple 规范的透明边距（824/1024），缩放后边距比例不变、保持 RGBA。
+ * SVG 在每个尺寸直接栅格化，母版自带 Apple 规范的透明边距（824/1024），
+ * 缩放后边距比例不变，保持 RGBA。
  */
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';

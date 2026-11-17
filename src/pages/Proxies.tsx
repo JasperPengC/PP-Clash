@@ -1,20 +1,21 @@
-import { AnimatedDetails } from '../components/AnimatedDetails';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '../components/Dialog';
 import { NodeName } from '../components/NodeName';
-import { EmptyState, ReadError, navigate, Spinner, Toggle } from '../components/ui';
+import { EmptyState, ReadError, PageLink, Segmented, Spinner, Toggle } from '../components/ui';
 import {
   IconAlert,
   IconImport,
   IconFlag,
   IconNodes,
+  IconLocate,
+  IconBolt,
   IconRefresh,
   IconSearch,
   IconX,
 } from '../components/icons';
-import { isGroupNode, useApp, type ProxyNode } from '../store/app';
+import { isGroupNode, useApp } from '../store/app';
+import type { ProxyNode } from '../domain/app';
 import { buildProxyDomain, proxyGroupKind, resolveProxyRoute, type ProxyRoute } from '../core/proxy-domain';
-import { STABLE_EGRESS_GROUP } from '../core/generator';
 import { GITHUB_LATENCY_URL, groupLatencyTarget, latencyKey, readGroupLatency } from '../core/latency';
 import { createLatencyBatchRunner, type LatencyBatchHandle, type LatencyBatchProgress } from '../core/latency-batch';
 
@@ -30,15 +31,9 @@ const WINDOW_SIZE = 60;
 // 页面卸载只取消批次；在途请求的槽位由模块调度器继续持有。
 const batchRunner = createLatencyBatchRunner();
 
-export function visibleGroupTabs<T extends { name: string }>(groups: T[], activeGroup: string | undefined, recentGroups: string[], limit: number): T[] {
-  const byName = new Map(groups.map(group => [group.name, group]));
-  const names = [...new Set([activeGroup, ...recentGroups, ...groups.map(group => group.name)])];
-  return names.flatMap(name => name && byName.has(name) ? [byName.get(name)!] : []).slice(0, Math.max(1, limit));
-}
-
-export function orderedGroupNodes<T extends { name: string; delay?: number | null }>(nodes: T[], selectedName: string, sort: 'default' | 'delay' | 'name', availability: 'all' | 'available'): T[] {
+export function orderedGroupNodes<T extends { name: string; delay?: number | null }>(nodes: T[], _selectedName: string, sort: 'default' | 'delay' | 'name', availability: 'all' | 'available'): T[] {
   return nodes.filter(node => availability === 'all' || node.delay === undefined || (node.delay !== null && node.delay > 0)).sort((a, b) => {
-    if (a.name === selectedName || b.name === selectedName) return Number(b.name === selectedName) - Number(a.name === selectedName);
+    if (sort === 'default') return 0;
     if (sort === 'name') return a.name.localeCompare(b.name);
     const da = a.delay != null && a.delay > 0 ? a.delay : Infinity;
     const db = b.delay != null && b.delay > 0 ? b.delay : Infinity;
@@ -47,7 +42,7 @@ export function orderedGroupNodes<T extends { name: string; delay?: number | nul
 }
 
 /** 两列共用行高；已渲染行按实际高度校正，长名称和路径详情不裁切。 */
-function VirtualNodeList({ nodes, group, renderNode }: { nodes: ProxyNode[]; group: string; renderNode: (node: ProxyNode, index: number) => ReactNode }) {
+function VirtualNodeList({ nodes, group, focusName, renderNode }: { nodes: ProxyNode[]; group: string; focusName?: string; renderNode: (node: ProxyNode, index: number) => ReactNode }) {
   const viewport = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
   const [measurement, setMeasurement] = useState(0);
@@ -58,15 +53,25 @@ function VirtualNodeList({ nodes, group, renderNode }: { nodes: ProxyNode[]; gro
   const rowKeys = Array.from({ length: rowCount }, (_, row) => JSON.stringify(nodes.slice(row * columns, (row + 1) * columns).map(node => node.name)));
   const offsets = [0];
   for (const key of rowKeys) offsets.push(offsets.at(-1)! + (heights.current.get(key) ?? 78));
-  const windowRows = WINDOW_SIZE / columns;
+  const windowRows = Math.max(1, Math.floor(WINDOW_SIZE / columns));
   let first = 0;
   while (first + 1 < rowCount && offsets[first + 1] <= scrollTop) first++;
   const start = Math.max(0, Math.min(first - 3, rowCount - windowRows));
   const end = Math.min(rowCount, start + windowRows);
 
   useLayoutEffect(() => {
+    if (!focusName) return;
+    const index = nodes.findIndex(node => node.name === focusName);
+    if (index < 0) return;
+    const top = offsets[Math.floor(index / columns)];
+    viewport.current!.scrollTop = top;
+    setScrollTop(top);
+    setFocusIndex(index);
+  }, [focusName, columns]);
+
+  useLayoutEffect(() => {
     const element = viewport.current!;
-    const resize = () => { if (element.clientWidth) setColumns(element.clientWidth < 660 ? 1 : 2); };
+    const resize = () => { if (element.clientWidth) setColumns(Math.max(1, Math.floor((element.clientWidth + 8) / 368))); };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(element);
@@ -143,8 +148,6 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
   const activeId = useApp((s) => s.activeId);
   const selectNode = useApp((s) => s.selectNode);
   const fixedNodes = useApp((s) => s.fixedNodes);
-  const egressGuard = useApp((s) => s.settings.egressGuard);
-  const egressGuardNode = useApp((s) => s.settings.egressGuardNode);
   const toggleFixedNode = useApp((s) => s.toggleFixedNode);
   const testDelay = useApp((s) => s.testDelay);
   const publishDelayBatch = useApp((s) => s.publishDelayBatch);
@@ -178,7 +181,6 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
   const [sortBy, setSortBy] = useState<'default' | 'delay' | 'name'>('default');
   const [hideUnavailable, setHideUnavailable] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<{ scope: string; name: string } | null>(null);
-  const [recentGroups, setRecentGroups] = useState<{ scope: string; names: string[] } | null>(null);
   const [allGroupsOpen, setAllGroupsOpen] = useState(false);
   const [groupQuery, setGroupQuery] = useState('');
   const [inspectedNode, setInspectedNode] = useState<{ scope: string; name: string } | null>(null);
@@ -293,7 +295,8 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
           testingLock.current = false;
           setTesting(false);
           setTestingNodes(new Set());
-          if (update.progress.status === 'completed') notify('info', '测速完成');
+          if (update.progress.status === 'completed') notify('success', `测速完成 · ${update.progress.completed} / ${update.progress.total}`);
+          else if (update.progress.status === 'cancelled') notify('info', `测速已取消 · ${update.progress.completed} / ${update.progress.total}`);
         }
       },
     });
@@ -314,9 +317,29 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
   const currentGroupName = selectedGroup?.scope === domain.identity && displayGroups.some(group => group.name === selectedGroup.name)
     ? selectedGroup.name : displayGroups[0]?.name;
   const filteredGroups = displayGroups.filter(group => group.name === currentGroupName).map(g => ({ g, nodes: visibleNodes(g.name, g.nodes) }));
-  const tabs = visibleGroupTabs(displayGroups, currentGroupName, recentGroups?.scope === domain.identity ? recentGroups.names : [], 4);
+  const groupRail = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const rail = groupRail.current;
+    const selected = rail?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!rail || !selected) return;
+    const bounds = rail.getBoundingClientRect();
+    const item = selected.getBoundingClientRect();
+    if (item.left < bounds.left) rail.scrollLeft += item.left - bounds.left;
+    else if (item.right > bounds.right) rail.scrollLeft += item.right - bounds.right;
+  }, [currentGroupName, domain.identity]);
+  useEffect(() => {
+    const rail = groupRail.current;
+    if (!rail) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.shiftKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY) || rail.scrollWidth <= rail.clientWidth) return;
+      const before = rail.scrollLeft;
+      rail.scrollLeft += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rail.clientWidth : 1);
+      if (rail.scrollLeft !== before) event.preventDefault();
+    };
+    rail.addEventListener('wheel', onWheel, { passive: false });
+    return () => rail.removeEventListener('wheel', onWheel);
+  }, [displayGroups.length]);
   const inspectGroup = (name: string) => {
-    setRecentGroups(previous => ({ scope: domain.identity, names: [...new Set([name, currentGroupName ?? '', ...(previous?.scope === domain.identity ? previous.names : [])])].filter(Boolean).slice(0, 8) }));
     setSelectedGroup({ scope: domain.identity, name });
     setInspectedNode(null);
     changeQuery('');
@@ -344,9 +367,7 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
         title: '尚未导入订阅',
         desc: '支持订阅链接和本地配置文件',
         action: (
-          <button type="button" className="btn btn-primary" onClick={() => navigate('profiles')}>
-            导入订阅
-          </button>
+          <PageLink page="profiles" label="导入订阅" icon={<IconImport size={16} />} />
         ),
       };
     }
@@ -356,9 +377,7 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
         title: '内核未运行',
         desc: '未接管流量。',
         action: (
-          <button type="button" className="btn btn-primary" onClick={() => navigate('overview')}>
-            去概览开启
-          </button>
+          <PageLink page="overview" label="去概览开启" />
         ),
       };
     }
@@ -374,38 +393,15 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
     };
   })();
 
-  return (
-    <>
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">节点</h1>
-          <div className="page-sub">{subTitle}</div>
-        </div>
-        <div className="page-actions">
-          <button
-            type="button"
-            className="icon-btn"
-            title="刷新节点"
-            aria-label="刷新节点"
-            disabled={!connected || refreshing}
-            onClick={() => void refresh()}
-          >
-            <IconRefresh size={15} />
-          </button>
-        </div>
-      </header>
-
-      <div className="page-scroll proxy-page">
-        <div className="page-inner">
-          <section className={displayGroups.length > 0 ? 'proxy-browser' : 'proxy-browser-empty'} aria-label="节点浏览">
-          {displayGroups.length > 0 && <div className="proxy-browser-chrome">
+  const showFilterSummary = query.trim() || hideUnavailable || usingPreview || waitingForSources;
+  const browserChrome = (actions?: ReactNode) => <div className="proxy-browser-chrome">
           <div className="proxy-toolbar" aria-label="节点工具条">
           <div className="node-search">
             <IconSearch size={12} />
             <input
               value={query}
               onChange={(e) => changeQuery(e.target.value)}
-              placeholder="搜索当前分组的节点名称"
+              placeholder="搜索节点"
               aria-label="搜索节点"
               spellCheck={false}
             />
@@ -428,40 +424,77 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
               label="仅显示可用节点"
             />
           </div>
-          <div className="seg" role="group" aria-label="排序方式">
-            {(
-              [
-                ['default', '默认'],
-                ['delay', '延迟'],
-                ['name', '名称'],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={`seg-btn${sortBy === value ? ' active' : ''}`}
-                aria-pressed={sortBy === value}
-                onClick={() => { setSortBy(value); setInspectedNode(null); }}
-              >
-                {label}
-              </button>
-            ))}
+          <Segmented ariaLabel="排序方式" value={sortBy} onChange={value => { setSortBy(value); setInspectedNode(null); }}
+            options={[{ value: 'default', label: '默认' }, { value: 'delay', label: '延迟' }, { value: 'name', label: '名称' }]} />
+          {actions}
           </div>
-            <button type="button" className="btn proxy-test-filtered"
-              disabled={!active || !connected || usingPreview || runtimeConfigTransition || testing || !filteredGroups.some(item => item.nodes.length)}
-              onClick={() => runTest(filteredGroups.flatMap(({ g, nodes }) => nodes.map(node => ({ group: g.name, node: node.name }))))}>
-              测速筛选结果
-            </button>
-          </div>
-          <div className="proxy-filter-summary">
-            <span>当前分组 · {waitingForSources && filteredGroups.every(item=>item.nodes.length===0) ? '节点源待加载' : `${filteredGroups.reduce((count, item) => count + item.nodes.length, 0)} 个${query || hideUnavailable ? '匹配' : ''}成员项`}</span>
+          {showFilterSummary && <div className="proxy-filter-summary" role="status">
+            {(query.trim() || hideUnavailable) && <span>{filteredGroups.find(item => item.g.name === currentGroupName)?.nodes.length ?? 0} 个匹配节点</span>}
+            {waitingForSources && filteredGroups.every(item=>item.nodes.length===0) && <span>节点源待加载</span>}
             {usingPreview && <span>订阅预览 · 连接后可切换和测速</span>}
-          </div>
           </div>}
-          {progress && <div className="proxy-test-status" role="status" aria-live="polite">
-            <span>{progress.status === 'running' ? '测速中' : progress.status === 'cancelled' ? '已取消' : '测速完成'} · {progress.completed} / {progress.total}</span>
-            {testing && <button type="button" className="btn btn-sm" aria-label="取消测速" onClick={() => batch.current?.cancel()}>取消</button>}
-          </div>}
+          </div>;
+
+  return (
+    <>
+      {active && testing && progress?.status === 'running' && <div className="proxy-measure-toast" role="status" aria-live="polite">
+        <Spinner small /><span>正在测速 <b>{progress.completed} / {progress.total}</b></span>
+        <button type="button" className="btn btn-ghost btn-sm" aria-label="取消测速" onClick={() => batch.current?.cancel()}>取消</button>
+      </div>}
+      <header className="page-head">
+        <div className="page-heading">
+          <h1 className="page-title">策略节点</h1>
+          <div className="page-sub">{subTitle}</div>
+        </div>
+        <div className="page-actions">
+          <button
+            type="button"
+            className="icon-btn"
+            title="刷新节点"
+            aria-label="刷新节点"
+            disabled={!connected || refreshing}
+            onClick={() => void refresh()}
+          >
+            <IconRefresh size={15} />
+          </button>
+        </div>
+      </header>
+
+      <div className="page-scroll proxy-page">
+        <div className="page-inner">
+          <section className={displayGroups.length > 0 ? 'proxy-browser' : 'proxy-browser-empty'} aria-label="节点浏览">
+          {displayGroups.length > 0 && <>
+                <div className="proxy-group-pane">
+                  <div className="proxy-group-rail seg">
+                    <nav ref={groupRail} className="proxy-group-sidebar" aria-label="策略分组"
+                      onKeyDown={event => {
+                        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                        if (!keys.includes(event.key)) return;
+                        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+                        const index = buttons.indexOf(event.target as HTMLButtonElement);
+                        if (index < 0) return;
+                        event.preventDefault();
+                        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+                          : Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)));
+                        buttons[next]?.click(); buttons[next]?.focus({ preventScroll: true });
+                      }}>
+                      {displayGroups.map(g => <button type="button" key={g.name}
+                        className={`proxy-group-nav seg-btn${g.name === currentGroupName ? ' active' : ''}`}
+                        tabIndex={g.name === currentGroupName ? 0 : -1}
+                        aria-label={`查看分组 ${g.name}`} aria-current={g.name === currentGroupName ? 'true' : undefined}
+                        title={`${g.name} · ${proxyGroupKind(g.type)} · ${g.nodes.length} 个成员`} onClick={() => inspectGroup(g.name)}>
+                        <span className="proxy-group-nav-name">{g.name}</span>
+                        <span className="proxy-group-nav-meta">{g.nodes.length}</span>
+                      </button>)}
+                    </nav>
+                  </div>
+                  <button type="button" className="btn proxy-all-groups" aria-label={`全部分组 ${displayGroups.length}`}
+                    aria-haspopup="dialog" aria-expanded={allGroupsOpen} onClick={() => { setGroupQuery(''); setAllGroupsOpen(true); }}>
+                    全部分组 <span>{displayGroups.length}</span>
+                  </button>
+                </div>
+          </>}
+          {filteredGroups.every(item => item.g.name !== currentGroupName) && browserChrome()}
           {runtimeConfigTransition && <p className="proxy-scope-note" role="status">配置正在切换，当前运行链路尚未确认；切换完成后恢复选择和测速。</p>}
           {refreshError && <ReadError message={refreshError} busy={refreshing} onRetry={() => void refresh()} />}
           {displayGroups.length === 0 ? (
@@ -474,21 +507,6 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                 <span>没有匹配的节点</span>
                 <button type="button" className="btn btn-sm" onClick={() => changeQuery('')}>清空搜索</button>
               </div>}
-                <div className="proxy-group-pane">
-                <nav className="proxy-group-sidebar" aria-label="策略分组">
-                  {tabs.map(g => <button type="button" key={g.name}
-                    className={`proxy-group-nav${g.name === currentGroupName ? ' active' : ''}`}
-                    aria-label={`查看分组 ${g.name}`} aria-current={g.name === currentGroupName ? 'true' : undefined}
-                    title={g.name} onClick={() => inspectGroup(g.name)}>
-                    <span className="proxy-group-nav-name">{g.name}</span>
-                    <span className="proxy-group-nav-meta">{g.name === currentGroupName ? '当前分组' : proxyGroupKind(g.type)}</span>
-                  </button>)}
-                  <button type="button" className="btn proxy-all-groups" aria-label={`全部分组 ${displayGroups.length}`}
-                    aria-haspopup="dialog" aria-expanded={allGroupsOpen} onClick={() => { setGroupQuery(''); setAllGroupsOpen(true); }}>
-                    全部分组 <span>{displayGroups.length}</span>
-                  </button>
-                </nav>
-                </div>
               <div className="proxy-workspace">
               <div className="proxy-groups">
                 {filteredGroups.filter(item => item.g.name === currentGroupName).map(({ g, nodes }) => {
@@ -501,43 +519,32 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                   return (
                     <section key={g.name} className="proxy-group expanded" aria-label={g.name}>
                       <div className="proxy-group-head">
-                        <div className="proxy-group-heading">
-                          <div className="proxy-group-title-line">
-                            <h2 className="proxy-group-name" title={g.name}>{g.name}</h2>
-                            <span className="proxy-group-kind">{proxyGroupKind(g.type)}</span>
-                            <span className="proxy-group-count">{!nodes.length && g.providers.some(provider=>['waiting','error'].includes(provider.state)) ? '成员待加载' : nodes.length === g.nodes.length ? `${g.nodes.length} 个成员` : `${nodes.length} / ${g.nodes.length}`}</span>
-                          </div>
-                          <div className="proxy-group-meta">
-                            <span>{g.synthetic ? '浏览分组 · 非配置中的策略' : usingPreview ? '订阅预览 · 尚未确认当前选择' : g.type === 'LoadBalance' ? '多出口 · 按连接分配' : g.type === 'Relay' ? '兼容输入 · 内核支持未验证' : g.type === 'Selector' ? '选择此组的使用节点' : '由内核管理选择'}</span>
-                          </div>
-                        </div>
-                        <div className="proxy-group-current-summary" aria-label="当前选择">
-                          <span>当前选择</span>
-                          <strong>{current ? <NodeName name={current} /> : g.synthetic ? '浏览全部节点' : g.type === 'LoadBalance' ? '多出口' : g.type === 'Relay' ? '原顺序 · 未验证' : g.providers.some(provider => provider.state === 'waiting') ? '等待节点源' : '尚未确认'}</strong>
-                        </div>
-                        <div className="proxy-group-actions">
+                        {browserChrome(<div className="proxy-group-actions">
                           <button
                             type="button"
-                            className="btn btn-sm"
+                            className="btn-icon proxy-group-action"
+                            aria-label={`${g.name} 测速`}
+                            title={target === GITHUB_LATENCY_URL ? '测试 GitHub 目标延迟' : '测试分组延迟'}
                             disabled={!active || !connected || usingPreview || runtimeConfigTransition || testing || nodes.length === 0}
                             onClick={(e) => {
                               e.stopPropagation();
                               testGroup(g.name, g.nodes);
                             }}
                           >
-                            {groupTesting && <Spinner small />}
-                            {groupTesting ? '测速中' : '测速'}
+                            {groupTesting ? <Spinner small /> : <IconBolt size={17} />}
                           </button>
-                          <button type="button" className="btn btn-sm"
+                          <button type="button" className="btn-icon proxy-group-action"
                             aria-label={`${g.name} 定位当前节点`}
+                            title="定位当前节点"
                             disabled={usingPreview || !current || !g.nodes.some(node => node.name === current)}
                             onClick={event => { event.stopPropagation(); locateCurrent(g); }}>
-                            定位当前
+                            <IconLocate size={16} />
                           </button>
-                        </div>
+                        </div>)}
                       </div>
 
-                      {!g.synthetic && <AnimatedDetails className="proxy-route-disclosure"><summary>查看选择关系与转发路径</summary><RouteDetails route={route} /></AnimatedDetails>}
+                      {g.type === 'LoadBalance' && <p className="proxy-scope-note">多出口 · 按连接自动分配</p>}
+                      {g.type === 'Relay' && <p className="proxy-scope-note">按配置顺序转发 · 实际链路未确认</p>}
                       {g.providers.length > 0 && <div className="proxy-provider-status" aria-label="节点来源">
                         <span>订阅中的节点源 · 成员来源以运行快照为准</span>
                         {g.providers.map(provider => <div key={provider.name}>
@@ -549,10 +556,9 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                       </div>}
                       {g.membershipUncertain && <p className="proxy-scope-note">预览未执行内核的动态筛选条件，实际成员以内核为准。</p>}
                       {chainSelected && <p className="proxy-scope-note">固定仅作用于此组中的落地节点；前置策略仍可变化，实际转发链路未确认。</p>}
-                      <div className="proxy-member-caption"><span>成员 / 协议 / 来源</span><span title={target}>{target === GITHUB_LATENCY_URL ? 'GitHub 目标延迟' : '节点延迟'}</span></div>
                         {nodes.length === 0 && <div className="proxy-empty">{g.providers.some(provider => provider.state === 'waiting') ? '等待节点源加载后显示成员' : '没有符合筛选条件的节点'}</div>}
                         <VirtualNodeList key={JSON.stringify([domain.identity, g.name, query, sortBy, hideUnavailable, windowReset])}
-                          nodes={nodes} group={g.name} renderNode={(node, index) => {
+                          nodes={nodes} group={g.name} focusName={focusGroup === g.name ? current : undefined} renderNode={(node, index) => {
                             const key = latencyKey(g.name, target, node.name);
                             const ms = nodeLatency(g.name, node);
                             const selected = !usingPreview && current === node.name;
@@ -567,10 +573,6 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                               : g.type !== 'Selector' ? '此组由内核自动测速、故障转移或负载均衡，暂不支持固定使用'
                               : object?.dialerProxy ? '仅固定此组的落地节点；前置策略仍可变化，不能保证整条链路固定'
                               : '固定此组的节点选择；实际转发链路未确认，故障时按保守规则切换';
-                            const fixedEgress =
-                              egressGuard &&
-                              g.name === STABLE_EGRESS_GROUP &&
-                              egressGuardNode === node.name;
                             const busy = testingNodes.has(key);
                             return (
                               <div
@@ -588,27 +590,16 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                                   {pendingNode === `${g.name}|${node.name}` ? <Spinner small /> : <span />}
                                 </span>
                                 <span className="proxy-node-name">
-                                  <NodeName name={node.name} />
+                                  <span className="proxy-node-title"><NodeName name={node.name} />
+                                    {(selected || fixed) && <span className="node-states">
+                                      {selected && <span className="node-state current">当前</span>}
+                                      {fixed && <span className="node-state fixed">固定</span>}
+                                    </span>}
+                                  </span>
                                   <span className="proxy-node-meta">{nestedGroup ? `策略 · ${proxyGroupKind(node.type)}` : node.type || '未知引用'}{object?.providers.length ? ` · ${object.providers.join(' / ')}` : ''}{object?.dialerProxy ? ' · 含前置' : ''}{!canSelect ? ' · 只读' : ''}</span>
-                                  {(selected || fixed || fixedEgress) && <span className="node-states">
-                                    {selected && <span className="node-state current">当前</span>}
-                                    {(fixed || fixedEgress) && <span className="node-state fixed">固定</span>}
-                                  </span>}
                                 </span>
                                 </button>
-                                {g.name === STABLE_EGRESS_GROUP ? (
-                                  <span
-                                    className={`node-pin fixed${fixedEgress ? ' pinned' : ''}`}
-                                    title={
-                                      fixedEgress
-                                        ? '当前 GitHub 固定出口'
-                                        : '点击节点切换 GitHub 固定出口'
-                                    }
-                                  >
-                                    <IconFlag size={11} filled={fixedEgress} />
-                                  </span>
-                                ) : (
-                                  <button
+                                <button
                                     type="button"
                                     className={`node-pin${fixed ? ' pinned' : ''}`}
                                     aria-label={fixed ? `取消固定 ${node.name}` : `固定使用 ${node.name}`}
@@ -625,15 +616,14 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                                       filled={fixed}
                                     />
                                   </button>
-                                )}
                                 <button type="button" className="proxy-node-details-btn" aria-label={`查看路径 ${node.name}`}
-                                  aria-expanded={inspected} onClick={event => {event.stopPropagation(); setInspectedNode(inspected ? null : {scope:domain.identity,name:node.name});}}>路径</button>
+                                  aria-expanded={inspected} onClick={event => {event.stopPropagation(); setInspectedNode(inspected ? null : {scope:domain.identity,name:node.name});}} title="查看节点路径"><IconNodes size={13} /></button>
                                 {busy ? (
                                   <span className="node-delay">
                                     <Spinner small />
                                   </span>
                                 ) : (
-                                  <span className={delayBadge(ms)}>
+                                  <span className={delayBadge(ms)} title={target === GITHUB_LATENCY_URL ? 'GitHub 目标延迟' : '节点延迟'}>
                                     {ms === undefined ? '未测' : ms === null ? '失败' : `${ms} ms`}
                                   </span>
                                 )}

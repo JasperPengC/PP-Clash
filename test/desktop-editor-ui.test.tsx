@@ -10,6 +10,7 @@ import { ProfilesPage } from '../src/pages/Profiles';
 import { SecurityPage } from '../src/pages/Security';
 import { OverviewPage } from '../src/pages/Overview';
 import { DnsPage } from '../src/pages/Dns';
+import { EditorView } from '@codemirror/view';
 
 vi.mock('../src/core/api', async original => {
   const actual = await original<typeof import('../src/core/api')>();
@@ -26,7 +27,7 @@ it('覆写等待配置时断开，旧保存流程不能重新启动', async () =
   const restart = vi.fn().mockResolvedValue(true);
   useApp.setState({ kernelPhase: 'running', settings: { ...initial.settings, overrides: [{ id: 'rule', name: '测试覆写', enabled: true, mode: 'yaml', text: 'mode: rule' }] }, applyConfig: apply, restartKernel: restart });
   await render(OverridePage);
-  await input(host.querySelector('textarea')!, 'mode: global');
+  await editorInput('mode: global');
   await click(byText('保存并应用'));
   expect(apply).toHaveBeenCalledTimes(1);
   await act(async () => { await initial.disconnect(); });
@@ -49,18 +50,24 @@ const input = async (el: HTMLInputElement | HTMLTextAreaElement, value: string) 
   Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
   el.dispatchEvent(new Event('input', { bubbles: true }));
 });
+const editorInput = async (value: string) => act(async () => {
+  const view = EditorView.findFromDOM(host.querySelector('.cm-content')!);
+  if (!view) throw new Error('Override code editor is missing');
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+});
+const editorValue = () => EditorView.findFromDOM(host.querySelector('.cm-content')!)?.state.doc.toString();
 
 it('覆写草稿切换文件及页面保留，列表开关不会被旧编辑状态覆盖', async () => {
   const files = ['editor-a', 'editor-b'].map((id, i) => ({ id, name: `文件${i}`, enabled: true, mode: 'yaml' as const, text: 'mode: rule' }));
   const apply = vi.fn().mockResolvedValue(true);
   useApp.setState({ settings: { ...initial.settings, overrides: files }, applyConfig: apply });
   await render(OverridePage);
-  await input(host.querySelector('textarea')!, 'mode: global');
+  await editorInput('mode: global');
   await click(host.querySelectorAll('.override-file-select')[1]);
   await click(host.querySelectorAll('.override-file-select')[0]);
-  expect(host.querySelector('textarea')!.value).toBe('mode: global');
+  expect(editorValue()).toBe('mode: global');
   await act(async () => root.render(null)); await render(OverridePage);
-  expect(host.querySelector('textarea')!.value).toBe('mode: global');
+  expect(editorValue()).toBe('mode: global');
   await click(host.querySelector('.override-file [role=switch]')!);
   expect(host.querySelector('[aria-label="启用覆写"]')?.getAttribute('aria-checked')).toBe('false');
   await click(byText('保存并应用'));
@@ -71,19 +78,21 @@ it('覆写草稿切换文件及页面保留，列表开关不会被旧编辑状�
 it('覆写配置生成失败保留输入，不重启内核、不提示成功', async () => {
   const restart = vi.fn();
   useApp.setState({ kernelPhase: 'running', settings: { ...initial.settings, overrides: [{ id: 'editor-error', name: '错误测试', enabled: true, mode: 'yaml', text: 'mode: rule' }] }, applyConfig: vi.fn().mockResolvedValue(false), restartKernel: restart });
-  await render(OverridePage); await input(host.querySelector('textarea')!, 'mode: global');
+  await render(OverridePage); await editorInput('mode: global');
   await click(byText('保存并应用'));
   expect(restart).not.toHaveBeenCalled(); expect(notify).not.toHaveBeenCalledWith('success', expect.anything());
-  expect(host.textContent).toContain('配置生成失败'); expect(host.querySelector('textarea')!.value).toBe('mode: global');
+  expect(host.textContent).toContain('配置生成失败'); expect(editorValue()).toBe('mode: global');
 });
 
 it('订阅拉取失败保留 URL，不能把失败当导入成功', async () => {
   useApp.setState({ profiles: [], activeId: null });
   vi.mocked(api.fetchSubscription).mockRejectedValue(new Error('网络失败'));
   await render(ProfilesPage);
-  const url = host.querySelector('input')!;
+  await click(byText('添加订阅'));
+  const dialog = document.querySelector('[role="dialog"]')!;
+  const url = dialog.querySelector<HTMLInputElement>('[aria-label="订阅链接"]')!;
   await input(url, 'https://example.test/sub');
-  const button = [...host.querySelectorAll('button')].find(b => b.textContent?.includes('导入') && !b.textContent?.includes('文件'))!;
+  const button = [...dialog.querySelectorAll('button')].find(b => b.textContent?.trim() === '导入')!;
   await click(button);
   expect(url.value).toBe('https://example.test/sub'); expect(useApp.getState().profiles).toHaveLength(0);
 });
@@ -91,8 +100,9 @@ it('订阅拉取失败保留 URL，不能把失败当导入成功', async () => 
 it('新增非活动订阅保留连接及当前统计，导入锁覆盖完整请求', async () => {
   const oldStats = { proxies: 1 } as any;
   const restart = vi.fn(); const apply = vi.fn();
-  useApp.setState({ activeId: 'existing', stats: oldStats, kernelPhase: 'running', restartKernel: restart, applyConfig: apply });
-  vi.mocked(api.fetchSubscription).mockResolvedValue({ raw: 'proxies: []\nproxy-groups: []\nrules: []', headers: {} } as any);
+  useApp.setState({ activeId: 'test-active', stats: oldStats, kernelPhase: 'running', restartKernel: restart, applyConfig: apply });
+  vi.mocked(api.prepareConfig).mockResolvedValue('/isolated/candidate.yaml');
+  vi.mocked(api.fetchSubscription).mockResolvedValue({ raw: JSON.stringify({ proxies: [{ name: 'A', type: 'socks5', server: 'fixture.invalid', port: 1080 }] }), headers: {} } as any);
   expect(await useApp.getState().importProfile('https://example.test/sub')).toBe(true);
   expect(restart).not.toHaveBeenCalled(); expect(apply).not.toHaveBeenCalled(); expect(useApp.getState().stats).toBe(oldStats);
 });
@@ -168,11 +178,11 @@ it('连接失败提供明确重试入口，渲染本身不会启动内核', asyn
 it('覆写未保存状态是实时区域，撤销恢复已保存文本', async () => {
   useApp.setState({ settings: { ...initial.settings, overrides: [{ id: 'ov-dirty', name: '草稿检查', enabled: true, mode: 'yaml' as const, text: 'mode: rule' }] } });
   await render(OverridePage);
-  await input(host.querySelector('textarea')!, 'mode: global');
+  await editorInput('mode: global');
   const dirty = [...host.querySelectorAll('[role="status"]')].find(el => el.textContent?.includes('未保存'));
   expect(dirty).toBeTruthy();
   await click(byText('撤销修改'));
-  expect(host.querySelector('textarea')!.value).toBe('mode: rule');
+  expect(editorValue()).toBe('mode: rule');
   expect([...host.querySelectorAll('[role="status"]')].some(el => el.textContent?.includes('未保存'))).toBe(false);
 });
 

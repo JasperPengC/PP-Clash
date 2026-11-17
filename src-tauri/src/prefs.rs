@@ -20,6 +20,7 @@ pub struct AppFlags {
     pub controller_secret: Mutex<String>,
     /// 出站模式：rule / global / direct。
     pub mode: Mutex<String>,
+    pub primary_group: Mutex<String>,
     /// 菜单栏是否显示实时网速。
     pub show_tray_speed: Mutex<bool>,
     /// 关闭窗口后是否隐藏 Dock 图标（菜单栏保持常驻）。
@@ -35,6 +36,7 @@ impl Default for AppFlags {
             mixed_port: Mutex::new(7890),
             controller_secret: Mutex::new(String::new()),
             mode: Mutex::new("rule".to_string()),
+            primary_group: Mutex::new(String::new()),
             show_tray_speed: Mutex::new(true),
             hide_dock_on_close: Mutex::new(true),
         }

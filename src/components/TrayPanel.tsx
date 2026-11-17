@@ -1,24 +1,26 @@
 import { subscribeRuntimeDisplayStatus, type RuntimeDisplayStatus } from '../core/runtime-display-events';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { BrandCat } from './BrandCat';
 import { NodeName } from './NodeName';
 import { api, isTauri, previewMode, setMihomoBase, setMihomoSecret, type TrayActionValue, type TrayGroup, type TraySnapshot } from '../core/api';
 import { formatSpeed } from '../core/format';
-import { startPolling } from '../core/polling';
+import { createActivityPolling } from '../core/polling';
 import { useTakeoverStatus } from '../core/use-takeover-status';
 import { GITHUB_LATENCY_URL, groupLatencyTarget, latencyTestQuery, normalizeLatency, parseTargetLatencies } from '../core/latency';
 import { Segmented, Toggle } from './ui';
+import { VirtualList } from './VirtualList';
+import { resolveEffectiveGroup } from '../core/effective-group';
+import { isInfoNode } from '../core/subscription';
+import { TrayProfileCard } from './TrayProfileCard';
 import {
   IconCheck,
-  IconChevronRight,
-  IconChevronDown,
   IconDownload,
-  IconGlobe,
   IconProfiles,
   IconOverview,
   IconPower,
-  IconRefresh,
+  IconBolt,
+  IconRestart,
   IconSettings,
-  IconTun,
   IconUpload,
 } from './icons';
 
@@ -26,7 +28,7 @@ function stateLabel(s: TraySnapshot | null): string {
   if (!s) return '读取状态…';
   if (!s.running) return '未运行';
   if (s.tun) return 'TUN';
-  if (s.sysProxy) return '系统代理';
+  if (s.sysProxy) return 'PROXY';
   return '未接管';
 }
 
@@ -34,13 +36,13 @@ function snapshotGroups(snapshot: TraySnapshot | null): TrayGroup[] {
   if (snapshot?.groups) return snapshot.groups;
   // 旧快照不知道策略类型，不能把它猜成手动选择器。
   return snapshot?.group ? [{ name: snapshot.group, type: '未知类型', manual: false,
-    now: null, nodes: snapshot.nodes.slice(0, 7).map(node => ({ ...node, selected: false })), total: snapshot.nodes.length }] : [];
+    now: null, nodes: snapshot.nodes.map(node => ({ ...node, selected: false })), total: snapshot.nodes.length }] : [];
 }
 
-function viewedGroup(snapshot: TraySnapshot | null, name: string | null): TrayGroup | undefined {
+function effectiveGroup(snapshot: TraySnapshot | null): TrayGroup | undefined {
   const groups = snapshotGroups(snapshot);
-  return groups.find(group => group.name === name)
-    ?? groups.find(group => group.name === snapshot?.group) ?? groups[0];
+  const primary = snapshot?.mode === 'global' && groups.some(group => group.name === 'GLOBAL') ? 'GLOBAL' : snapshot?.group;
+  return resolveEffectiveGroup(groups, primary ?? groups[0]?.name ?? '') ?? groups[0];
 }
 
 function policyCurrent(group: TrayGroup): string {
@@ -50,6 +52,43 @@ function policyCurrent(group: TrayGroup): string {
   return group.now ? `当前选项：${group.now}` : '当前选项待确认';
 }
 
+function policyLabel(type: string): string {
+  return ({ Selector: '手动选择', URLTest: '自动优选', Fallback: '故障转移',
+    LoadBalance: '负载均衡', Relay: '链式代理' } as Record<string, string>)[type] ?? '未知策略';
+}
+
+function TraySpeed({ value }: { value: number }) {
+  const [number, unit] = formatSpeed(value).split(' ');
+  return <span className="tp-speed-value"><b>{number}</b><span>{unit}</span></span>;
+}
+
+// 速度只更新这块小区域，避免每秒协调整个候选列表。
+const TrayTraffic = memo(function TrayTraffic({ active, revision }: { active: boolean; revision: number }) {
+  const [rates, setRates] = useState<[number, number]>([0, 0]);
+  const polling = useRef<ReturnType<typeof createActivityPolling> | null>(null);
+  const epoch = useRef(0);
+  useEffect(() => {
+    let alive = true;
+    const controller = createActivityPolling(async () => {
+      const revision = epoch.current;
+      const value = await api.trafficRates();
+      if (alive && revision === epoch.current) setRates(previous =>
+        previous[0] === value[0] && previous[1] === value[1] ? previous : value);
+    }, 900);
+    polling.current = controller;
+    return () => { alive = false; controller.dispose(); polling.current = null; };
+  }, []);
+  useEffect(() => {
+    epoch.current++;
+    if (active) { polling.current?.pause(); polling.current?.resume(); }
+    else polling.current?.pause();
+  }, [active, revision]);
+  return <div className="tp-speeds" data-tray-section="speed" aria-label="实时速度">
+    <div className="tp-speed-row tp-speed-up"><span className="tp-speed-label"><IconUpload size={12} />上传</span><TraySpeed value={rates[0]} /></div>
+    <div className="tp-speed-row tp-speed-down"><span className="tp-speed-label"><IconDownload size={12} />下载</span><TraySpeed value={rates[1]} /></div>
+  </div>;
+});
+
 export function TrayPanel() {
   const [snap, setSnap] = useState<TraySnapshot | null>(null);
   const [delays, setDelays] = useState<Record<string, number | null>>({});
@@ -58,26 +97,31 @@ export function TrayPanel() {
   const latencyScope = useRef('');
   const testRequest = useRef(0);
   const testPending = useRef(false);
-  const panelActive = useRef(true);
+  const [active, setActive] = useState(previewMode || (!document.hidden && document.hasFocus()));
+  const panelActive = useRef(active);
+  const [fresh, setFresh] = useState(false);
+  const snapshotFresh = useRef(false);
+  const polling = useRef<ReturnType<typeof createActivityPolling> | null>(null);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mounted = useRef(true);
   const panelRevision = useRef(0);
-  const latencyPool = useRef({ active: 0, waiting: [] as Array<() => void> });
+  const latencyPool = useRef({ active: 0, waiting: [] as Array<(acquired: boolean) => void> });
   const [profilesOpen, setProfilesOpen] = useState(false);
-  const [browsedGroup, setBrowsedGroup] = useState<string | null>(null);
-  const browseRef = useRef<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [runtimeDisplay, setRuntimeDisplay] = useState<RuntimeDisplayStatus>({ revision: 'initial', transitioning: isTauri });
   const takeover = useTakeoverStatus({
-    active: panelActive.current && snap !== null,
+    active: active && fresh,
     running: Boolean(snap?.running),
     sysProxy: Boolean(snap?.sysProxy),
     tun: Boolean(snap?.tun),
     revision: JSON.stringify([runtimeDisplay.revision, panelRevision.current, snap?.activeProfile, snap?.mode, snap?.controllerPort, snap?.controllerSecret]),
-    transitioning: pending !== null || runtimeDisplay.transitioning || !snap,
+    transitioning: pending !== null || runtimeDisplay.transitioning || !fresh,
   });
 
   const resetLatency = () => {
     testRequest.current += 1;
+    latencyPool.current.waiting.splice(0).forEach(resolve => resolve(false));
     testPending.current = false;
     setTesting(false);
     setTestError(null);
@@ -86,23 +130,38 @@ export function TrayPanel() {
 
   const resetPanelActivity = (active: boolean) => {
     panelActive.current = active;
+    setActive(active);
     panelRevision.current += 1;
-    resetLatency();
-    setSnap(null);
+    snapshotFresh.current = false;
+    setFresh(false);
+    // 取消未完成测速，保留同一配置下已完成的结果与 DOM。
+    testRequest.current += 1;
+    latencyPool.current.waiting.splice(0).forEach(resolve => resolve(false));
+    testPending.current = false;
+    setTesting(false);
+    setTestError(null);
+    clearTimeout(pendingTimer.current);
+    pendingTimer.current = undefined;
+    setPending(null);
+    if (active) { polling.current?.pause(); polling.current?.resume(); }
+    else polling.current?.pause();
   };
 
   useEffect(() => {
     if (!isTauri) return;
     return subscribeRuntimeDisplayStatus(status => {
       setRuntimeDisplay(status);
+      if (!polling.current) return;
       // 下一次已有快照循环读回最新控制端；旧请求和旧参数同时失效。
       resetPanelActivity(panelActive.current);
+      resetLatency();
     });
   }, []);
 
   useEffect(() => {
     if (!isTauri && !previewMode) return;
     let alive = true;
+    mounted.current = true;
     const load = async () => {
       // 面板隐藏时不做无意义轮询
       if (!previewMode && (!panelActive.current || document.hidden || !document.hasFocus())) {
@@ -113,8 +172,8 @@ export function TrayPanel() {
       await api
         .traySnapshot()
         .then((v) => {
-          if (alive && revision === panelRevision.current) {
-            const current = viewedGroup(v, browseRef.current);
+          if (alive && panelActive.current && revision === panelRevision.current) {
+            const current = effectiveGroup(v);
             const scope = JSON.stringify([v.activeProfile, current?.name, current?.type,
               current?.nodes.map(node => node.name), v.running, v.mode, v.controllerPort, v.controllerSecret]);
             if (scope !== latencyScope.current) {
@@ -123,20 +182,21 @@ export function TrayPanel() {
             }
             setMihomoBase(v.controllerPort);
             setMihomoSecret(v.controllerSecret);
-            if (browseRef.current && current?.name !== browseRef.current) {
-              browseRef.current = null;
-              setBrowsedGroup(null);
-            }
             setSnap(v);
+            snapshotFresh.current = true;
+            setFresh(true);
           }
         })
         .catch(() => undefined);
     };
-    const stop = startPolling(load, 900);
-    const onBlur = () => { if (!previewMode) resetPanelActivity(false); };
+    const controller = createActivityPolling(load, 3000);
+    polling.current = controller;
+    if (panelActive.current) controller.resume();
+    const onBlur = () => { if (!previewMode && panelActive.current) resetPanelActivity(false); };
     const onFocus = () => {
       if (previewMode) return;
-      resetPanelActivity(!document.hidden && document.hasFocus());
+      const next = !document.hidden && document.hasFocus();
+      if (next !== panelActive.current) resetPanelActivity(next);
     };
     const onVisibility = () => document.hidden ? onBlur() : onFocus();
     const onKey = (e: KeyboardEvent) => {
@@ -151,8 +211,12 @@ export function TrayPanel() {
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       alive = false;
+      mounted.current = false;
       testRequest.current += 1;
-      stop();
+      latencyPool.current.waiting.splice(0).forEach(resolve => resolve(false));
+      controller.dispose();
+      polling.current = null;
+      clearTimeout(pendingTimer.current);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('focus', onFocus);
@@ -160,36 +224,38 @@ export function TrayPanel() {
     };
   }, []);
 
-  const groups = snapshotGroups(snap);
-  const currentGroup = viewedGroup(snap, browsedGroup);
-  const visibleNodes = currentGroup ? [...currentGroup.nodes].sort((a, b) => Number(b.selected) - Number(a.selected)).slice(0, 7) : [];
+  const currentGroup = useMemo(() => effectiveGroup(snap), [snap]);
+  const groupNodes = useMemo(() => currentGroup ? currentGroup.nodes.filter(node => !isInfoNode(node.name)).sort((a, b) => {
+    if (a.selected !== b.selected) return Number(b.selected) - Number(a.selected);
+    const delay = (node: typeof a) => Object.prototype.hasOwnProperty.call(delays, node.name) ? delays[node.name] : node.delay;
+    return (delay(a) ?? Number.MAX_SAFE_INTEGER) - (delay(b) ?? Number.MAX_SAFE_INTEGER) || a.name.localeCompare(b.name);
+  }) : [], [currentGroup, delays]);
   const manual = currentGroup?.type === 'Selector' && currentGroup.manual;
 
-  const browse = (name: string) => {
-    resetLatency();
-    browseRef.current = name;
-    setBrowsedGroup(name);
-    // 浏览操作本地完成，下次相同快照不应使新测速失效。
-    const current = viewedGroup(snap, name);
-    latencyScope.current = JSON.stringify([snap?.activeProfile, current?.name, current?.type,
-      current?.nodes.map(node => node.name), snap?.running, snap?.mode, snap?.controllerPort, snap?.controllerSecret]);
-  };
-
   const act = (action: string, value?: TrayActionValue) => {
+    if (!['close', 'open', 'quit', 'restart'].includes(action)
+      && (!panelActive.current || !snapshotFresh.current || runtimeDisplay.transitioning)) return;
     if (action === 'profile') resetLatency();
     if (action === 'close' || action === 'open' || action === 'quit') resetPanelActivity(false);
     if (action === 'sysproxy' || action === 'tun') {
       setPending(action);
-      window.setTimeout(() => setPending(null), 5000);
+      clearTimeout(pendingTimer.current);
+      pendingTimer.current = setTimeout(() => {
+        pendingTimer.current = undefined;
+        if (mounted.current && panelActive.current) setPending(null);
+      }, 5000);
     }
     setActionError(null);
-    void api.trayAction(action, value).catch(() => {
-      if (panelActive.current) setActionError('操作未完成，请重试');
+    const revision = panelRevision.current;
+    void api.trayAction(action, value).then(() => {
+      if (mounted.current && revision === panelRevision.current) polling.current?.refresh();
+    }).catch(() => {
+      if (mounted.current && panelActive.current && revision === panelRevision.current) setActionError('操作未完成，请重试');
     });
   };
 
   const testGroup = async () => {
-    if (!snap?.running || !currentGroup || !visibleNodes.length || profilesOpen || runtimeDisplay.transitioning || testPending.current
+    if (!snapshotFresh.current || !snap?.running || !currentGroup || !groupNodes.length || profilesOpen || runtimeDisplay.transitioning || testPending.current
       || (!previewMode && (!panelActive.current || document.hidden || !document.hasFocus()))) return;
     testPending.current = true;
     const request = ++testRequest.current;
@@ -202,12 +268,13 @@ export function TrayPanel() {
     const failures: string[] = [];
     const measure = async (name: string) => {
       // 新旧批次共用三个请求槽；已失效的排队节点不再发送请求。
-      await new Promise<void>(resolve => {
+      const acquired = await new Promise<boolean>(resolve => {
         if (latencyPool.current.active < 3) {
           latencyPool.current.active += 1;
-          resolve();
+          resolve(true);
         } else latencyPool.current.waiting.push(resolve);
       });
+      if (!acquired) return;
       try {
         if (!isCurrent()) return;
         const path = `/proxies/${encodeURIComponent(name)}`;
@@ -230,12 +297,16 @@ export function TrayPanel() {
         }
       } finally {
         const next = latencyPool.current.waiting.shift();
-        if (next) next();
+        if (next) next(true);
         else latencyPool.current.active -= 1;
       }
     };
     try {
-      await Promise.all(visibleNodes.map(node => measure(node.name)));
+      let next = 0;
+      // 每批只有三个工作协程；长列表不为全部节点同时创建排队请求。
+      await Promise.all(Array.from({ length: Math.min(3, groupNodes.length) }, async () => {
+        while (isCurrent() && next < groupNodes.length) await measure(groupNodes[next++].name);
+      }));
       if (!isCurrent()) return;
       setDelays(results);
       if (failures.length) setTestError(`${failures.length} 个节点测速失败：${failures.join('、')}`);
@@ -253,48 +324,24 @@ export function TrayPanel() {
   const latencyLabel = latencyTarget === GITHUB_LATENCY_URL ? 'GitHub 延迟' : '常规延迟';
 
   return (
-    <div className="tp-root" onMouseDown={(event) => {
+    <div className="tp-root" onContextMenu={event => event.preventDefault()} onMouseDown={(event) => {
       if (event.target === event.currentTarget) act('close');
     }}>
       <div className="tp-card" data-visible={Boolean(snap)}>
         <div className="tp-head">
-          <span className={`tp-dot${running ? ' on' : ''}`} />
-          <span className="tp-brand">PP Clash</span>
-          <span className={`tp-state${snap?.tun || snap?.sysProxy ? ' active' : ''}`}>{label}</span>
-          <div className="spacer" />
-          <button
-            type="button"
-            className="tp-icon"
-            title="打开主界面"
-            aria-label="打开主界面"
-            onClick={() => act('open', 'overview')}
-          >
-            <IconChevronRight size={14} />
+          <button type="button" className="tp-brand-button" aria-label="PP Clash · 打开主界面" title="打开主界面" onClick={() => act('open', 'overview')}>
+            <BrandCat size={24} /><span className="tp-brand">PP Clash</span>
           </button>
+          <div className="spacer" />
+          <span className={`tp-state${running && (snap?.tun || snap?.sysProxy) ? ' active' : ''}`}>
+            {label}<span className={`tp-dot${running && (snap?.tun || snap?.sysProxy) ? ' on' : ''}`} />
+          </span>
         </div>
 
-        <div className="tp-speeds" data-tray-section="speed" aria-label="实时速度">
-          <div className="tp-speed-row tp-speed-up">
-            <span className="tp-speed-label">
-              <IconUpload size={12} />
-              上传
-            </span>
-            <b className="tp-speed-value">{formatSpeed(snap?.up ?? 0)}</b>
-          </div>
-          <div className="tp-speed-row tp-speed-down">
-            <span className="tp-speed-label">
-              <IconDownload size={12} />
-              下载
-            </span>
-            <b className="tp-speed-value">{formatSpeed(snap?.down ?? 0)}</b>
-          </div>
-        </div>
+        <TrayTraffic active={active} revision={panelRevision.current} />
 
         <div className="tp-rows" data-tray-section="takeover" aria-label="流量接管">
           <div className="tp-row">
-            <span className="tp-row-icon">
-              <IconGlobe size={14} />
-            </span>
             <span className="tp-row-copy">
               <span className="tp-row-label">系统代理</span>
               <span className="tp-row-subtitle" title={takeover.systemProxySubtitle}>{takeover.systemProxySubtitle}</span>
@@ -302,15 +349,12 @@ export function TrayPanel() {
             <Toggle
               on={Boolean(snap?.sysProxy)}
               busy={pending === 'sysproxy'}
-              disabled={pending !== null}
+              disabled={!fresh || runtimeDisplay.transitioning || pending !== null}
               onChange={(v) => act('sysproxy', String(v))}
               label="系统代理"
             />
           </div>
           <div className="tp-row">
-            <span className="tp-row-icon">
-              <IconTun size={14} />
-            </span>
             <span className="tp-row-copy">
               <span className="tp-row-label">TUN 模式</span>
               <span className="tp-row-subtitle" title={takeover.tunSubtitle}>{takeover.tunSubtitle}</span>
@@ -318,7 +362,7 @@ export function TrayPanel() {
             <Toggle
               on={Boolean(snap?.tun)}
               busy={pending === 'tun'}
-              disabled={pending !== null}
+              disabled={!fresh || runtimeDisplay.transitioning || pending !== null}
               onChange={() => act('tun')}
               label="TUN 模式"
             />
@@ -335,88 +379,56 @@ export function TrayPanel() {
             value={(snap?.mode as 'rule' | 'global' | 'direct') ?? 'rule'}
             onChange={(v) => act('mode', v)}
             ariaLabel="出站模式"
+            disabled={!fresh || runtimeDisplay.transitioning}
           />
         </div>
 
-        <div className="tp-node-head" data-tray-section="profile">
-          <button
-            type="button"
-            className="tp-profile-trigger"
-            onClick={() => { resetLatency(); setProfilesOpen((v) => !v); }}
-            title="切换订阅"
-            aria-expanded={profilesOpen}
-            aria-controls={profilesOpen ? 'tray-profile-list' : undefined}
-          >
-            <IconProfiles size={13} />
-            <span className="tp-profile-name">
-              {snap?.profiles.find((p) => p.id === snap.activeProfile)?.name || '选择订阅'}
-            </span>
-            <IconChevronDown size={11} />
-          </button>
-          <div className="spacer" />
-          <button
-            type="button"
-            className="tp-test"
-            disabled={!snap?.running || !visibleNodes.length || profilesOpen || runtimeDisplay.transitioning || testing}
-            title={`测速目标：${latencyTarget}`}
-            onClick={() => void testGroup()}
-          >
-            {testing ? '测速中' : '测速'}
-          </button>
+        <div className="tp-policy" data-tray-section="group">
+          <span className="tp-current-group" title={!profilesOpen && currentGroup ? `${currentGroup.name} · ${policyLabel(currentGroup.type)} · ${policyCurrent(currentGroup)}` : undefined}>
+            {profilesOpen ? '切换订阅' : currentGroup?.name ?? '暂无分组'}
+          </span>
+          <span className="tp-group-count">{profilesOpen ? `${snap?.profiles.length ?? 0} 份` : `${groupNodes.length} 个节点`}</span>
+          {!profilesOpen && <button type="button" className="tp-icon tp-test" aria-label={testing ? '正在测速' : '测试当前分组延迟'}
+            disabled={!fresh || !snap?.running || !groupNodes.length || runtimeDisplay.transitioning || testing}
+            title={`${groupNodes.length} 个节点 · ${latencyLabel} · ${latencyTarget}`} onClick={() => void testGroup()}>
+            <IconBolt size={16} />
+          </button>}
         </div>
-
-        {!profilesOpen && <>
-          <div className="tp-policy" data-tray-section="group">
-            <label className="tp-policy-picker">
-              <span>策略</span>
-              <select aria-label="浏览策略" value={currentGroup?.name ?? ''} disabled={!groups.length}
-                onChange={event => browse(event.target.value)}>
-                {groups.length ? groups.map(group => <option key={group.name} value={group.name}>{group.name}</option>)
-                  : <option value="">暂无策略</option>}
-              </select>
-            </label>
-            {currentGroup && <>
-              <span className="tp-policy-type">{currentGroup.type}{manual ? ' · 手动选择' : ' · 只读'}</span>
-              <div className="tp-policy-current" title={policyCurrent(currentGroup)}>{policyCurrent(currentGroup)}</div>
-            </>}
-          </div>
-          <div className={`tp-latency-status${testError ? ' error' : ''}`} role="status" title={testError ?? latencyTarget}>
-            {latencyLabel} · {testing ? '正在测速…' : testError ? '测速失败，可重试' : '点击测速更新'}
-          </div>
-        </>}
+        {(testing || testError) && <div className={`tp-latency-status${testError ? ' error' : ''}`} role="status" title={testError ?? latencyTarget}>
+          {testing ? '正在测速…' : '测速失败，可重试'}
+        </div>}
 
         {actionError && <div className="tp-action-error" role="alert">{actionError}</div>}
 
         {profilesOpen ? (
           <div className="tp-profile-list" id="tray-profile-list">
             {(snap?.profiles ?? []).map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`tp-profile-item${p.id === snap?.activeProfile ? ' selected' : ''}`}
-                onClick={() => {
+              <TrayProfileCard key={p.id} profile={p} selected={p.id === snap?.activeProfile}
+                disabled={!active || !fresh || runtimeDisplay.transitioning}
+                onUse={() => {
                   setProfilesOpen(false);
                   act('profile', p.id);
                 }}
-              >
-                <span className="tp-node-item-name" title={p.name}>{p.name}</span>
-                {p.id === snap?.activeProfile && <IconCheck size={12} />}
-              </button>
+                onRefresh={async () => {
+                  if (!panelActive.current || !snapshotFresh.current || runtimeDisplay.transitioning) throw new Error('面板状态待确认');
+                  await api.trayAction('refresh-profile', p.id);
+                  if (mounted.current && panelActive.current) polling.current?.refresh();
+                }} />
             ))}
             {(snap?.profiles ?? []).length === 0 && (
               <div className="tp-node-empty">还没有订阅</div>
             )}
           </div>
-        ) : (
-          <div className="tp-node-list" data-tray-section="nodes" aria-label="策略候选">
-            {visibleNodes.map((node) => {
+        ) : groupNodes.length > 0 ? (
+          <VirtualList className="tp-node-list" label="当前分组节点" items={groupNodes} rowHeight={38} maxHeight={360}
+            resetKey={`${snap?.activeProfile}:${currentGroup?.name}`} itemKey={node => node.name} renderItem={node => {
               const delay = Object.prototype.hasOwnProperty.call(delays, node.name) ? delays[node.name] : node.delay ?? undefined;
               return (
                 <button
                   key={node.name}
                   type="button"
                   className={`tp-node-item${node.selected ? ' selected' : ''}`}
-                  disabled={!running || !manual || runtimeDisplay.transitioning}
+                  disabled={!fresh || !running || !manual || runtimeDisplay.transitioning}
                   aria-label={`${manual ? '选择' : '候选'} ${node.name}`}
                   aria-pressed={node.selected}
                   onClick={() => {
@@ -427,39 +439,32 @@ export function TrayPanel() {
                   <span className="tp-node-item-delay" title={`测速目标：${latencyTarget}`}>
                     {testing ? '等待' : delay === null ? '失败' : delay === undefined ? '未测' : `${delay} ms`}
                   </span>
-                  {node.selected && <IconCheck size={12} />}
+                  <span className="tp-node-check">{node.selected && <IconCheck size={12} />}</span>
                 </button>
               );
-            })}
-            {visibleNodes.length === 0 && (
-              <div className="tp-node-empty" role={snap?.groupsError ? 'alert' : undefined}>
-                {snap?.groupsError ?? (!running ? '内核运行后显示策略' : currentGroup ? '此策略暂无候选' : '暂无可用策略')}
-              </div>
-            )}
-          </div>
-        )}
-
-        {!profilesOpen && <button type="button" className="tp-all-nodes" onClick={() => act('open', 'proxies')}>
-          <span>全部节点{currentGroup ? ` · ${currentGroup.total} 个候选` : ''}</span><IconChevronRight size={12} />
-        </button>}
+            }} />
+        ) : null}
+        {!profilesOpen && groupNodes.length === 0 && <div className="tp-node-empty" role={snap?.groupsError ? 'alert' : undefined}>
+          {snap?.groupsError ?? (!running ? '内核运行后显示策略' : currentGroup ? '此分组暂无节点' : '暂无可用分组')}
+        </div>}
 
         <div className="tp-foot" data-tray-section="footer">
-          <button type="button" onClick={() => act('open', 'settings')}>
-            <IconSettings size={13} />
-            设置
-          </button>
-          <button type="button" onClick={() => act('open', 'overview')}>
-            <IconOverview size={13} />
-            主界面
+          <button type="button" className="tp-profile-trigger" aria-label="切换订阅"
+            title={`当前订阅：${snap?.profiles.find(p => p.id === snap.activeProfile)?.name ?? '暂无订阅'}`}
+            disabled={!fresh || runtimeDisplay.transitioning} aria-expanded={profilesOpen} aria-controls={profilesOpen ? 'tray-profile-list' : undefined}
+            onClick={() => { resetLatency(); setProfilesOpen(value => !value); }}><IconProfiles size={16} /><span>切换订阅</span></button>
+          <button type="button" aria-label="打开主界面" title="打开主界面" onClick={() => act('open', 'overview')}>
+            <IconOverview size={18} />
           </button>
           <div className="spacer" />
-          <button type="button" className="tp-restart" onClick={() => act('restart')}>
-            <IconRefresh size={13} />
-            重启
+          <button type="button" aria-label="设置" title="设置" onClick={() => act('open', 'settings')}>
+            <IconSettings size={18} />
           </button>
-          <button type="button" className="tp-quit" onClick={() => act('quit')}>
-            <IconPower size={13} />
-            退出
+          <button type="button" className="tp-restart" aria-label="重启应用" title="重启应用" onClick={() => act('restart')}>
+            <IconRestart size={18} />
+          </button>
+          <button type="button" className="tp-quit" aria-label="退出应用" title="退出应用" onClick={() => act('quit')}>
+            <IconPower size={18} />
           </button>
         </div>
       </div>

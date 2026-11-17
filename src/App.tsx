@@ -1,29 +1,34 @@
-import { useEffect, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { asyncView } from './components/AsyncView';
+import { useEffect, useRef, useState } from 'react';
+import { emit, listen } from '@tauri-apps/api/event';
 import { Sidebar, type PageKey } from './components/Sidebar';
-import { OverviewPage } from './pages/Overview';
-import { ProxiesPage } from './pages/Proxies';
-import { ConnectionsPage } from './pages/Connections';
-import { RulesPage } from './pages/Rules';
-import { LogsPage } from './pages/Logs';
-import { OverridePage } from './pages/Override';
-import { KernelPage } from './pages/Kernel';
-import { ResourcesPage } from './pages/Resources';
-import { TrafficPage } from './pages/Traffic';
-import { DnsPage } from './pages/Dns';
-import { SecurityPage } from './pages/Security';
-import { ProfilesPage } from './pages/Profiles';
-import { SettingsPage } from './pages/Settings';
-import { getLifecycleToken, isLifecycleCurrent, useApp, type OutboundMode, type ToastKind } from './store/app';
+import { useApp } from './store/app';
+import type { OutboundMode, ToastKind } from './domain/app';
 import { api, isTauri } from './core/api';
-import { IconAlert, IconCheck, IconDownload, IconInfo, IconX } from './components/icons';
+import { IconAlert, IconCheck, IconDownload, IconInfo, IconSettings, IconX } from './components/icons';
+import { BrandCat } from './components/BrandCat';
 import { WindowsTitlebar } from './components/WindowsTitlebar';
-import { isWindows } from './core/platform';
+import { isLinux, isWindows } from './core/platform';
 import { useWindowVisible } from './core/window-activity';
-import { useBackgroundHealth } from './core/background-health';
+import { useBackgroundHealth } from './application/background-health';
 import { startPolling } from './core/polling';
 import { installRuntimeDisplayPublisher } from './core/runtime-display-events';
 import { Dialog } from './components/Dialog';
+import { Segmented } from './components/ui';
+
+const OverviewPage = asyncView(() => import('./pages/Overview').then(module => ({ default: module.OverviewPage })));
+const ProxiesPage = asyncView(() => import('./pages/Proxies').then(module => ({ default: module.ProxiesPage })));
+const ConnectionsPage = asyncView(() => import('./pages/Connections').then(module => ({ default: module.ConnectionsPage })));
+const RulesPage = asyncView(() => import('./pages/Rules').then(module => ({ default: module.RulesPage })));
+const LogsPage = asyncView(() => import('./pages/Logs').then(module => ({ default: module.LogsPage })));
+const OverridePage = asyncView(() => import('./pages/Override').then(module => ({ default: module.OverridePage })));
+const KernelPage = asyncView(() => import('./pages/Kernel').then(module => ({ default: module.KernelPage })));
+const ResourcesPage = asyncView(() => import('./pages/Resources').then(module => ({ default: module.ResourcesPage })));
+const TrafficPage = asyncView(() => import('./pages/Traffic').then(module => ({ default: module.TrafficPage })));
+const DnsPage = asyncView(() => import('./pages/Dns').then(module => ({ default: module.DnsPage })));
+const SecurityPage = asyncView(() => import('./pages/Security').then(module => ({ default: module.SecurityPage })));
+const ProfilesPage = asyncView(() => import('./pages/Profiles').then(module => ({ default: module.ProfilesPage })));
+const SettingsPage = asyncView(() => import('./pages/Settings').then(module => ({ default: module.SettingsPage })));
 
 const TOAST_TTL = 5000;
 
@@ -57,6 +62,34 @@ function ToastIcon({ kind }: { kind: ToastKind }) {
   if (kind === 'success') return <IconCheck size={14} />;
   if (kind === 'error') return <IconAlert size={14} />;
   return <IconInfo size={14} />;
+}
+
+function WorkspaceToolbar({ onSettings, settingsActive }: { onSettings: () => void; settingsActive: boolean }) {
+  const mode = useApp(s => s.settings.mode);
+  const changeOutboundMode = useApp(s => s.changeOutboundMode);
+  const [switchingMode, setSwitchingMode] = useState(false);
+  const modeLock = useRef(false);
+  const changeMode = async (nextMode: OutboundMode) => {
+    if (nextMode === mode || modeLock.current) return;
+    modeLock.current = true;
+    setSwitchingMode(true);
+    try {
+      await changeOutboundMode(nextMode);
+    } finally {
+      modeLock.current = false;
+      setSwitchingMode(false);
+    }
+  };
+
+  return <header className="workspace-toolbar" aria-label="窗口工具栏" data-tauri-drag-region>
+    <button className={`workspace-settings capsule${settingsActive ? ' active' : ''}`} type="button" aria-label="打开设置"
+      aria-current={settingsActive ? 'page' : undefined} onClick={onSettings} title="设置">
+      <IconSettings size={17} />
+    </button>
+    <Segmented ariaLabel="出站模式" disabled={switchingMode}
+      options={[{ value: 'rule', label: '规则' }, { value: 'global', label: '全局' }, { value: 'direct', label: '直连' }]}
+      value={mode} onChange={value => void changeMode(value)} />
+  </header>;
 }
 
 export default function App() {
@@ -127,6 +160,12 @@ export default function App() {
       listen<string>('tray://panel-profile', (e) => {
         void useApp.getState().activate(e.payload);
       }),
+      listen<{ id: string; request: string }>('tray://refresh-profile', (e) => {
+        if (!e.payload || typeof e.payload.id !== 'string' || typeof e.payload.request !== 'string') return;
+        const { id, request } = e.payload;
+        void useApp.getState().refreshProfile(id, true).then(ok => emit('tray://profile-refreshed', { request, ok }))
+          .catch(() => { void emit('tray://profile-refreshed', { request, ok: false }).catch(() => {}); });
+      }),
       listen<{ group: string; node: string }>('tray://panel-node', (e) => {
         void useApp.getState().selectNode(e.payload.group, e.payload.node);
       }),
@@ -135,23 +174,8 @@ export default function App() {
         if (PAGE_KEYS.includes(target)) setPage(target);
       }),
       listen<string>('tray://mode', (e) => {
-        const s = useApp.getState();
         const mode = e.payload as OutboundMode;
-        if (!['rule', 'global', 'direct'].includes(mode)) return;
-        const token = getLifecycleToken();
-        s.updateSettings({ mode });
-        void (async () => {
-          try {
-            const st = useApp.getState();
-            const applied = await st.applyConfig();
-            if (!isLifecycleCurrent(token) || !applied) return;
-            if (st.kernelPhase === 'running') {
-              await st.restartKernel(true, token, true);
-            }
-          } catch (error) {
-            if (isLifecycleCurrent(token)) useApp.getState().notify('error', `切换模式失败：${String(error)}`);
-          }
-        })();
+        if (['rule', 'global', 'direct'].includes(mode)) void useApp.getState().changeOutboundMode(mode);
       }),
     ];
     return () => {
@@ -169,65 +193,6 @@ export default function App() {
     };
     window.addEventListener('ppclash:nav', onNav);
     return () => window.removeEventListener('ppclash:nav', onNav);
-  }, []);
-
-  // 覆盖式悬浮滚动条：滚动时出现，700ms 后淡出，不占布局
-  useEffect(() => {
-    const thumbs = new Map<HTMLElement, { el: HTMLDivElement; timer: number }>();
-
-    const hide = (target: HTMLElement, item: { el: HTMLDivElement; timer: number }) => {
-      item.el.classList.remove('visible');
-      if (!target.isConnected) {
-        item.el.remove();
-        thumbs.delete(target);
-      }
-    };
-
-    const update = (target: HTMLElement) => {
-      const maxScroll = target.scrollHeight - target.clientHeight;
-      if (maxScroll < 2) {
-        const existing = thumbs.get(target);
-        if (existing) {
-          existing.el.remove();
-          thumbs.delete(target);
-        }
-        return;
-      }
-
-      let item = thumbs.get(target);
-      if (!item) {
-        const el = document.createElement('div');
-        el.className = 'overlay-scrollbar';
-        document.body.appendChild(el);
-        item = { el, timer: 0 };
-        thumbs.set(target, item);
-      }
-
-      const rect = target.getBoundingClientRect();
-      const trackH = rect.height - 8;
-      const ratio = target.clientHeight / target.scrollHeight;
-      const thumbH = Math.max(26, trackH * ratio);
-      const y = rect.top + 4 + (target.scrollTop / maxScroll) * (trackH - thumbH);
-
-      item.el.style.height = `${thumbH}px`;
-      item.el.style.transform = `translate3d(${rect.right - 9}px, ${y}px, 0)`;
-      item.el.classList.add('visible');
-
-      window.clearTimeout(item.timer);
-      item.timer = window.setTimeout(() => hide(target, item), 700);
-    };
-
-    const onScroll = (e: Event) => {
-      const target = e.target;
-      if (target instanceof HTMLElement) update(target);
-    };
-
-    document.addEventListener('scroll', onScroll, true);
-    return () => {
-      document.removeEventListener('scroll', onScroll, true);
-      for (const item of thumbs.values()) item.el.remove();
-      thumbs.clear();
-    };
   }, []);
 
   // 侧栏版本号/关于入口点击检查更新
@@ -285,11 +250,15 @@ export default function App() {
   }, [toast?.id, toast, clearToast]);
 
   return (
-    <div className={`window-shell${isWindows ? ' is-windows' : ''}`} data-window-visible={windowVisible}>
+    <div className={`window-shell${isWindows ? ' is-windows' : isLinux ? ' is-linux' : ''}${isTauri ? ' is-native' : ''}`} data-window-visible={windowVisible}
+      onContextMenu={event => event.preventDefault()}>
       {isWindows && <WindowsTitlebar />}
       <div className="app">
       <Sidebar current={page} onChange={setPage} />
+      <div className="workspace-frame">
+        <WorkspaceToolbar onSettings={() => setPage('settings')} settingsActive={page === 'settings'} />
       <main className="content desktop-main">
+        <div className="workspace-watermark" aria-hidden="true"><BrandCat size={560} /></div>
         {updateInfo && (
           <div className="update-banner" role="status">
             <span className="update-banner-icon">
@@ -329,7 +298,7 @@ export default function App() {
           <OverviewPage active={windowVisible && page === 'overview'} />
         </div>
         {page !== 'overview' && (
-          <div key={page} className="page-anim">
+          <div key={page} className={`page-anim${page === 'settings' ? ' settings-page-anim' : ''}`}>
             {page === 'proxies' && <ProxiesPage active={windowVisible} />}
             {page === 'connections' && <ConnectionsPage active={windowVisible} />}
             {page === 'rules' && <RulesPage />}
@@ -383,6 +352,7 @@ export default function App() {
           </div>
         )}
       </main>
+      </div>
       </div>
     </div>
   );

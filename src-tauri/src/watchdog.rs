@@ -12,6 +12,7 @@ use tauri::AppHandle;
 
 use crate::{platform, resources};
 
+#[cfg(target_os = "macos")]
 const MAC_SCRIPT: &str = r#"#!/bin/sh
 APP_PID="$1"
 DATA="$2"
@@ -40,28 +41,7 @@ rm -f "$PIDFILE"
 "#;
 
 #[cfg(target_os = "windows")]
-const WIN_SCRIPT: &str = r#"param([int]$AppPid, [string]$DataDir)
-while (Get-Process -Id $AppPid -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
-$key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
-Set-ItemProperty -Path $key -Name ProxyEnable -Value 0 -ErrorAction SilentlyContinue
-$sig = @'
-using System;
-using System.Runtime.InteropServices;
-public class W {
-  [DllImport("wininet.dll", SetLastError=true)] public static extern bool InternetSetOption(IntPtr h, int o, IntPtr b, int l);
-}
-'@
-if ($ours) {
-  try {
-    Add-Type -TypeDefinition $sig -ErrorAction SilentlyContinue
-    [W]::InternetSetOption([IntPtr]::Zero, 39, [IntPtr]::Zero, 0) | Out-Null
-  } catch {}
-}
-Get-CimInstance Win32_Process -Filter "Name='mihomo.exe'" -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -like "*$DataDir*" } |
-  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Remove-Item "$DataDir\watchdog.pid" -Force -ErrorAction SilentlyContinue
-"#;
+const WIN_SCRIPT: &str = include_str!("watchdog-windows.ps1");
 
 fn pid_file(data: &std::path::Path) -> PathBuf {
     data.join("watchdog.pid")
@@ -127,10 +107,14 @@ pub fn start(_app: &AppHandle) {
     }
     stop_previous(&data);
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let script = data.join("watchdog.sh");
-        if std::fs::write(&script, MAC_SCRIPT).is_err() {
+        #[cfg(target_os = "macos")]
+        let contents = MAC_SCRIPT;
+        #[cfg(target_os = "linux")]
+        let contents = include_str!("watchdog-linux.sh");
+        if std::fs::write(&script, contents).is_err() {
             return;
         }
         #[cfg(unix)]

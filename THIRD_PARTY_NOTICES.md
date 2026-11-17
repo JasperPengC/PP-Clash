@@ -8,6 +8,7 @@ PP Clash is licensed under AGPL-3.0-only. It bundles or depends on the following
 - **React / React DOM** — MIT. https://github.com/facebook/react
 - **Vite** — MIT. https://github.com/vitejs/vite
 - **Zustand** — MIT. https://github.com/pmndrs/zustand
+- **Phosphor Icons** — MIT. Selected Regular icons, vendored at commit `2b75f3ad12b420c9504ef05df8d2564a28f8500e`; license: `licenses/phosphor-icons.txt`. https://github.com/phosphor-icons/core
 - **js-yaml** — MIT. https://github.com/nodeca/js-yaml
 
 Full dependency license metadata is available in `package-lock.json` and `src-tauri/Cargo.lock`.

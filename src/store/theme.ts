@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
-export type ThemeMode = 'system' | 'light' | 'dark';
+import type { ThemeMode } from '../domain/appearance';
+export type { ThemeMode } from '../domain/appearance';
 
 const STORAGE_KEY = 'ppclash.theme';
 
@@ -12,7 +13,7 @@ function readStoredMode(): ThemeMode {
   } catch {
     /* 忽略 */
   }
-  return 'system';
+  return 'light';
 }
 
 function writeStoredMode(m: ThemeMode) {

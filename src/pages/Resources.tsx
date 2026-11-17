@@ -2,13 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { EmptyState, Pill, ReadError, Segmented, Spinner, Toggle } from '../components/ui';
 import {
   IconFolder,
-  IconGlobe,
   IconRefresh,
   IconSearch,
 } from '../components/icons';
 import { api } from '../core/api';
 import { formatTime } from '../core/format';
-import { useApp } from '../store/app';
+import { getLifecycleToken, isLifecycleCurrent, useApp } from '../store/app';
 
 interface ResourceFile {
   name: string;
@@ -56,9 +55,9 @@ const DEFAULT_GEO_URLS = {
 const GEO_SOURCE_INFO: Array<{ key: keyof typeof DEFAULT_GEO_URLS; label: string; file: string }> = [
   { key: 'geoip', label: 'GeoIP 数据库', file: 'geoip.dat' },
   { key: 'geosite', label: 'GeoSite 数据库', file: 'geosite.dat' },
-  { key: 'mmdb', label: 'MMDB 数据库', file: 'geoip.metadb' },
+  { key: 'mmdb', label: 'MetaDB 数据库', file: 'geoip.metadb' },
   { key: 'asn', label: 'ASN 数据库', file: 'ASN.mmdb' },
-  { key: 'country', label: 'Country 数据库', file: 'country.mmdb' },
+  { key: 'country', label: '兼容 MMDB 数据库', file: 'country.mmdb' },
 ];
 
 type Tab = 'geo' | 'rules' | 'proxies';
@@ -93,25 +92,25 @@ function ProviderList({
   return (
     <>
       {filtered.length === 0 ? (
-        <div className="resource-empty">没有匹配的提供者</div>
+        <div className="resource-empty">没有匹配的资源</div>
       ) : (
         <div className="resource-list">
-          <div className="dp-provider-columns" aria-hidden="true"><span>名称与类型</span><span>数量</span><span>上次更新</span><span>操作</span></div>
+          <div className="dp-provider-columns" aria-hidden="true"><span>资源名称</span><span>数量</span><span>上次更新</span><span>操作</span></div>
           {filtered.map((p) => (
             <div key={p.name} className="resource-provider">
-              <div className="dp-provider-identity"><span className="resource-name" title={p.name}>{p.name}</span><span className="dp-provider-type">{p.vehicleType ?? p.type ?? 'provider'}</span></div>
+              <div className="dp-provider-identity"><span className="resource-name" title={p.name}>{p.name}</span><span className="dp-provider-type">{{ HTTP: '在线文件', File: '本地文件', Inline: '内嵌内容' }[p.vehicleType ?? ''] ?? p.type ?? '资源文件'}</span></div>
               <span className="resource-meta">
                 {p.ruleCount != null ? `${p.ruleCount} 条` : p.count != null ? `${p.count} 个` : '—'}
               </span>
               <span className="resource-meta resource-time">{providerTime(p.updatedAt)}</span>
               <button
                 type="button"
-                className="btn btn-sm"
+                className="icon-btn"
+                aria-label={`更新 ${p.name}`} title={`更新 ${p.name}`}
                 disabled={busy || updating !== null}
                 onClick={() => void onUpdate(p.name)}
               >
-                {updating === p.name ? <Spinner small /> : null}
-                更新
+                {updating === p.name ? <Spinner small /> : <IconRefresh size={15} />}
               </button>
             </div>
           ))}
@@ -160,8 +159,9 @@ export function ResourcesPage() {
     const readProviders = async (kind: 'rules' | 'proxies') => {
       if (!wasConnected) return [];
       const raw = await api.mihomo('GET', `/providers/${kind}`) as { providers?: Record<string, any> };
-      if (!raw?.providers || typeof raw.providers !== 'object' || Array.isArray(raw.providers)) throw new Error('提供者响应格式异常');
-      return Object.entries(raw.providers)
+      if (!raw || !Object.hasOwn(raw, 'providers') || (raw.providers !== null
+        && (typeof raw.providers !== 'object' || Array.isArray(raw.providers)))) throw new Error('提供者响应格式异常');
+      return Object.entries(raw.providers ?? {})
         .filter(([, p]) => kind !== 'proxies' || p?.vehicleType !== 'Compatible')
         .map(([name, p]) => ({ name, type: p?.type, vehicleType: p?.vehicleType,
           ruleCount: p?.ruleCount, count: Array.isArray(p?.proxies) ? p.proxies.length : undefined, updatedAt: p?.updatedAt }))
@@ -222,7 +222,7 @@ export function ResourcesPage() {
     try {
       await api.reinstallResources();
       const refreshed = await load();
-      notify(refreshed ? 'success' : 'info', `内置数据已重新解压${refreshed ? '' : '，列表读取失败，请重试'}`);
+      notify(refreshed ? 'success' : 'info', `分流数据库已重新解压${refreshed ? '' : '，列表读取失败，请重试'}`);
     } catch (e) {
       notify('error', `解压失败：${String(e)}`);
     } finally {
@@ -233,16 +233,26 @@ export function ResourcesPage() {
 
   const updateProviders = async (kind: 'rules' | 'proxies', names: string[]) => {
     if (!beginOperation()) return;
+    const token = getLifecycleToken();
     const failures: string[] = [];
+    let nodesRefreshed = true;
     try {
       for (const name of names) {
+        if (!isLifecycleCurrent(token)) return;
         setUpdating(name);
         try { await api.mihomo('PUT', `/providers/${kind}/${encodeURIComponent(name)}`); }
         catch (error) { failures.push(`${name}：${String(error)}`); }
       }
+      if (!isLifecycleCurrent(token)) return;
+      if (kind === 'proxies' && names.length > failures.length) {
+        // Provider 更新会改变组内节点；同步节点快照，不等待下一轮轮询。
+        const [groups] = await Promise.allSettled([useApp.getState().refreshGroups(), useApp.getState().refreshProxyProviders(true)]);
+        nodesRefreshed = groups.status === 'fulfilled' && groups.value;
+      }
+      if (!isLifecycleCurrent(token)) return;
       const refreshed = await load();
       if (failures.length) notify('error', `已更新 ${names.length - failures.length}/${names.length} 个提供者；失败：${failures.join('；')}`);
-      else notify(refreshed ? 'success' : 'info', `已更新 ${names.length} 个提供者${refreshed ? '' : '，列表读取失败，请重试'}`);
+      else notify(refreshed && nodesRefreshed ? 'success' : 'info', `已更新 ${names.length} 个提供者${refreshed ? '' : '，列表读取失败，请重试'}${nodesRefreshed ? '' : '，节点列表暂未同步，请在节点页刷新'}`);
     } finally {
       setUpdating(null);
       endOperation();
@@ -282,15 +292,15 @@ export function ResourcesPage() {
       for (const name of names) if (await downloadGeo(name)) successes++;
       const refreshed = await load();
       if (successes) notify(successes === names.length && refreshed ? 'success' : 'info',
-        `已更新 ${successes}/${names.length} 个数据文件，重启内核后生效${refreshed ? '' : '；列表读取失败，请重试'}`);
+        `已更新 ${successes}/${names.length} 个数据库，重启内核后生效${refreshed ? '' : '；列表读取失败，请重试'}`);
     } finally { endOperation(); }
   };
 
   const ready = files.filter((f) => f.exists).length;
   const tabs: Array<{ value: Tab; label: string; count?: number; error: string }> = [
-    { value: 'geo', label: '内置数据', error: errors.files },
-    { value: 'rules', label: '规则提供者', count: loaded.rules && !errors.rules ? rules.length : undefined, error: errors.rules },
-    { value: 'proxies', label: '代理提供者', count: loaded.proxies && !errors.proxies ? proxies.length : undefined, error: errors.proxies },
+    { value: 'geo', label: '分流数据库', error: errors.files },
+    { value: 'rules', label: '规则集', count: loaded.rules && !errors.rules ? rules.length : undefined, error: errors.rules },
+    { value: 'proxies', label: '节点来源', count: loaded.proxies && !errors.proxies ? proxies.length : undefined, error: errors.proxies },
   ];
   const failedResources = tabs.filter(resource => resource.error);
 
@@ -298,14 +308,14 @@ export function ResourcesPage() {
     <>
       <header className="page-head">
         <div className="page-heading">
-          <h1 className="page-title">资源</h1>
+          <h1 className="page-title">资源管理</h1>
           <div className="page-sub dp-resource-summary" aria-live="polite">
             {loading ? '正在读取资源…' : failedResources.length > 0 ? failedResources.map(resource => <button
               key={resource.value} type="button" className="link-action dp-resource-error-link"
               aria-label={`查看${resource.label}读取错误`} aria-controls="resource-panel"
               onClick={() => { setTab(resource.value); setQuery(''); }}
             >{resource.label}读取失败</button>)
-              : `${ready}/${files.length} 个数据文件${connected ? ` · ${rules.length} 个规则集 · ${proxies.length} 个代理集` : ' · 内核未运行'}`}
+              : `${ready}/${files.length} 个文件已下载${connected ? ` · ${rules.length} 个规则集 · ${proxies.length} 个节点来源` : ' · 内核未运行'}`}
           </div>
         </div>
         <div className="page-actions">
@@ -314,45 +324,33 @@ export function ResourcesPage() {
           </button>
           <button
             type="button"
-            className="btn btn-ghost"
-            onClick={() => void api.openDataDir('PPClash').catch(() => null)}
+            className="icon-btn" aria-label="打开资源目录" title="打开资源目录"
+            onClick={() => void api.openDataDir('PPClash').catch(error => notify('error', `打开目录失败：${String(error)}`))}
           >
-            <IconFolder size={13} />
-            打开目录
+            <IconFolder size={15} />
           </button>
         </div>
       </header>
 
+      <div className="resource-tabs-toolbar">
+        <Segmented<Tab> value={tab} ariaLabel="资源类型" tabPanelId="resource-panel"
+          onChange={value => { setTab(value); setQuery(''); }}
+          options={tabs.map(item => ({ value: item.value, label: <>
+            <span title={item.error ? `${item.label}读取失败：${item.error}` : undefined}>{item.label}</span>
+            {item.count != null && <span className="resource-tab-count">{item.count}</span>}
+          </> }))} />
+      </div>
+
       <div className="page-scroll dp-page dp-resources">
         <div className="page-inner resources-page">
-          <div className="resource-tabs" role="tablist" aria-label="资源类型">
-            {tabs.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                role="tab"
-                aria-selected={tab === t.value}
-                aria-controls="resource-panel"
-                title={t.error ? `${t.label}读取失败：${t.error}` : undefined}
-                className={`resource-tab${tab === t.value ? ' active' : ''}`}
-                onClick={() => {
-                  setTab(t.value);
-                  setQuery('');
-                }}
-              >
-                {t.label}
-                {t.count != null && <span className="resource-tab-count">{t.count}</span>}
-              </button>
-            ))}
-          </div>
+
 
           {tab === 'geo' && (
-            <section id="resource-panel" className="card dp-resource-panel" role="tabpanel" aria-label="内置数据">
+            <section id="resource-panel" className="card dp-resource-panel" role="tabpanel" aria-label="分流数据库">
               <div className="section-head">
-                <span className="dp-resource-heading-icon"><IconGlobe size={15} /></span>
                 <div className="section-head-text">
-                  <div className="section-title">内置数据</div>
-                  <div className="section-desc">来源：MetaCubeX。在线更新会替换本地文件。</div>
+                  <h2 className="section-title">分流数据库</h2>
+                  <div className="section-desc">识别 IP 归属地与域名分类，供分流规则使用。</div>
                 </div>
                 <div className="spacer" />
                 <button
@@ -371,11 +369,11 @@ export function ResourcesPage() {
                   onClick={() => void reinstall()}
                 >
                   {reinstalling ? <Spinner small /> : null}
-                  {reinstallConfirm ? '确认恢复内置' : '恢复内置 Geo'}
+                  {reinstallConfirm ? '确认恢复内置' : '恢复内置数据'}
                 </button>
               </div>
-              {errors.files && <ReadError message={`内置数据：${errors.files}${loaded.files ? '；以下显示上次读取结果' : ''}`} onRetry={() => void load()} busy={loading || operationBusy} />}
-              {loading && !loaded.files && <EmptyState icon={<IconFolder size={19} />} title="正在读取内置数据…" loading />}
+              {errors.files && <ReadError message={`分流数据库：${errors.files}${loaded.files ? '；以下显示上次读取结果' : ''}`} onRetry={() => void load()} busy={loading || operationBusy} />}
+              {loading && !loaded.files && <EmptyState icon={<IconFolder size={19} />} title="正在读取分流数据库…" loading />}
               <div className="geo-source-list">
                 <div className="dp-geo-columns" aria-hidden="true"><span>数据库</span><span>在线源</span><span>本地状态</span><span>操作</span></div>
                 {GEO_SOURCE_INFO.map((item) => {
@@ -383,8 +381,7 @@ export function ResourcesPage() {
                   return (
                     <div className="geo-source-row" key={item.key}>
                       <div className="geo-source-label">
-                        <span className="geo-source-title">{item.label}</span>
-                        <span className="geo-source-file">{item.file}</span>
+                        <span className="geo-source-title" title={item.file}>{item.label}</span>
                       </div>
                       <input
                         className="input input-mono geo-source-input"
@@ -409,17 +406,17 @@ export function ResourcesPage() {
                           {file ? formatSize(file.size) : '—'}
                         </span>
                         <Pill tone={!loaded.files || errors.files ? undefined : file?.exists ? 'ok' : 'warn'}>
-                          {!loaded.files ? loading ? '读取中' : '未知' : errors.files ? '待确认' : file?.exists ? '就绪' : '缺失'}
+                          {!loaded.files ? loading ? '读取中' : '未知' : errors.files ? '待确认' : file?.exists ? '已下载' : '未下载'}
                         </Pill>
                       </div>
                       <button
                         type="button"
-                        className="btn btn-sm"
+                        className="icon-btn"
+                        aria-label={`更新 ${item.label}`} title={`更新 ${item.label}`}
                         disabled={operationBusy || loading}
                         onClick={() => void updateGeo([item.file])}
                       >
-                        {geoUpdating === item.file ? <Spinner small /> : null}
-                        更新
+                        {geoUpdating === item.file ? <Spinner small /> : <IconRefresh size={15} />}
                       </button>
                     </div>
                   );
@@ -428,9 +425,9 @@ export function ResourcesPage() {
 
               <div className="geo-options">
                 <div className="geo-option">
-                  <span>GeoData 模式</span>
+                  <span>GeoData 数据模式</span>
                   <Segmented
-                    ariaLabel="GeoData 模式"
+                    ariaLabel="GeoData 数据模式"
                     options={[
                       { value: 'db', label: 'db' },
                       { value: 'dat', label: 'dat' },
@@ -438,10 +435,11 @@ export function ResourcesPage() {
                     value={settings.geoDataMode}
                     onChange={(v) => {
                       updateSettings({ geoDataMode: v as 'db' | 'dat' });
-                      notify('info', 'GeoData 模式已保存，重启内核后生效');
+                      notify('info', 'GeoData 数据模式已保存，重启内核后生效');
                     }}
                   />
                 </div>
+                <div className="geo-auto-options">
                 <div className="geo-option">
                   <span>自动更新</span>
                   <Toggle
@@ -475,21 +473,22 @@ export function ResourcesPage() {
                     </div>
                   </div>
                 )}
+                </div>
               </div>
+              <p className="resource-usage-note">db 使用 MetaDB / MMDB，dat 使用 GeoIP.dat；GeoSite、ASN 独立按需加载，已下载不代表正在使用。</p>
 
             </section>
           )}
 
           {tab !== 'geo' && (
-            <section id="resource-panel" className="card dp-resource-panel" role="tabpanel" aria-label={tab === 'rules' ? '规则提供者' : '代理提供者'}>
+            <section id="resource-panel" className="card dp-resource-panel" role="tabpanel" aria-label={tab === 'rules' ? '规则集' : '节点来源'}>
               <div className="section-head">
-                <span className="dp-resource-heading-icon"><IconFolder size={15} /></span>
                 <div className="section-head-text">
-                  <div className="section-title">
-                    {tab === 'rules' ? '规则提供者' : '代理提供者'}
-                  </div>
+                  <h2 className="section-title">
+                    {tab === 'rules' ? '规则集' : '节点来源'}
+                  </h2>
                   <div className="section-desc">
-                    {tab === 'rules' ? '订阅中的规则集' : '订阅中的代理集'}
+                    {tab === 'rules' ? '订阅引用的域名、IP 等分流规则。' : '订阅引用的节点列表，更新后同步到节点分组。'}
                   </div>
                 </div>
                 <div className="spacer" />
@@ -499,7 +498,7 @@ export function ResourcesPage() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="筛选"
-                    aria-label="筛选提供者"
+                    aria-label="搜索资源"
                     spellCheck={false}
                   />
                 </label>
@@ -508,18 +507,18 @@ export function ResourcesPage() {
                 <EmptyState
                   icon={<IconFolder size={19} />}
                   title="内核未运行"
-                  desc="连接后显示规则集与代理集"
+                  desc="启动内核后读取当前订阅引用的资源"
                 />
               ) : <>
-                {errors[tab] && <ReadError message={`${tab === 'rules' ? '规则提供者' : '代理提供者'}：${errors[tab]}${loaded[tab] ? '；以下显示上次读取结果' : ''}`} onRetry={() => void load()} busy={loading || operationBusy} />}
-                {loading && !loaded[tab] ? <EmptyState icon={<IconFolder size={19} />} title="正在读取提供者…" loading /> :
+                {errors[tab] && <ReadError message={`${tab === 'rules' ? '规则集' : '节点来源'}：${errors[tab]}${loaded[tab] ? '；以下显示上次读取结果' : ''}`} onRetry={() => void load()} busy={loading || operationBusy} />}
+                {loading && !loaded[tab] ? <EmptyState icon={<IconFolder size={19} />} title="正在读取资源…" loading /> :
                   (!errors[tab] || (tab === 'rules' ? rules : proxies).length > 0) &&
                 <ProviderList
-                  emptyTitle={tab === 'rules' ? '没有规则提供者' : '没有代理提供者'}
+                  emptyTitle={tab === 'rules' ? '未引用独立规则集' : '未引用独立节点来源'}
                   emptyDesc={
                     tab === 'rules'
-                      ? '当前订阅没有规则集'
-                      : '当前订阅没有代理集'
+                      ? '规则可能直接写在订阅配置中，仍可正常分流。'
+                      : '节点可能直接包含在订阅中，可在「代理节点」查看。'
                   }
                   providers={tab === 'rules' ? rules : proxies}
                   updating={updating}

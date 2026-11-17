@@ -18,10 +18,10 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# Local editor settings
+.vscode/
+.fleet/
+*.code-workspace
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -50,12 +50,13 @@ app.*.map.json
 # PP Clash project
 node_modules/
 dist/
-src-tauri/target/
+src-tauri/target
 PP Clash.app/
 *.app/
 legacy/
 .metadata
 src-tauri/resources/kernel.zip
+src-tauri/resources/kernel.zip.sha256
 *.log
 
 # runtime observability samples
@@ -76,3 +77,39 @@ observability/
 *.jks
 *.ovpn
 secrets/
+
+# Playwright 验证临时产物
+.playwright-mcp/
+
+# Local product history, design iterations, and machine-specific helpers
+/docs/
+/.impeccable/
+/.superpowers/
+/.claude/
+/PRODUCT.md
+/DESIGN.md
+/scripts/windows-enable-ssh.ps1
+/scripts/make-icon-raster.py
+/scripts/remove_watermark.py
+
+# Only the public product documents belong in the repository.
+*.md
+!/README.md
+!/README.zh-CN.md
+!/THIRD_PARTY_NOTICES.md
+
+# Local assistant state and verification output
+.agents/
+.codex/
+.cursor/
+.gemini/
+.cache/
+__pycache__/
+test-results/
+playwright-report/
+
+# Generated Tauri schemas and unused icon design intermediates
+/src-tauri/gen/
+/src-tauri/icons/icon_cat_gen.png
+/src-tauri/icons/icon_cat_raw.png
+/src-tauri/icons/mascot.png

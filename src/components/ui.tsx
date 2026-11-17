@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { IconCheck, IconChevronDown, IconSearch, IconX } from './icons';
+import { IconCheck, IconChevronDown, IconChevronRight, IconSearch, IconX } from './icons';
 import { usePresence } from './use-presence';
 
 /**
@@ -96,7 +96,7 @@ export function EmptyState({
   loading = false,
   compact = false,
 }: {
-  icon: ReactNode;
+  icon?: ReactNode;
   title: string;
   desc?: string;
   action?: ReactNode;
@@ -104,8 +104,8 @@ export function EmptyState({
   compact?: boolean;
 }) {
   return (
-    <div className={`empty${compact ? ' empty-compact' : ''}`} role="status" aria-busy={loading}>
-      <div className="empty-icon" aria-hidden="true">{loading ? <Spinner /> : icon}</div>
+    <div className={`empty${compact ? ' empty-compact' : ''}${!loading && !icon ? ' empty-plain' : ''}`} role="status" aria-busy={loading}>
+      {(loading || icon) && <div className="empty-icon" aria-hidden="true">{loading ? <Spinner /> : icon}</div>}
       <div className="empty-title">{title}</div>
       {desc && <div className="empty-desc">{desc}</div>}
       {action && <div className="empty-action">{action}</div>}
@@ -126,25 +126,41 @@ export function Segmented<T extends string>({
   onChange,
   ariaLabel,
   disabled = false,
+  tabPanelId,
 }: {
   options: Array<{ value: T; label: ReactNode }>;
   value: T;
   onChange: (v: T) => void;
   ariaLabel?: string;
   disabled?: boolean;
+  tabPanelId?: string;
 }) {
   return (
-    <div className="segmented seg seg-motion" role="group" aria-label={ariaLabel}
+    <div className="segmented seg seg-motion" role={tabPanelId ? 'tablist' : 'group'} aria-label={ariaLabel}
       data-has-value={options.some(option => option.value === value)}
       style={{ '--seg-count': Math.max(options.length, 1), '--seg-index': Math.max(options.findIndex(option => option.value === value), 0) } as CSSProperties}>
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
-          aria-pressed={o.value === value}
+          role={tabPanelId ? 'tab' : undefined}
+          aria-pressed={tabPanelId ? undefined : o.value === value}
+          aria-selected={tabPanelId ? o.value === value : undefined}
+          aria-controls={tabPanelId}
+          tabIndex={tabPanelId ? (o.value === value ? 0 : -1) : undefined}
           disabled={disabled}
           className={`seg-btn${o.value === value ? ' active' : ''}`}
           onClick={() => onChange(o.value)}
+          onKeyDown={tabPanelId ? event => {
+            const current = options.findIndex(option => option.value === o.value);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+              : event.key === 'ArrowRight' ? (current + 1) % options.length
+              : event.key === 'ArrowLeft' ? (current - 1 + options.length) % options.length : -1;
+            if (next < 0) return;
+            event.preventDefault();
+            onChange(options[next].value);
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+          } : undefined}
         >
           {o.label}
         </button>
@@ -342,6 +358,14 @@ export function Spinner({ small }: { small?: boolean }) {
 }
 
 /** 跨页跳转：App.tsx 监听该事件切页。页面内不直接持有路由状态。 */
-export function navigate(page: 'overview' | 'proxies' | 'security' | 'profiles' | 'settings' | 'kernel' | 'logs') {
+export function navigate(page: 'overview' | 'proxies' | 'connections' | 'security' | 'profiles' | 'settings' | 'kernel' | 'logs') {
   window.dispatchEvent(new CustomEvent('ppclash:nav', { detail: page }));
+}
+
+/** 内容区跳转统一使用图标，保留可访问名称与悬停提示。 */
+export function PageLink({ page, label, icon }: {
+  page: Parameters<typeof navigate>[0]; label: string; icon?: ReactNode;
+}) {
+  return <button type="button" className="icon-btn icon-btn-sm page-link" aria-label={label}
+    title={label} data-tip={label} onClick={() => navigate(page)}>{icon ?? <IconChevronRight size={15} />}</button>;
 }

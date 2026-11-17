@@ -1,10 +1,11 @@
 name: CI
 
 on:
+  workflow_call:
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
-      - 'docs/**'
       - '**/*.md'
       - 'assets/**'
       - '**/*.png'
@@ -14,7 +15,6 @@ on:
       - '**/*.webp'
   pull_request:
     paths-ignore:
-      - 'docs/**'
       - '**/*.md'
       - 'assets/**'
       - '**/*.png'
@@ -23,25 +23,49 @@ on:
       - '**/*.gif'
       - '**/*.webp'
 
+permissions:
+  contents: read
+
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    runs-on: macos-14
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [macos-15, windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf lsof
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install dependencies
         run: ./scripts/ci.sh install
       - name: Frontend checks
         run: ./scripts/ci.sh check-web
       - name: Rust tests
         run: ./scripts/ci.sh check-rust
+      - name: Resource and Windows script fixtures
+        run: ./scripts/ci.sh check-resources
       - name: Secret scan
         run: ./scripts/ci.sh scan

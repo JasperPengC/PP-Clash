@@ -15,9 +15,8 @@ vi.mock('../src/core/api', async original => {
 const initial = useApp.getInitialState();
 let host: HTMLDivElement;
 let root: Root;
-const browseGroup = async (name: string) => {
-  const picker = host.querySelector<HTMLSelectElement>('select[aria-label="浏览策略"]')!;
-  await act(async () => { picker.value = name; picker.dispatchEvent(new Event('change', { bubbles: true })); });
+const openMembers = async () => {
+  expect(host.querySelector('#overview-members')?.hasAttribute('hidden')).toBe(false);
 };
 
 beforeEach(() => {
@@ -38,18 +37,45 @@ afterEach(async () => {
   host.remove();
 });
 
-it('常用首屏按状态速率、接管订阅、流量分组与三个诊断区域组织', async () => {
+it('首屏常驻当前分组候选，诊断详情仍按需展开', async () => {
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
-  for (const name of ['当前连接', '实时流量', '当前分组', '服务连通', 'IP 质量', '泄漏检查']) {
-    expect(host.querySelector(`section[aria-label="${name}"]`), name).not.toBeNull();
-  }
   expect([...host.querySelectorAll('.ov-top-row > section')].map(node => node.getAttribute('aria-label')))
     .toEqual(['当前连接', '上传速率', '下载速率']);
-  expect([...host.querySelectorAll('.ov-control-row > section')].map(node => node.getAttribute('aria-label')))
-    .toEqual(['流量接管', '当前订阅']);
   expect([...host.querySelectorAll('.ov-main-row > section')].map(node => node.getAttribute('aria-label')))
     .toEqual(['实时流量', '当前分组']);
-  expect(host.querySelectorAll('.ov-diagnostic-row > section')).toHaveLength(3);
+  expect([...host.querySelectorAll('.ov-bottom-row > section')].map(node => node.getAttribute('aria-label')))
+    .toEqual(['当前订阅', '服务连通']);
+  expect(host.querySelector('#overview-members')?.hasAttribute('hidden')).toBe(false);
+  expect(host.querySelector('[aria-label="当前分组候选"]')).not.toBeNull();
+  expect(host.querySelector('.ov-common-group')).toBeNull();
+  expect(host.querySelector('#diagnostic-details')).toBeNull();
+  expect(host.querySelectorAll('.service-tile')).toHaveLength(3);
+  expect(host.querySelector('.ov-latency svg circle')).not.toBeNull();
+  expect(host.querySelector('.ov-group-tag')?.textContent).toContain('Main');
+  expect(host.querySelector('[aria-label="浏览策略"]')).toBeNull();
+  expect(host.querySelector('[aria-label="管理策略"]')).toBeNull();
+  expect(host.querySelector('[aria-label="查看全部节点"]')).toBeNull();
+  expect(host.querySelectorAll('.ov-speed-peak')).toHaveLength(2);
+  const select = vi.fn(); useApp.setState({ selectNode: select });
+  await openMembers();
+  expect(host.querySelector('#overview-members')?.hasAttribute('hidden')).toBe(false);
+  expect(select).not.toHaveBeenCalled();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-controls="diagnostic-details"]')!.click());
+  expect(host.querySelector('section[aria-label="IP 质量"]')).not.toBeNull();
+  expect(host.querySelector('section[aria-label="泄漏检查"]')).not.toBeNull();
+});
+
+it('未添加订阅时将导入操作放在订阅卡中，不挤占连接卡的出口信息行', async () => {
+  useApp.setState({ kernelPhase: 'stopped', activeId: null, profiles: [], groups: [] });
+  await act(async () => root.render(createElement(OverviewPage, { active: false })));
+
+  const connection = host.querySelector('section[aria-label="当前连接"]')!;
+  const subscription = host.querySelector('section[aria-label="当前订阅"]')!;
+  expect(connection.querySelector('.ov-hero-actions')).toBeNull();
+  expect(connection.querySelector('.ov-hero-node')?.textContent).toContain('尚未配置出口');
+  expect(subscription.querySelector('.quota-card-name')?.textContent).toContain('尚未添加订阅');
+  expect(subscription.querySelector('.quota-empty')?.textContent).toContain('添加订阅后');
+  expect(subscription.querySelector<HTMLButtonElement>('[aria-label="导入订阅"]')).not.toBeNull();
 });
 
 it('当前候选优先，其余按目标延迟排序，未测与失败各保留自己的标签', async () => {
@@ -61,6 +87,7 @@ it('当前候选优先，其余按目标延迟排序，未测与失败各保留�
     { name: '最快', type: 'Trojan', delay: 21, delaysByTarget: { [DEFAULT_LATENCY_URL]: 21 } },
   ] }] });
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
+  await openMembers();
   const rows = [...host.querySelectorAll<HTMLButtonElement>('.group-node')];
   expect(rows.map(row => row.title)).toEqual(['慢速当前', '最快', '较快', '失败', '未知']);
   expect(rows[0].getAttribute('aria-pressed')).toBe('true');
@@ -75,6 +102,7 @@ it('2000 个候选可在卡内浏览到末尾，滚动不测速也不切节点',
       delaysByTarget: { [DEFAULT_LATENCY_URL]: i + 1 } })),
   }] });
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
+  await openMembers();
   const list = host.querySelector<HTMLElement>('[aria-label="当前分组候选"]');
   expect(list).not.toBeNull();
   expect(host.querySelectorAll('.group-node').length).toBeLessThanOrEqual(20);
@@ -112,7 +140,7 @@ it('直连模式不显示或自动测速 Main 的闲置代理候选', async () =
   } finally { vi.useRealTimers(); }
 });
 
-it('浏览 GitHub 分组后主卡目标、读数、颜色、辅助标签和重测仍属于实际 Main 连接', async () => {
+it('其他分组不影响主卡实际 Main 连接的测速目标、读数和颜色', async () => {
   const testDelay = vi.fn().mockResolvedValue(180);
   useApp.setState({ testDelay, groups: [
     { name: 'Main', type: 'Selector', now: 'A', nodes: [{ name: 'A', type: 'Trojan', delay: 320, delaysByTarget: { [DEFAULT_LATENCY_URL]: 320 } }] },
@@ -123,7 +151,8 @@ it('浏览 GitHub 分组后主卡目标、读数、颜色、辅助标签和重�
   const mainLatency = () => connection.querySelector<HTMLButtonElement>('.ov-latency')!;
   const target = mainLatency().title;
   expect(target).toContain('Google HTTPS');
-  await browseGroup('开发');
+  expect(host.querySelector('.ov-group-tag')?.textContent).toContain('Main');
+  expect(host.querySelector('[aria-label="浏览策略"]')).toBeNull();
   expect(mainLatency().title).toBe(target);
   expect(mainLatency().getAttribute('aria-label')).toBe('测速当前节点，延迟 320 毫秒');
   expect(mainLatency().classList.contains('bad')).toBe(true);
@@ -133,7 +162,7 @@ it('浏览 GitHub 分组后主卡目标、读数、颜色、辅助标签和重�
   await act(async () => mainLatency().click());
   expect(testDelay).toHaveBeenCalledExactlyOnceWith('A', DEFAULT_LATENCY_URL);
   expect(mainLatency().textContent).toBe('180 ms');
-  expect(host.querySelector('.ov-routing')?.textContent).not.toContain('180 ms');
+  expect(host.querySelector('.group-card')?.textContent).toContain('180 ms');
 });
 
 it.each([
@@ -176,21 +205,15 @@ it('全局模式的状态与当前分组来自 GLOBAL 快照，不借用订阅�
   await act(async () => { await useApp.getState().refreshGroups(); root.render(createElement(OverviewPage, { active: false })); });
   expect(host.querySelector('section[aria-label="当前连接"] .ov-hero-node')?.textContent).toBe('全局出口');
   expect(host.querySelector('section[aria-label="当前连接"] .ov-latency')?.textContent).toBe('99 ms');
-  expect(host.querySelector<HTMLSelectElement>('select[aria-label="浏览策略"]')?.value).toBe('GLOBAL');
+  expect(host.querySelector('.ov-group-tag')?.textContent).toContain('GLOBAL');
   expect(host.querySelector<HTMLButtonElement>('.group-node')?.title).toBe('全局出口');
 });
 
-it('当前分组始终提供全部节点入口，小分组也能直接进入节点页', async () => {
+it('当前分组只读展示名称，不再提供分组切换或全部节点跳转', async () => {
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
-  const open = host.querySelector<HTMLButtonElement>('.ov-routing [aria-label="查看全部节点"]');
-  expect(open).not.toBeNull();
-  const navigate = vi.fn();
-  window.addEventListener('ppclash:nav', navigate);
-  try {
-    await act(async () => open!.click());
-    expect(navigate).toHaveBeenCalledOnce();
-    expect((navigate.mock.calls[0][0] as CustomEvent).detail).toBe('proxies');
-  } finally { window.removeEventListener('ppclash:nav', navigate); }
+  expect(host.querySelector('.ov-group-tag')?.textContent).toContain('Main');
+  expect(host.querySelector('[aria-label="浏览策略"]')).toBeNull();
+  expect(host.querySelector('[aria-label="查看全部节点"]')).toBeNull();
 });
 
 it('概览切换节点时保持当前选择可辨认，并在完成前阻止重复切换', async () => {
@@ -198,6 +221,7 @@ it('概览切换节点时保持当前选择可辨认，并在完成前阻止重�
   const selectNode = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
   useApp.setState({ selectNode });
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
+  await openMembers();
   const nodes = [...host.querySelectorAll<HTMLButtonElement>('.group-node')];
   expect(nodes[0].getAttribute('aria-pressed')).toBe('true');
   await act(async () => nodes[1].click());
@@ -222,17 +246,16 @@ it('诊断展开不触发检测，收起后焦点仍留在开合按钮', async (
   expect(document.activeElement).toBe(toggle);
 });
 
-it('查看策略只展开成员，不切换节点，负载均衡不声称唯一出口', async () => {
+it('当前分组跟随实际负载均衡策略，不声称唯一出口或允许手动选成员', async () => {
   const selectNode = vi.fn();
   const testDelay = vi.fn();
-  useApp.setState({ selectNode, testDelay, groups: [...useApp.getState().groups,
+  useApp.setState({ selectNode, testDelay, routing: { primary: '我的均衡', managed: ['我的均衡'] }, groups: [...useApp.getState().groups,
     { name: '我的均衡', type: 'LoadBalance', now: 'B', nodes: ['A', 'B'].map(name => ({ name, type: 'Trojan', delay: 20 })) },
   ] });
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
-  const policy = host.querySelector<HTMLOptionElement>('option[value="我的均衡"]')!;
-  expect(policy.textContent).toContain('按连接分配');
-  expect(policy.textContent).not.toContain('B');
-  await browseGroup('我的均衡');
+  await openMembers();
+  expect(host.querySelector('.ov-group-tag')?.textContent).toBe('我的均衡');
+  expect(host.querySelector('.ov-group-tag')?.getAttribute('title')).toContain('按连接分配');
   expect(selectNode).not.toHaveBeenCalled();
   expect(testDelay).not.toHaveBeenCalled();
   expect(host.querySelector('#overview-nodes')?.hasAttribute('hidden')).toBe(false);
@@ -245,23 +268,44 @@ it('切换订阅后成员区回到该订阅的分组，不停留在上一份订�
   const base = useApp.getState().profiles[0];
   useApp.setState({ profiles: [base, { ...base, id: 'other', name: '另一份订阅', raw: 'proxies:\n  - { name: C, type: ss, server: example.com, port: 443, cipher: aes-128-gcm, password: demo }\nproxy-groups:\n  - { name: 备用组, type: select, proxies: [C] }\nrules: [MATCH,备用组]' }] });
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
-  await browseGroup('Main');
+  expect(host.querySelector('.ov-group-tag')?.textContent).toBe('Main');
   expect(host.querySelector('#overview-nodes')?.textContent).toContain('B');
   await act(async () => useApp.setState({ activeId: 'other', kernelPhase: 'stopped', connectedAt: null, routing: { primary: '备用组', managed: ['备用组'], roots: ['备用组'] } }));
   expect(host.querySelector('#overview-nodes')?.textContent).toContain('C');
   expect(host.querySelector('#overview-nodes')?.textContent).not.toContain('B');
 });
 
-it('离线查看任意订阅分组时显示该组成员，且不能发起切换', async () => {
+it('离线显示订阅首组与只读标签，不能浏览其他组或切换节点', async () => {
   const selectNode = vi.fn();
   useApp.setState({ kernelPhase: 'stopped', selectNode, profiles: [{
     ...useApp.getState().profiles[0], raw: 'proxies:\n  - { name: A, type: ss, server: example.com, port: 443, cipher: aes-128-gcm, password: demo }\n  - { name: B, type: ss, server: example.com, port: 443, cipher: aes-128-gcm, password: demo }\nproxy-groups:\n  - { name: 第一组, type: select, proxies: [A] }\n  - { name: 第二组, type: select, proxies: [B] }\nrules: [MATCH,第一组]',
   }] });
   await act(async () => root.render(createElement(OverviewPage, { active: false })));
-  await browseGroup('第二组');
+  expect(host.querySelector('.ov-group-tag')?.textContent).toBe('第一组');
+  expect(host.querySelector('[aria-label="浏览策略"]')).toBeNull();
   const members = [...host.querySelectorAll<HTMLButtonElement>('.group-node')];
   expect(members).toHaveLength(1);
-  expect(members[0].textContent).toContain('B');
+  expect(members[0].textContent).toContain('A');
   expect(members[0].disabled).toBe(true);
   expect(selectNode).not.toHaveBeenCalled();
+});
+
+
+it.each(['running', 'stopped'] as const)('概览在 %s 时仅通过系统代理和 TUN 控制接管，不提供重复连接按钮', async kernelPhase => {
+  const toggleSystemProxy = vi.fn().mockResolvedValue(undefined);
+  const setTun = vi.fn().mockResolvedValue(undefined);
+  const startKernel = vi.fn(); const stopKernel = vi.fn();
+  useApp.setState({ kernelPhase, sysProxyEnabled: false, tunEnabled: false, toggleSystemProxy, setTun, startKernel, stopKernel });
+  await act(async () => root.render(createElement(OverviewPage, { active: false })));
+  expect(host.querySelector('.ov-connection-button')).toBeNull();
+  expect(host.querySelector('.page-head [aria-label="流量接管"]')).not.toBeNull();
+  expect(host.querySelector('.page-scroll [aria-label="流量接管"]')).toBeNull();
+  const proxy = host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="系统代理"]')!;
+  const tun = host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="TUN 模式"]')!;
+  expect(proxy.disabled).toBe(false); expect(tun.disabled).toBe(false);
+  await act(async () => proxy.click());
+  expect(toggleSystemProxy).toHaveBeenCalledExactlyOnceWith(true);
+  await act(async () => tun.click());
+  expect(setTun).toHaveBeenCalledExactlyOnceWith(true);
+  expect(startKernel).not.toHaveBeenCalled(); expect(stopKernel).not.toHaveBeenCalled();
 });

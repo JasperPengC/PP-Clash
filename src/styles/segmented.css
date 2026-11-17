@@ -1,0 +1,69 @@
+/* 分段切换、位置导航和来源选择共用资源页的胶囊尺度与材质。 */
+.seg,
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: var(--segment-height);
+  min-height: var(--segment-height);
+  padding: var(--segment-inset);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--segment-track);
+  box-shadow: var(--segment-track-shadow);
+}
+
+.seg-btn {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: var(--segment-gap);
+  height: var(--segment-item-height);
+  min-height: var(--segment-item-height);
+  margin: 0;
+  padding: 0 var(--segment-padding-inline);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--type-meta);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.seg-btn:hover:not(:disabled), .seg-btn.active { color: var(--text-primary); }
+.seg-btn:disabled { cursor: default; opacity: .5; }
+.seg-btn > svg { flex: none; }
+
+/* 等宽切换使用滑动选择面；变宽的导航保留自身宽度和横向浏览能力。 */
+.seg-motion { position: relative; isolation: isolate; display: grid; grid-template-columns: repeat(var(--seg-count), minmax(0, 1fr)); }
+.seg-motion::before,
+.seg:not(.seg-motion) .seg-btn.active::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  border: 1px solid var(--glass-stroke);
+  box-sizing: border-box;
+  border-radius: var(--radius-pill);
+  background: var(--glass-bright);
+  box-shadow: var(--shadow-control);
+  pointer-events: none;
+}
+.seg-motion::before {
+  inset: var(--segment-inset) auto var(--segment-inset) var(--segment-inset);
+  width: calc((100% - var(--segment-inset) * 2) / var(--seg-count));
+  transform: translateX(calc(var(--seg-index) * 100%));
+}
+.seg-motion[data-has-value='false']::before { visibility: hidden; }
+.seg:not(.seg-motion) .seg-btn.active::before { inset: -1px 0; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .seg, .segmented { background: var(--surface-2); box-shadow: none; }
+  .seg-motion::before, .seg:not(.seg-motion) .seg-btn.active::before { background: var(--surface); }
+}

@@ -83,6 +83,22 @@ beforeEach(async () => {
   });
 });
 
+it('系统代理切换到 TUN 再切回后，订阅热更新仍能确认运行配置', async () => {
+  useApp.setState({ kernelPhase: 'running', connectedAt: 55, sysProxyEnabled: true, tunEnabled: false, elevated: true });
+  await useApp.getState().setTun(true);
+  expect(useApp.getState()).toMatchObject({ kernelPhase: 'running', tunEnabled: true, sysProxyEnabled: false, kernelError: null });
+  expect(JSON.parse(loaded).tun.enable).toBe(true);
+  await useApp.getState().setTun(false);
+  await useApp.getState().toggleSystemProxy(true);
+  expect(useApp.getState()).toMatchObject({ kernelPhase: 'running', tunEnabled: false, sysProxyEnabled: true, kernelError: null });
+  expect(JSON.parse(loaded).tun.enable).toBe(false);
+  expect(await useApp.getState().refreshProfile('active')).toBe(true);
+  expect(current()!.raw).toBe(newRaw);
+  expect(nodeIn(loaded)).toBe('new-node');
+  expect(useApp.getState().kernelError).toBeNull();
+  expect(useApp.getState().profileRefreshErrors.active).toBeUndefined();
+});
+
 it.each(['', '<html>login required</html>', 'proxies: [', '- not-a-config', 'mixed-port: 7890',
   'proxies: invalid', 'proxies: []\nproxy-groups: []\nrules: []', 'proxies: [{ name: broken }]'])
 ('无效候选 %j 不替换非活动订阅最后成功的内容与元信息', async raw => {
@@ -223,11 +239,10 @@ it('加载在途时改配置并编辑其他订阅，旧候选补偿回旧运行�
   expect(disk).toBe(originalDisk); expect(loaded).toBe(originalDisk); expect(useApp.getState().settings.dnsPort).toBe(1054);
 });
 
-it('候选校验失败不提前修改 GitHub 固定出口设置', async () => {
-  useApp.getState().updateSettings({ egressGuard: true, egressGuardNode: 'old-node' });
+it('候选校验失败不提前提交订阅内容', async () => {
   vi.mocked(api.validateConfig).mockRejectedValueOnce(new Error('fixture rejected'));
   expect(await useApp.getState().refreshProfile('active')).toBe(false);
-  expect(current()!.raw).toBe(oldRaw); expect(useApp.getState().settings.egressGuardNode).toBe('old-node');
+  expect(current()!.raw).toBe(oldRaw);
 });
 
 it('合法 provider 订阅与仅直连规则配置可通过候选校验', async () => {
@@ -377,11 +392,9 @@ it('已删除或编辑的过期下载报错不写入对应订阅错误状态', a
   expect(useApp.getState().notify).not.toHaveBeenCalledWith('error', expect.stringContaining('old URL error'));
 });
 
-it.each([false, true])('接受停止态候选后复用已校验文件启动，egressGuard=%s', async egressGuard => {
-  useApp.getState().updateSettings({ egressGuard, egressGuardNode: '' });
+it('接受停止态候选后复用已校验文件启动', async () => {
   expect(await useApp.getState().refreshProfile('active')).toBe(true);
   expect(current()!.raw).toBe(newRaw);
-  if (egressGuard) expect(useApp.getState().settings.egressGuardNode).toBe('new-node');
   await useApp.getState().startKernel(true);
   expect(useApp.getState().kernelPhase).toBe('running'); expect(nodeIn(loaded)).toBe('new-node');
   expect(api.prepareConfig).toHaveBeenCalledOnce(); expect(api.validateConfig).toHaveBeenCalledOnce();
@@ -397,14 +410,11 @@ it('活动订阅成功更新后保留并确认已有固定节点', async () => {
   expect(useApp.getState().fixedNodes).toEqual({ active: { Main: 'old-node' } });
 });
 
-it('活动候选缺少既定 GitHub 固定节点时拒绝接受，不能静默换出口', async () => {
+it('活动候选无需满足已移除的 GitHub 固定节点偏好', async () => {
   useApp.setState({ kernelPhase: 'running', connectedAt: 55 });
-  useApp.getState().updateSettings({ egressGuard: true, egressGuardNode: 'old-node' });
-  const originalDisk = disk;
-  expect(await useApp.getState().refreshProfile('active')).toBe(false);
-  expect(current()!.raw).toBe(oldRaw); expect(useApp.getState().settings.egressGuardNode).toBe('old-node');
-  expect(disk).toBe(originalDisk); expect(loaded).toBe(originalDisk);
-  expect(useApp.getState().profileRefreshErrors.active).toContain('GitHub');
+  expect(await useApp.getState().refreshProfile('active')).toBe(true);
+  expect(current()!.raw).toBe(newRaw);
+  expect(useApp.getState().profileRefreshErrors.active).toBeUndefined();
 });
 
 it('成功接受活动候选后清除旧运行状态未确认提示', async () => {

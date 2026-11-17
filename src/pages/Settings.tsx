@@ -1,12 +1,11 @@
-import { Children, createContext, isValidElement, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Children, createContext, isValidElement, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { EmptyState, ReadError, Segmented, Select, Toggle } from '../components/ui';
-import { IconDownload, IconFolder, IconLog, IconPalette, IconSearch, IconSliders, IconX } from '../components/icons';
+import { IconCheck, IconSearch, IconX } from '../components/icons';
 import { formatTime } from '../core/format';
-import { getLifecycleToken, isLifecycleCurrent, resolveActiveNode, useApp, type ThemeMode } from '../store/app';
+import { useApp } from '../store/app';
+import type { ThemeMode } from '../domain/app';
 import { api, DATA_DIR, isTauri } from '../core/api';
-import { findStableEgressGroup } from '../core/generator';
-import { parseSubscriptionPreview } from '../core/subscription';
 import { isWindows } from '../core/platform';
 import { APP_VERSION, UPDATE_REPO } from '../core/update';
 import { TEXT_SIZES } from '../store/text-size';
@@ -27,12 +26,10 @@ function matchesSetting(query: string, label: string, hint = '') {
 function Section({
   title,
   desc,
-  icon,
   children,
 }: {
   title: string;
   desc?: string;
-  icon?: ReactNode;
   children: ReactNode;
 }) {
   const { query, category } = useContext(SettingsFilter);
@@ -44,7 +41,6 @@ function Section({
   return (
     <section className="settings-section" aria-label={title}>
       <div className="section-head">
-        {icon && <span className="settings-section-icon">{icon}</span>}
         <div className="section-head-text">
           <h2 className="section-title">{title}</h2>
           {desc && <div className="section-desc">{desc}</div>}
@@ -59,14 +55,16 @@ function Row({
   label,
   hint,
   control,
+  className = '',
 }: {
   label: string;
   hint?: string;
   control: ReactNode;
+  className?: string;
 }) {
   const id = useId();
   return (
-    <div className="field-row" role="group" aria-labelledby={`${id}-label`} aria-describedby={hint ? `${id}-hint` : undefined}>
+    <div className={`field-row ${className}`} role="group" aria-labelledby={`${id}-label`} aria-describedby={hint ? `${id}-hint` : undefined}>
       <div className="field-main">
         <div className="field-label" id={`${id}-label`}>{label}</div>
         {hint && <div className="field-hint" id={`${id}-hint`}>{hint}</div>}
@@ -94,27 +92,45 @@ function customProxyDraft(value: string): string {
 }
 
 const THEMES: Array<{ value: ThemeMode; label: string }> = [
-  { value: 'system', label: '跟随系统' },
   { value: 'light', label: '浅色' },
   { value: 'dark', label: '深色' },
+  { value: 'system', label: '跟随系统' },
 ];
 
-/** 数字端口：回车 / 失焦才提交，避免边打字边重启内核。 */
+function ThemePreviewWindow({ theme }: { theme: 'light' | 'dark' }) {
+  return <span className={`settings-thumb-window is-${theme}`}>
+    <span className="settings-thumb-sidebar"><i /><i /><i /></span>
+    <span className="settings-thumb-content">
+      <span className="settings-thumb-toolbar"><i /><i /></span>
+      <span className="settings-thumb-cards"><i /><i /></span>
+      <span className="settings-thumb-panel"><i /><i /><i /></span>
+    </span>
+  </span>;
+}
+
+function ThemePicker({ value, onChange }: { value: ThemeMode; onChange: (theme: ThemeMode) => void }) {
+  return <div className="settings-theme-picker" role="group" aria-label="主题">
+    {THEMES.map(option => <button key={option.value} type="button" className="settings-theme-option"
+      aria-pressed={value === option.value} onClick={() => onChange(option.value)}>
+      <span className={`settings-theme-thumb is-${option.value}`} aria-hidden="true">
+        <ThemePreviewWindow theme={option.value === 'dark' ? 'dark' : 'light'} />
+        {option.value === 'system' && <ThemePreviewWindow theme="dark" />}
+      </span>
+      <span className="settings-theme-caption">{option.label}<span className="settings-theme-mark" aria-hidden="true">
+        {value === option.value && <IconCheck size={12} />}
+      </span></span>
+    </button>)}
+  </div>;
+}
+
+/** 分类独立展示，搜索跨分类；表单草稿由页面保存。 */
 export function SettingsPage() {
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('全部');
+  const [category, setCategory] = useState('外观');
   const searchRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const settings = useApp((s) => s.settings);
-  const groups = useApp((s) => s.groups);
-  const profiles = useApp((s) => s.profiles);
-  const activeId = useApp((s) => s.activeId);
   const updateSettings = useApp((s) => s.updateSettings);
-  const activeNode = resolveActiveNode(groups, groups[0]?.now ?? '');
-  const activeProfile = profiles.find((p) => p.id === activeId);
-  const detectedGithubGroup = useMemo(
-    () => findStableEgressGroup(parseSubscriptionPreview(activeProfile?.raw ?? '')),
-    [activeProfile?.raw]
-  );
   const checkingUpdate = useApp((s) => s.checkingUpdate);
   const checkUpdate = useApp((s) => s.checkUpdate);
   const updateInfo = useApp((s) => s.updateInfo);
@@ -130,9 +146,6 @@ export function SettingsPage() {
   const backupRequest = useRef(0);
   const backupReading = useRef(false);
   const restoreTimer = useRef<number | undefined>(undefined);
-  const [configBusy, setConfigBusy] = useState(false);
-  const configLock = useRef(false);
-
   const [proxyCustomOpen, setProxyCustomOpen] = useState(false);
   const [ghDraft, setGhDraft] = useState(() => customProxyDraft(settings.githubProxy));
   const [proxySaveError, setProxySaveError] = useState<string | null>(null);
@@ -196,7 +209,7 @@ export function SettingsPage() {
   }, [loadBackups]);
 
   const doBackup = async () => {
-    if (backupLock.current || backupReading.current || configLock.current) return;
+    if (backupLock.current || backupReading.current) return;
     backupLock.current = true;
     setBackupBusy(true);
     setRestoreConfirm(null);
@@ -214,7 +227,7 @@ export function SettingsPage() {
   };
 
   const doRestore = async (name: string) => {
-    if (backupLock.current || backupReading.current || configLock.current) return;
+    if (backupLock.current || backupReading.current) return;
     const notify = useApp.getState().notify;
     if (restoreConfirm !== name) {
       setRestoreConfirm(name);
@@ -237,50 +250,17 @@ export function SettingsPage() {
     }
   };
 
-  const setEgressGuard = async (on: boolean) => {
-    if (configLock.current || backupLock.current) return;
-    configLock.current = true;
-    setConfigBusy(true);
-    const token = getLifecycleToken();
-    const previous = useApp.getState().settings;
-    try {
-      updateSettings({ egressGuard: on, egressGuardNode: on ? previous.egressGuardNode || activeNode : previous.egressGuardNode });
-      const st = useApp.getState();
-      if (!st.profiles.some((profile) => profile.id === st.activeId)) {
-        notify('info', 'GitHub 出口偏好已保存，导入订阅并连接后生效');
-        return;
-      }
-      const applied = await st.applyConfig();
-      if (!isLifecycleCurrent(token)) return;
-      if (!applied) throw new Error('配置生成失败，请检查活动订阅后重试');
-      if (st.kernelPhase === 'running' && !await st.restartKernel(true, token, true)) throw new Error('内核重启失败，请重试');
-      if (!isLifecycleCurrent(token)) return;
-      notify('info', !on ? 'GitHub 已跟随节点切换' : detectedGithubGroup
-        ? `GitHub 将使用订阅分组「${detectedGithubGroup}」`
-        : '未发现 GitHub 分组，已追加固定出口；固定节点可在「节点」页切换');
-    } catch (error) {
-      if (!isLifecycleCurrent(token)) return;
-      updateSettings({ egressGuard: previous.egressGuard, egressGuardNode: previous.egressGuardNode });
-      useApp.setState({ configPath: '' });
-      notify('error', `GitHub 出口设置未生效：${String(error)}`);
-    } finally {
-      configLock.current = false;
-      setConfigBusy(false);
-    }
-  };
-
   return (
     <>
       <header className="page-head">
         <div className="page-heading">
           <h1 className="page-title">设置</h1>
-          <div className="page-sub">外观与应用偏好</div>
         </div>
         <div className="page-actions">
           <div className="settings-search">
             <IconSearch size={14} />
             <input ref={searchRef} aria-label="搜索设置" placeholder="搜索设置" value={query}
-              onChange={event => { setQuery(event.target.value); setCategory('全部'); }}
+              onChange={event => { setQuery(event.target.value); if (contentRef.current) contentRef.current.scrollTop = 0; }}
               onKeyDown={event => { if (event.key === 'Escape') setQuery(''); }} />
             {query && <button type="button" className="icon-btn" aria-label="清空设置搜索"
               onClick={() => { setQuery(''); searchRef.current?.focus(); }}><IconX size={12} /></button>}
@@ -288,35 +268,28 @@ export function SettingsPage() {
         </div>
       </header>
 
-      <div className="page-scroll">
+      <nav className="settings-categories seg" aria-label="设置分类">
+        {SETTINGS_CATEGORIES.map(item => <button key={item} type="button"
+          className={`settings-category seg-btn${!query && category === item ? ' active' : ''}`} aria-pressed={!query && category === item}
+          onClick={() => { setCategory(item); setQuery(''); if (contentRef.current) contentRef.current.scrollTop = 0; }}>{item}</button>)}
+      </nav>
+      <div className="page-scroll settings-scroll" ref={contentRef}>
         <div className="page-inner settings-workspace">
-          <nav className="settings-categories" aria-label="设置分类">
-            {['全部', ...SETTINGS_CATEGORIES].map(item => <button key={item} type="button"
-              className={`settings-category${category === item ? ' active' : ''}`} aria-pressed={category === item}
-              onClick={() => { setCategory(item); setQuery(''); }}>{item}</button>)}
-          </nav>
           <div className="settings-content">
           <SettingsFilter.Provider value={{ query, category }}>
           <div className={`settings-page${query ? ' searching' : ''}`}>
-            <Section title="外观" icon={<IconPalette size={15} />}>
+            <Section title="外观">
               <Row
                 label="主题"
-                control={
-                  <div className="settings-theme-picker" role="group" aria-label="主题">
-                    {THEMES.map(option => <button key={option.value} type="button" className="settings-theme-option"
-                      aria-pressed={settings.theme === option.value} onClick={() => updateSettings({ theme: option.value })}>
-                      <span className={`settings-theme-thumb is-${option.value}`} aria-hidden="true"><span className="settings-thumb-sidebar"><i /><i /><i /></span><span className="settings-thumb-content"><i /><i /><i /></span></span>
-                      <span>{option.label}<span className="settings-theme-mark" aria-hidden="true">{settings.theme === option.value ? '✓' : ''}</span></span>
-                    </button>)}
-                  </div>
-                }
+                className="settings-theme-row"
+                control={<ThemePicker value={settings.theme} onChange={theme => updateSettings({ theme })} />}
               />
               <Row
                 label="文字大小"
                 control={<Segmented ariaLabel="文字大小" options={TEXT_SIZES} value={settings.textSize} onChange={textSize => updateSettings({ textSize })} />}
               />
             </Section>
-            <Section title="连接与后台" icon={<IconSliders size={15} />}>
+            <Section title="连接与后台">
               <Row
                 label="开机自启"
                 hint="登录后启动"
@@ -379,24 +352,11 @@ export function SettingsPage() {
                 control={<Toggle on={settings.autoFailover} label="故障时切换备用节点"
                   onChange={(on) => updateSettings({ autoFailover: on })} />}
               />
-              <Row
-                label="GitHub 固定出口"
-                hint="在节点页选择固定节点；仅规则模式生效"
-                control={
-                  <Toggle
-                    on={settings.egressGuard}
-                    label="GitHub 固定出口"
-                    disabled={configBusy || backupBusy}
-                    onChange={(on) => void setEgressGuard(on)}
-                  />
-                }
-              />
             </Section>
 
             <Section
               title="下载"
               desc="用于内核与资源下载"
-              icon={<IconDownload size={15} />}
             >
               <Row
                 label="GitHub 下载代理"
@@ -442,17 +402,17 @@ export function SettingsPage() {
               )}
             </Section>
 
-            <Section title="备份与恢复" desc="恢复会替换订阅、覆写与应用设置；恢复前自动保留当前备份" icon={<IconFolder size={15} />}>
+            <Section title="备份与恢复" desc="恢复会替换订阅、覆写与应用设置；恢复前自动保留当前备份">
               <Row
                 label="立即备份"
                 hint="保存到 backups/"
                 control={
-                  <button type="button" className="btn" disabled={backupBusy || backupsLoading || configBusy} onClick={() => void doBackup()}>
+                  <button type="button" className="btn" disabled={backupBusy || backupsLoading} onClick={() => void doBackup()}>
                     备份
                   </button>
                 }
               />
-              {backupsLoading && <EmptyState icon={<IconFolder size={19} />} title="正在读取备份" desc={backups.length ? '当前为上次读取的备份列表' : undefined} loading />}
+              {backupsLoading && <EmptyState compact title="正在读取备份" desc={backups.length ? '当前为上次读取的备份列表' : undefined} loading />}
               {backupsError && <ReadError message={`${backupsError}${backups.length ? '；当前为上次读取的备份列表' : ''}`} onRetry={() => void loadBackups()} busy={backupsLoading || backupBusy} />}
               {backups.slice(0, 3).map((b) => (
                 <Row
@@ -463,7 +423,7 @@ export function SettingsPage() {
                     <button
                       type="button"
                       className={`btn btn-sm${restoreConfirm === b.name ? ' btn-danger' : ''}`}
-                      disabled={backupBusy || backupsLoading || configBusy}
+                      disabled={backupBusy || backupsLoading}
                       onClick={() => void doRestore(b.name)}
                     >
                       {restoreConfirm === b.name ? '确认恢复' : '恢复'}
@@ -472,13 +432,12 @@ export function SettingsPage() {
                 />
               ))}
               {!backupsLoading && !backupsError && backups.length === 0 && (
-                <EmptyState compact icon={<IconFolder size={19} />} title="暂无备份" />
+                <EmptyState compact title="暂无备份" />
               )}
             </Section>
 
             <Section
               title="诊断与日志"
-              icon={<IconLog size={15} />}
             >
               <Row
                 label="导出诊断包"
@@ -523,7 +482,6 @@ export function SettingsPage() {
             <Section
               title="应用更新"
               desc="发现新版本后提示，不自动安装"
-              icon={<IconDownload size={15} />}
             >
               <Row
                 label="当前版本"
@@ -566,7 +524,7 @@ export function SettingsPage() {
               />
             </Section>
 
-            <Section title="页面与订阅" icon={<IconSliders size={15} />}>
+            <Section title="页面与订阅">
               <Row
                 label="显示配置与诊断页面"
                 hint="规则、日志、覆写与内核管理"
@@ -592,17 +550,17 @@ export function SettingsPage() {
             </Section>
           </div>
           {query && <div className="settings-search-empty" role="status">
-            <EmptyState compact icon={<IconSearch size={19} />} title="没有找到相关设置"
+            <EmptyState compact title="没有找到相关设置"
               desc="试试功能名称，例如“字号”或“备份”"
               action={<button type="button" className="btn btn-sm" onClick={() => { setQuery(''); searchRef.current?.focus(); }}>清除搜索</button>} />
           </div>}
           </SettingsFilter.Provider>
 
-          <div className="settings-about">
+          {!query && category === '应用更新' && <div className="settings-about">
             <div className="settings-about-line">
               PP Clash · 构建 {__BUILD_TIME__.slice(0, 16).replace('T', ' ')}
             </div>
-          </div>
+          </div>}
           </div>
         </div>
       </div>

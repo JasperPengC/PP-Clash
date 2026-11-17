@@ -8,44 +8,41 @@
   padding: 0 10px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-field);
   color: var(--text-secondary);
 }
-.settings-search:focus-within { border-color: var(--accent); }
+.settings-search:focus-within { border-color: var(--border); }
 .settings-search input {
   width: 100%; min-width: 0; border: 0; outline: none;
   background: transparent; color: var(--text-primary); font: inherit;
   font-size: var(--type-control);
 }
 .settings-search .icon-btn { width: 22px; min-width: 22px; height: 24px; }
-.settings-workspace { display: flex; flex-direction: column; align-items: stretch; gap: 20px; max-width: 820px; margin-inline: auto; }
-.settings-categories { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0 0 12px; border-bottom: 1px solid var(--border-soft); }
-.settings-category {
-  font: inherit; font-size: var(--type-control); font-weight: 500;
-  display: flex; align-items: center; min-height: 32px; text-align: left;
-  color: var(--text-secondary); padding: 8px 12px;
-  background: transparent; border: 0; border-radius: var(--radius-control); cursor: pointer;
-}
-.settings-category:hover { color: var(--text-primary); background: var(--surface); }
-.settings-category.active { color: var(--text-primary); background: var(--surface); box-shadow: var(--shadow-control); font-weight: var(--weight-medium); }
+.settings-page-anim { min-height: 0; overflow: hidden; }
+.settings-page-anim > .page-head { flex: none; }
+.settings-page-anim > .page-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* 标题与分类固定，只有当前分类的设置内容滚动。 */
+.settings-workspace { display: block; width: 100%; max-width: none; margin-inline: 0; }
+.settings-categories { flex: none; align-self: flex-start; max-width: calc(100% - var(--page-pad) * 2); margin: 0 var(--page-pad) 16px; overflow-x: auto; scrollbar-width: none; }
+.settings-categories::-webkit-scrollbar { display: none; }
 .settings-content { min-width: 0; }
-.settings-page { display: block; width: 100%; border: 1px solid var(--border-soft); border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-card); overflow: hidden; }
+.settings-page { display: flex; flex-direction: column; gap: 16px; width: 100%; }
 .settings-page:empty { display: none; }
-.settings-page .settings-section { padding: 20px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.settings-section + .settings-section { border-top: 1px solid var(--border); }
-.settings-page .section-head { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 8px; padding: 0 0 8px; border: 0; }
-.settings-page h2.section-title { margin: 0; }
-.settings-section-icon { display: flex; flex: none; color: var(--text-secondary); margin-top: 2px; }
+.settings-page .settings-section { min-width: 0; padding: 18px 20px; border: 0; border-radius: var(--radius-card); background: var(--card-surface); box-shadow: none; }
+.settings-page .section-head { display: flex; align-items: center; gap: 9px; margin: 0 0 12px; padding: 0; border: 0; }
+.settings-page h2.section-title { margin: 0; font-size: var(--type-section); }
 .settings-page .section-desc { margin-top: 4px; max-width: 65ch; color: var(--text-secondary); font-size: var(--type-meta); line-height: var(--leading-body); }
-.settings-page .field-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 13px 0; border-top: 1px solid var(--border-soft); }
+.settings-page .field-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 12px 0; border-top: 1px solid var(--border-soft); }
 .settings-page .section-head + .field-row { border-top: 0; }
 .settings-page .field-row:last-child { padding-bottom: 0; }
 .settings-page .field-main { min-width: 0; }
 .settings-page .field-label { font-size: var(--type-label); font-weight: var(--weight-medium); color: var(--text-primary); line-height: var(--leading-body); }
-.settings-page .field-hint { margin-top: 4px; max-width: 62ch; color: var(--text-secondary); font-size: var(--type-meta); line-height: var(--leading-body); overflow-wrap: anywhere; }
-.settings-page .field-control { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; max-width: none; min-width: 0; }
+.settings-page .field-hint { margin-top: 4px; max-width: 65ch; color: var(--text-secondary); font-size: var(--type-meta); line-height: var(--leading-body); overflow-wrap: anywhere; }
+.settings-page .field-control { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; max-width: 420px; min-width: 0; }
 .settings-page .field-control .card-hint { overflow-wrap: anywhere; text-align: right; }
 .settings-page .field-control .select { max-width: 100%; }
+.settings-page .settings-theme-row { grid-template-columns: minmax(0, 1fr); gap: 14px; padding-top: 8px; padding-bottom: 24px; }
+.settings-theme-row > .field-control { display: block; max-width: none; }
 .settings-prefix-control { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; width: min(312px, 100%); min-width: 0; }
 .settings-prefix-control .input { width: 100%; min-width: 0; }
 .settings-prefix-control .btn { flex: none; }
@@ -53,38 +50,55 @@
 .settings-about { margin: 14px 0 0; text-align: left; color: var(--text-secondary); font-size: var(--type-meta); }
 .settings-search-empty { display: none; }
 .settings-page.searching:empty + .settings-search-empty { display: block; }
+.settings-page .settings-section[aria-label='连接与后台'] { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:28px; align-items:start; }
+.settings-section[aria-label='连接与后台'] > .section-head { grid-column:1/-1; }
+.settings-section[aria-label='连接与后台'] > .field-row:nth-of-type(-n+3) { border-top:0; }
 @media (max-width: 1100px) {
-  .settings-workspace { gap: 14px; }
-  .settings-category { padding-inline: 10px; }
   .settings-page .settings-section { padding: 18px; }
-  .settings-page .field-row { gap: 14px; }
-  .settings-prefix-control { width: 250px; }
+  .settings-category { padding-inline: 11px; }
+  .settings-page .field-row { gap: 18px; }
+  .settings-prefix-control { width: 280px; }
 }
 @media (max-width: 850px) {
-  .settings-workspace { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-  .settings-categories { position: static; flex-direction: row; flex-wrap: wrap; gap: 4px; }
-  .settings-category { min-height: 32px; }
-  .settings-page .field-row { grid-template-columns: minmax(0, 1fr); gap: 9px; }
-  .settings-page .field-control { justify-content: flex-start; }
+  .settings-page .settings-section[aria-label='连接与后台'] { display:block; }
+  .settings-section[aria-label='连接与后台'] > .field-row:nth-of-type(3) { border-top:1px solid var(--border-soft); }
+  .settings-categories { gap: 2px; margin-bottom: 12px; }
+  .settings-category { padding-inline: 10px; }
+  .settings-page .field-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .settings-page .field-control { justify-content: flex-start; max-width: none; }
   .settings-prefix-control { justify-content: flex-start; width: 100%; }
 }
 
-/* 用同一窗口结构展示明暗主题，选择反馈不依赖文字颜色。 */
-.settings-theme-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; width: 420px; max-width: 100%; padding: 4px; }
+/* 主题缩略图同构，完整展示外框、侧栏与内容面的关系。 */
+.settings-theme-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; width: 100%; padding: 4px; }
 .settings-theme-option { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text-primary); text-align: left; font: inherit; cursor: pointer; }
-.settings-theme-option > span:last-child { display: flex; align-items: center; justify-content: space-between; gap: 5px; margin-top: 10px; font-size: var(--type-meta); }
-.settings-theme-mark { color: var(--accent-text); }
-.settings-theme-thumb { display: grid; grid-template-columns: 28% 1fr; height: 82px; border: 1px solid #0002; border-radius: 8px; overflow: hidden; background: #f6f7fa; box-shadow: var(--shadow-control); }
-.settings-theme-option[aria-pressed='true'] .settings-theme-thumb { outline: 2px solid var(--accent); outline-offset: 3px; }
-.settings-thumb-sidebar { background: #e7ecf6; padding: 12px 5px; }
-.settings-thumb-sidebar i { display: block; height: 4px; margin-bottom: 8px; border-radius: 2px; background: #c9d3e5; }
-.settings-thumb-sidebar i:nth-child(2) { background: #7295ef; }
-.settings-thumb-content { padding: 12px 8px; }
-.settings-thumb-content i { display: block; height: 13px; margin-bottom: 6px; border-radius: 3px; background: #fff; box-shadow: 0 1px 2px #0001; }
-.settings-theme-thumb.is-dark { background: #24262d; }
-.is-dark .settings-thumb-sidebar { background: #333745; }
-.is-dark .settings-thumb-sidebar i { background: #535d75; }
-.is-dark .settings-thumb-sidebar i:nth-child(2) { background: #8dabff; }
-.is-dark .settings-thumb-content i { background: #3a3e49; }
-.settings-theme-thumb.is-system { background: linear-gradient(110deg, #f6f7fa 50%, #24262d 50%); }
-.is-system .settings-thumb-content i { background: linear-gradient(110deg, #fff 30%, #3a3e49 30%); }
+.settings-theme-caption { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; font-size: var(--type-label); }
+.settings-theme-mark { display: grid; place-items: center; flex: none; width: 18px; height: 18px; border: 1px solid var(--border-strong); border-radius: 50%; color: var(--accent-contrast); }
+.settings-theme-option[aria-pressed='true'] .settings-theme-mark { border-color: var(--accent); background: var(--accent); }
+.settings-theme-thumb { position: relative; display: block; height: 150px; border-radius: 14px; overflow: hidden; }
+.settings-thumb-window { position: absolute; inset: 0; display: grid; grid-template-columns: 25% minmax(0, 1fr); padding: 4px 4px 4px 0; border-radius: inherit; background: #d6dfe9; }
+.settings-theme-option[aria-pressed='true'] .settings-theme-thumb { outline: 2px solid var(--accent); outline-offset: 4px; }
+.settings-theme-option:hover .settings-theme-thumb { box-shadow: var(--shadow-control); }
+.settings-thumb-sidebar { padding: 24px 10px; }
+.settings-thumb-sidebar > i { display: block; height: 5px; margin-bottom: 13px; border-radius: var(--radius-pill); background: #bcc7d1; }
+.settings-thumb-sidebar > i:first-child { height: 9px; margin-bottom: 21px; background: #ffffffbd; }
+.settings-thumb-content { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: 11px; background: #e9edf2; }
+.settings-thumb-toolbar { display: flex; align-items: center; justify-content: space-between; }
+.settings-thumb-toolbar > i:first-child { width: 13px; height: 13px; border-radius: 50%; background: #e2e8ed; }
+.settings-thumb-toolbar > i:last-child { width: 38px; height: 10px; border-radius: var(--radius-pill); background: #e2e8ed; }
+.settings-thumb-cards { display: grid; grid-template-columns: 1.5fr 1fr; gap: 8px; height: 36px; }
+.settings-thumb-cards > i, .settings-thumb-panel { border-radius: 7px; background: #ffffff; }
+.settings-thumb-panel { display: flex; flex-direction: column; gap: 6px; flex: 1; padding: 10px; }
+.settings-thumb-panel > i { height: 3px; width: 65%; border-radius: var(--radius-pill); background: #e2e8ed; }
+.settings-thumb-panel > i:nth-child(2) { width: 88%; }
+.settings-thumb-panel > i:last-child { width: 46%; }
+.settings-thumb-window.is-dark { background: #10151c; }
+.is-dark .settings-thumb-sidebar > i { background: #46515f; }
+.is-dark .settings-thumb-sidebar > i:first-child { background: #394552; }
+.is-dark .settings-thumb-content { background: #21252b; }
+.is-dark .settings-thumb-toolbar > i { background: #394552; }
+.is-dark .settings-thumb-cards > i, .is-dark .settings-thumb-panel { background: #2d333b; }
+.is-dark .settings-thumb-panel > i { background: #505b68; }
+.settings-theme-thumb.is-system > .is-dark { clip-path: inset(0 0 0 50%); }
+@media (max-width: 1100px) { .settings-theme-picker { gap: 16px; } .settings-theme-thumb { height: 130px; } }
+@media (max-width: 650px) { .settings-theme-picker { grid-template-columns: minmax(0, 1fr); gap: 20px; } .settings-theme-thumb { height: 150px; } }

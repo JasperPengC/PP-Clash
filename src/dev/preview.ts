@@ -1,6 +1,9 @@
+import { DEFAULT_LATENCY_URL, GITHUB_LATENCY_URL } from '../core/latency';
 import { previewMode } from '../core/api';
 import { DEFAULT_POLICY } from '../core/security';
-import { DEFAULT_SETTINGS, useApp } from '../store/app';
+import { useApp } from '../store/app';
+import { DEFAULT_SETTINGS } from '../domain/settings';
+import { currentTextSize } from '../store/text-size';
 
 /**
  * 仅开发环境：浏览器里预览「连接态 / 订阅预览态」。
@@ -18,7 +21,7 @@ const NODES = [
   { name: '🇺🇸 洛杉矶 01', type: 'Shadowsocks', delay: 168 },
   { name: '🇺🇸 西雅图 01', type: 'Shadowsocks', delay: 212 },
   { name: '🇩🇪 法兰克福 01', type: 'Trojan', delay: 306 },
-];
+].map(node => ({ ...node, delaysByTarget: { [DEFAULT_LATENCY_URL]: node.delay, [GITHUB_LATENCY_URL]: node.delay + 20 } }));
 
 /** 一份接近真实机场结构的订阅原文：含分组、含「剩余流量」这类信息节点。 */
 const PREVIEW_RAW = `mixed-port: 7890
@@ -84,15 +87,17 @@ export function applyPreviewIfRequested() {
   if (!previewMode) return;
   const mode = new URLSearchParams(window.location.search).get('preview');
   const connected = mode !== 'ready';
-  if (new URLSearchParams(window.location.search).get('theme') === 'light') {
-    document.documentElement.dataset.theme = 'light';
-  }
+  const large = new URLSearchParams(window.location.search).get('fixtures') === 'large';
+  const profile = large ? { ...PREVIEW_PROFILE, raw: `${PREVIEW_RAW}rules:\n${Array.from({ length: 10000 }, (_, i) => `  - DOMAIN,site-${i}.invalid,DIRECT`).join('\n')}\n` } : PREVIEW_PROFILE;
+  const theme = new URLSearchParams(window.location.search).get('theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
 
   useApp.setState({
     settings: {
       ...DEFAULT_SETTINGS,
+      textSize: currentTextSize(),
       advancedMode: true,
-      customRules: [
+      customRules: large ? Array.from({ length: 10000 }, (_, i) => ({ id: `large-${i}`, type: 'DOMAIN' as const, payload: `custom-${i}.invalid`, target: 'DIRECT', enabled: true })) : [
         { id: 'r1', type: 'DOMAIN-SUFFIX', payload: 'openai.com', target: '__CURRENT__', enabled: true },
         { id: 'r2', type: 'MATCH', payload: '', target: '__CURRENT__', enabled: false },
       ],
@@ -114,7 +119,15 @@ export function applyPreviewIfRequested() {
       ],
     },
     policy: { ...DEFAULT_POLICY, blockQuic: true },
-    profiles: [PREVIEW_PROFILE],
+    profiles: new URLSearchParams(window.location.search).get('fixtures') === 'layout'
+      ? [PREVIEW_PROFILE, ...['备用线路', '长名称订阅 · 新加坡与日本专线', '家庭网络', '旅行备用', '本地配置'].map((name, index) => ({
+          ...PREVIEW_PROFILE, id: `layout-profile-${index}`, name,
+          url: `https://${index === 1 ? 'long-subscription-domain.example' : `backup-${index}.example`}/subscribe`,
+          sourceType: index === 4 ? 'file' as const : 'url' as const,
+          updatedAt: Date.now() - (index + 1) * 3600_000,
+          userinfo: index === 3 ? null : { upload: 0, download: ([51.94, 2.9, 7.38, 0, 12][index]) * 1024 ** 3, total: ([200, 150, 100, 0, 0][index]) * 1024 ** 3, expire: index === 2 ? 0 : 1_805_204_537 },
+        }))]
+      : [profile],
     activeId: PREVIEW_PROFILE.id,
     stats: { proxyCount: 8, groupCount: 3, ruleCount: 245, guardRuleCount: 5 },
     audit: AUDIT,

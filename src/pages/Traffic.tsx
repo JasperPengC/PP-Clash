@@ -5,6 +5,7 @@ import { api } from '../core/api';
 import { formatBytes } from '../core/format';
 import { useApp } from '../store/app';
 import { startPolling } from '../core/polling';
+import { VirtualList } from '../components/VirtualList';
 
 interface RawConn {
   id: string;
@@ -137,7 +138,7 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
         <div className="page-actions"><button type="button" className="icon-btn" aria-label="刷新流量" aria-busy={loading} disabled={!active || !connected || loading} onClick={() => void load()}><IconRefresh size={15} /></button></div>
       </header>
 
-      <div className="page-scroll dp-page dp-traffic">
+      <div className="page-scroll page-fixed dp-page dp-traffic">
         <div className="page-inner">
           {connected && readError && <ReadError message={`${readError}${loadedAt ? '；当前为上次读取的数据' : ''}`} onRetry={() => void load()} busy={loading || !active} />}
           {!connected ? (
@@ -182,7 +183,8 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
                 </div>
               </div>
 
-              <section className="card dp-traffic-table">
+              <div className="dp-traffic-panels">
+              <section className="card dp-traffic-table" aria-label="按节点统计">
                 <div className="dp-section-heading"><h2 className="section-title">活动连接 · 按节点</h2><span className="dp-table-count">{byNode.length} 个节点</span></div>
                 {byNode.length === 0 ? (
                   <div className="rule-empty">暂无活动连接</div>
@@ -194,7 +196,7 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
                       <span>上传</span>
                       <span>下载</span>
                     </div>
-                    {byNode.map((r) => (
+                    <VirtualList items={byNode} rowHeight={44} maxHeight={560} label="节点流量列表" itemKey={r => r.name} renderItem={r => (
                       <div key={r.name} className="traffic-row">
                         <span className="traffic-name" title={r.name}>
                           {r.name}
@@ -203,12 +205,12 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
                         <span>{formatBytes(r.upload)}</span>
                         <span>{formatBytes(r.download)}</span>
                       </div>
-                    ))}
+                    )} />
                   </div>
                 )}
               </section>
 
-              <section className="card dp-traffic-table">
+              <section className="card dp-traffic-table" aria-label="按进程统计">
                 <div className="dp-section-heading"><h2 className="section-title">活动连接 · 按进程</h2><span className="dp-table-count">{byProcess.length} 个进程</span></div>
                 {byProcess.length === 0 ? (
                   <div className="rule-empty">暂无活动连接</div>
@@ -220,7 +222,7 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
                       <span>上传</span>
                       <span>下载</span>
                     </div>
-                    {byProcess.map((r) => (
+                    <VirtualList items={byProcess} rowHeight={44} maxHeight={560} label="进程流量列表" itemKey={r => r.name} renderItem={r => (
                       <div key={r.name} className="traffic-row">
                         <span className="traffic-name traffic-name-cell" title={r.name}>
                           {icons[r.name] ? (
@@ -234,10 +236,11 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
                         <span>{formatBytes(r.upload)}</span>
                         <span>{formatBytes(r.download)}</span>
                       </div>
-                    ))}
+                    )} />
                   </div>
                 )}
               </section>
+              </div>
             </>
           )}
         </div>

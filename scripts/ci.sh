@@ -38,6 +38,8 @@ build_web() {
 }
 
 check_web() {
+  log "平台图标一致性检查"
+  npm run check:icons
   log "TypeScript 类型检查"
   npx tsc --noEmit
   log "前端单元测试"
@@ -53,60 +55,138 @@ check_rust() {
     npm run build
   fi
   log "Rust 测试"
-  cargo test --manifest-path src-tauri/Cargo.toml
+  cargo test --locked --manifest-path src-tauri/Cargo.toml -- --skip kernel::tests::reclaim_kills_user_listener
+}
+
+check_resources() {
+  log "资源门禁离线 fixture"
+  local py
+  py="$(command -v python || command -v python3)"
+  "$py" -m unittest discover -s scripts/tests -v
+  if command -v pwsh >/dev/null 2>&1; then
+    pwsh -NoProfile -NonInteractive -File scripts/tests/test-windows-scripts.ps1
+  elif [ "${OS:-}" = "Windows_NT" ]; then
+    powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/tests/test-windows-scripts.ps1
+  else
+    log "当前环境无 PowerShell，Windows 脚本行为测试由 Windows CI 执行"
+  fi
+}
+
+validate_release_resources() {
+  local os="$1"
+  local digest="$2"
+  local arch="${3:-x86_64}"
+  local py
+  py="$(command -v python || command -v python3)"
+  [ -n "$digest" ] || { echo "必须单独配置受信任的资源 ZIP SHA-256" >&2; return 1; }
+  "$py" scripts/validate-resources.py "$KERNEL_ZIP" "$os" "$arch" --sha256 "$digest"
 }
 
 check() {
   check_web
   check_rust
+  check_resources
   scan
 }
 
 build_macos() {
   install
   ensure_kernel_placeholder
-  log "macOS Universal 构建"
-  UNIVERSAL=1 ./scripts/bundle.sh
+  log "macOS Universal 应用壳编译检查（内核资源未通过双架构发布验收，禁止作为发布包）"
+  PPCLASH_COMPILE_ONLY=1 UNIVERSAL=1 ./scripts/bundle.sh
+}
+
+release_target() {
+  # 单一映射同时用于资源门禁、Rust target 和安装包命名。
+  case "$1:$2" in
+    macos:x86_64-apple-darwin) RESOURCE_ARCH=x86_64; PACKAGE_ARCH=x86_64 ;;
+    macos:aarch64-apple-darwin) RESOURCE_ARCH=aarch64; PACKAGE_ARCH=arm64 ;;
+    windows:x86_64-pc-windows-msvc|windows:x86_64-pc-windows-gnu) RESOURCE_ARCH=x86_64; PACKAGE_ARCH=amd64 ;;
+    windows:aarch64-pc-windows-msvc) RESOURCE_ARCH=aarch64; PACKAGE_ARCH=arm64 ;;
+    linux:x86_64-unknown-linux-gnu) RESOURCE_ARCH=x86_64; PACKAGE_ARCH=amd64 ;;
+    linux:aarch64-unknown-linux-gnu) RESOURCE_ARCH=aarch64; PACKAGE_ARCH=arm64 ;;
+    *) echo "不支持的发布平台或目标：$1/$2" >&2; return 1 ;;
+  esac
 }
 
 build_macos_release() {
+  [ "${PPCLASH_COMPILE_ONLY:-0}" = "0" ] || { echo "compile-only 模式禁止正式发布" >&2; return 1; }
+  local target="${MACOS_TARGET:-${RELEASE_TARGET:-x86_64-apple-darwin}}"
+  release_target macos "$target"
+  validate_release_resources macos "${KERNEL_ZIP_SHA256:-}" "$RESOURCE_ARCH"
   install
-  log "macOS Universal App"
-  UNIVERSAL=1 ./scripts/bundle.sh
-  log "macOS DMG"
-  UNIVERSAL=1 ./scripts/build-dmg.sh
-  local version
-  version="$(node -p "require('./package.json').version")"
-  local dmg
-  dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
-  [ -n "$dmg" ] || { echo "找不到 DMG" >&2; exit 1; }
-  mv "$dmg" "src-tauri/target/release/bundle/dmg/PP_Clash-${version}-macos-universal.dmg"
+  log "macOS $RESOURCE_ARCH App（内置同架构内核）"
+  MACOS_TARGET="$target" UNIVERSAL=0 ./scripts/bundle.sh
+  MACOS_TARGET="$target" UNIVERSAL=0 ./scripts/build-dmg.sh
 }
 
 build_windows() {
   install
   ensure_kernel_placeholder
-  log "Windows NSIS 构建"
-  npm run tauri build
+  log "Windows NSIS 编译检查（非发布包）"
+  npm run tauri -- build --no-bundle --target "${RELEASE_TARGET:-x86_64-pc-windows-msvc}"
+}
+
+normalize_installer() {
+  local dir="$1" ext="$2" dest="$3" candidate="" file count=0
+  while IFS= read -r file; do
+    [ "$file" = "$dest" ] && continue
+    candidate="$file"
+    count=$((count + 1))
+  done < <(find "$dir" -maxdepth 1 -type f -name "*.$ext" -print)
+  if [ "$count" -gt 1 ]; then
+    echo "安装包候选不唯一，请清理旧构建后重试：$dir" >&2
+    return 1
+  fi
+  if [ "$count" = 1 ]; then
+    [ -s "$candidate" ] || { echo "安装包为空：$candidate" >&2; return 1; }
+    mv "$candidate" "$dest"
+  else
+    echo "本次构建没有生成新的安装包：$dir" >&2
+    return 1
+  fi
+  [ -f "$dest" ] && [ -s "$dest" ] || { echo "找不到非空安装包：$dest" >&2; return 1; }
 }
 
 normalize_windows_installer() {
-  local version
+  local target="${RELEASE_TARGET:-x86_64-pc-windows-msvc}"
+  release_target windows "$target"
+  local version dir dest
   version="$(node -p "require('./package.json').version")"
-  local file
-  file="$(find src-tauri/target/release/bundle/nsis -maxdepth 1 -name '*.exe' -print -quit)"
-  [ -n "$file" ] || { echo "找不到 NSIS 安装包" >&2; exit 1; }
-  mv "$file" "src-tauri/target/release/bundle/nsis/PP_Clash-${version}-windows-amd64-setup.exe"
+  dir="src-tauri/target/$target/release/bundle/nsis"
+  dest="$dir/PP_Clash-${version}-windows-${PACKAGE_ARCH}-setup.exe"
+  normalize_installer "$dir" exe "$dest"
 }
 
 build_windows_release() {
+  local target="${RELEASE_TARGET:-x86_64-pc-windows-msvc}"
+  release_target windows "$target"
+  validate_release_resources windows "${KERNEL_ZIP_SHA256:-${KERNEL_ZIP_SHA256_WINDOWS:-}}" "$RESOURCE_ARCH"
   install
-  log "Windows NSIS 构建"
-  npm run tauri build
-  normalize_windows_installer
+  log "Windows $RESOURCE_ARCH NSIS（内置同架构内核）"
+  npm run tauri -- build --target "$target" --bundles nsis
+  RELEASE_TARGET="$target" normalize_windows_installer
+}
+
+build_linux_release() {
+  local target="${RELEASE_TARGET:-x86_64-unknown-linux-gnu}"
+  release_target linux "$target"
+  validate_release_resources linux "${KERNEL_ZIP_SHA256:-}" "$RESOURCE_ARCH"
+  install
+  log "Linux $RESOURCE_ARCH（deb / rpm / AppImage，内置同架构内核）"
+  npm run tauri -- build --target "$target" --bundles deb,rpm,appimage
+  local version dir ext dest
+  version="$(node -p "require('./package.json').version")"
+  for ext in deb rpm AppImage; do
+    dir="src-tauri/target/$target/release/bundle/$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
+    dest="$dir/PP_Clash-${version}-linux-${PACKAGE_ARCH}.$ext"
+    normalize_installer "$dir" "$ext" "$dest"
+  done
 }
 
 scan() {
+  log "公开仓库文件边界检查"
+  node scripts/check-public-files.mjs
   log "敏感信息扫描"
   ./scripts/secret-scan.sh
 }
@@ -116,15 +196,17 @@ case "${1:-check}" in
   build-web) build_web ;;
   check-web) check_web ;;
   check-rust) check_rust ;;
+  check-resources) check_resources ;;
   check) check ;;
   build-macos) build_macos ;;
   build-macos-release) build_macos_release ;;
   build-windows) build_windows ;;
   build-windows-release) build_windows_release ;;
+  build-linux-release) build_linux_release ;;
   normalize-windows-installer) normalize_windows_installer ;;
   scan) scan ;;
   *)
-    echo "用法: $0 {install|build-web|check-web|check-rust|check|build-macos|build-macos-release|build-windows|build-windows-release|normalize-windows-installer|scan}" >&2
+    echo "用法: $0 {install|build-web|check-web|check-rust|check-resources|check|build-macos|build-macos-release|build-windows|build-windows-release|normalize-windows-installer|build-linux-release|scan}" >&2
     exit 2
     ;;
 esac

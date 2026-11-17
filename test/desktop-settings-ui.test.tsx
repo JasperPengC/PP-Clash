@@ -140,6 +140,7 @@ it('重新连接读取新规则，过期请求不能恢复断开前的数据', a
 it('备份列表读取失败可重试，加载期间不显示暂无备份', async () => {
   const pending = deferred<typeof backup[]>(); vi.mocked(api.listBackups).mockReturnValueOnce(pending.promise);
   await act(async () => root.render(createElement(SettingsPage)));
+  await click(button('备份与恢复'));
   expect(host.textContent).not.toContain('暂无备份');
   await act(async () => pending.reject(new Error('permission denied')));
   expect(host.textContent).toContain('permission denied'); expect(host.textContent).not.toContain('暂无备份');
@@ -150,6 +151,7 @@ it('备份期间禁止并行恢复，失败后两种操作都可重试', async (
   vi.mocked(api.listBackups).mockResolvedValue([backup]);
   const pending = deferred<string>(); vi.mocked(api.backupAppState).mockReturnValueOnce(pending.promise);
   await act(async () => root.render(createElement(SettingsPage)));
+  await click(button('备份与恢复'));
   await click(button('备份'));
   expect(button('恢复').disabled).toBe(true);
   await click(button('恢复')); expect(api.restoreBackup).not.toHaveBeenCalled();
@@ -158,26 +160,20 @@ it('备份期间禁止并行恢复，失败后两种操作都可重试', async (
   expect(notify).toHaveBeenCalledWith('error', expect.stringContaining('disk full'));
 });
 
-it('配置应用期间禁止备份和恢复，结束后恢复操作可用', async () => {
+it('移除出口策略后设置页不再为其保留配置应用锁', async () => {
   vi.mocked(api.listBackups).mockResolvedValue([backup]);
-  const pending = deferred<boolean>(); restartKernel.mockReturnValueOnce(pending.promise);
   await act(async () => root.render(createElement(SettingsPage)));
-  await click(button('恢复'));
-  await click(host.querySelector<HTMLElement>('[aria-label="GitHub 固定出口"]')!);
-  expect(button('备份').disabled).toBe(true);
-  expect(button('确认恢复').disabled).toBe(true);
-  await click(button('备份')); await click(button('确认恢复'));
-  expect(api.backupAppState).not.toHaveBeenCalled();
-  expect(api.restoreBackup).not.toHaveBeenCalled();
-  await act(async () => pending.resolve(false));
-  expect(button('备份').disabled).toBe(false);
-  expect(button('确认恢复').disabled).toBe(false);
+  await click(button('备份与恢复'));
+  expect(host.querySelector('[aria-label="GitHub 固定出口"]')).toBeNull();
+  await click(button('备份'));
+  expect(api.backupAppState).toHaveBeenCalledTimes(1);
 });
 
 it('恢复完成到重新加载前仍锁住备份和恢复操作', async () => {
   vi.mocked(api.listBackups).mockResolvedValue([backup]);
   const pending = deferred<void>(); vi.mocked(api.restoreBackup).mockReturnValueOnce(pending.promise);
   await act(async () => root.render(createElement(SettingsPage)));
+  await click(button('备份与恢复'));
   await click(button('恢复')); await click(button('确认恢复'));
   expect(button('备份').disabled).toBe(true);
   await act(async () => pending.resolve());
@@ -186,28 +182,21 @@ it('恢复完成到重新加载前仍锁住备份和恢复操作', async () => {
   expect(api.restoreBackup).toHaveBeenCalledTimes(1);
 });
 
-it.each([null, 'missing'])('没有活动订阅（%s）时保存 GitHub 出口偏好并提示连接后生效', async (activeId) => {
+it.each([null, 'missing'])('没有活动订阅（%s）时也不显示应用自带的 GitHub 固定出口', async (activeId) => {
   useApp.setState({ profiles: [], activeId, kernelPhase: 'stopped' });
-  applyConfig.mockResolvedValue(false);
   await act(async () => root.render(createElement(SettingsPage)));
-  const toggle = host.querySelector<HTMLButtonElement>('[aria-label="GitHub 固定出口"]')!;
-  await click(toggle);
-  expect(useApp.getState().settings.egressGuard).toBe(false);
-  expect(toggle.getAttribute('aria-checked')).toBe('false');
-  expect(toggle.disabled).toBe(false);
-  expect(notify).toHaveBeenCalledWith('info', expect.stringContaining('导入订阅并连接后生效'));
-  expect(notify.mock.calls.some(([kind]) => kind === 'error')).toBe(false);
+  await click(button('备份与恢复'));
+  expect(host.querySelector('[aria-label="GitHub 固定出口"]')).toBeNull();
   expect(applyConfig).not.toHaveBeenCalled();
   expect(restartKernel).not.toHaveBeenCalled();
 });
 
-it('设置配置生成失败不会重启或提示已生效', async () => {
-  applyConfig.mockResolvedValue(false);
+it('设置页不再触发 GitHub 固定出口配置生成', async () => {
   await act(async () => root.render(createElement(SettingsPage)));
-  await click(host.querySelector<HTMLElement>('[aria-label="GitHub 固定出口"]')!);
+  await click(button('备份与恢复'));
+  expect(host.querySelector('[aria-label="GitHub 固定出口"]')).toBeNull();
+  expect(applyConfig).not.toHaveBeenCalled();
   expect(restartKernel).not.toHaveBeenCalled();
-  expect(notify.mock.calls.some(([kind]) => kind === 'success' || kind === 'info')).toBe(false);
-  expect(notify).toHaveBeenCalledWith('error', expect.any(String));
 });
 
 it('规则刷新失败保留旧数据且注明，筛选无结果可恢复', async () => {
@@ -236,6 +225,7 @@ it('恢复失败重新开放确认与备份，允许重试原备份', async () =
   vi.mocked(api.listBackups).mockResolvedValue([backup]);
   vi.mocked(api.restoreBackup).mockRejectedValueOnce(new Error('invalid backup'));
   await act(async () => root.render(createElement(SettingsPage)));
+  await click(button('备份与恢复'));
   await click(button('恢复')); await click(button('确认恢复'));
   expect(button('备份').disabled).toBe(false); expect(button('恢复').disabled).toBe(false);
   expect(notify).toHaveBeenCalledWith('error', expect.stringContaining('invalid backup'));
@@ -244,15 +234,10 @@ it('恢复失败重新开放确认与备份，允许重试原备份', async () =
   expect(button('备份').disabled).toBe(true);
 });
 
-it('设置重启期间阻止重复修改，失败后还原开关并允许重试', async () => {
-  useApp.setState({ configPath: '/mock/attempted-config.yaml' });
-  const pending = deferred<boolean>(); restartKernel.mockReturnValueOnce(pending.promise);
+it('设置页不再为 GitHub 固定出口提供重启切换', async () => {
   await act(async () => root.render(createElement(SettingsPage)));
-  const toggle = host.querySelector<HTMLButtonElement>('[aria-label="GitHub 固定出口"]')!;
-  await click(toggle); expect(toggle.disabled).toBe(true);
-  await click(toggle); expect(applyConfig).toHaveBeenCalledTimes(1);
-  await act(async () => pending.resolve(false));
-  expect(useApp.getState().configPath).toBe('');
-  expect(toggle.disabled).toBe(false); expect(toggle.getAttribute('aria-checked')).toBe('true');
-  expect(notify.mock.calls.some(([kind]) => kind === 'success' || kind === 'info')).toBe(false);
+  await click(button('备份与恢复'));
+  expect(host.querySelector('[aria-label="GitHub 固定出口"]')).toBeNull();
+  expect(applyConfig).not.toHaveBeenCalled();
+  expect(restartKernel).not.toHaveBeenCalled();
 });

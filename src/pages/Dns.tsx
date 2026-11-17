@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ReadError, Select, Toggle } from '../components/ui';
-import { getLifecycleToken, isLifecycleCurrent, useApp, type DnsNameserverMode } from '../store/app';
+import { useApp } from '../store/app';
+import type { DnsNameserverMode } from '../domain/app';
 
 function Section({
   title,
@@ -55,7 +56,6 @@ const NAMESERVERS: Array<{ value: DnsNameserverMode; label: string }> = [
 export function DnsPage() {
   const settings = useApp((s) => s.settings);
   const policy = useApp((s) => s.policy);
-  const updateSettings = useApp((s) => s.updateSettings);
   const setPolicy = useApp((s) => s.setPolicy);
   const notify = useApp((s) => s.notify);
 
@@ -75,30 +75,18 @@ export function DnsPage() {
 
   const changeRuntime = async (patch: Partial<typeof settings>, note: string) => {
     if (applyLock.current || busy) return;
-    const token = getLifecycleToken();
     applyLock.current = true;
     setApplying(true);
     setApplyError(null);
-    updateSettings(patch);
     try {
-      const st = useApp.getState();
-      if (!st.profiles.some(p => p.id === st.activeId)) {
-        notify('info', '设置已保存，导入订阅并连接后生效');
-        return;
-      }
-      const applied = await st.applyConfig();
-      if (!isLifecycleCurrent(token)) return;
-      if (!applied) throw new Error('配置生成失败');
-      if (st.kernelPhase === 'running') {
-        if (!await st.restartKernel(true, token, true)) throw new Error('内核重启失败');
-        if (!isLifecycleCurrent(token)) return;
-        notify('info', note);
-      } else notify('info', '设置已保存，连接后生效');
-    } catch (e) {
-      if (!isLifecycleCurrent(token)) return;
-      const message = `设置已保存但未生效：${String(e)}，请重试`;
-      setApplyError(message);
-      notify('error', message);
+      const result = await useApp.getState().applyRuntimeSettings(patch);
+      if (result.status === 'stale') return;
+      if (result.status === 'failed') {
+        const message = `设置已保存但未生效：${String(result.error)}，请重试`;
+        setApplyError(message);
+        notify('error', message);
+      } else notify('info', result.status === 'deferred' ? '设置已保存，导入订阅并连接后生效'
+        : result.status === 'applied' ? note : '设置已保存，连接后生效');
     } finally {
       applyLock.current = false;
       setApplying(false);

@@ -6,6 +6,13 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+source scripts/macos-resource-gate.sh
+RESOURCE_ZIP="${KERNEL_RESOURCE_ZIP:-src-tauri/resources/kernel.zip}"
+case "${PPCLASH_COMPILE_ONLY:-0}" in
+  0) validate_macos_bundle_resources "$RESOURCE_ZIP" ;;
+  1) echo "▸ compile-only：仅编译，不组装或签名 .app，不生成发布包" ;;
+  *) echo "PPCLASH_COMPILE_ONLY 只能为 0 或 1" >&2; exit 1 ;;
+esac
 VERSION="$(node -p "require('./package.json').version")"
 export PATH="$HOME/.cargo/bin:$PATH"
 
@@ -17,33 +24,42 @@ export PATH="$HOME/.cargo/bin:$PATH"
 echo "▸ 构建前端"
 npm run build
 
-APP="src-tauri/target/release/bundle/macos/PP Clash.app"
+FINAL_APP="${APP_PATH:-src-tauri/target/release/bundle/macos/PP Clash.app}"
 BIN="src-tauri/target/release/ppclash"
 
-if [ "${UNIVERSAL:-0}" = "1" ]; then
-  echo "▸ 编译 Rust (release, x86_64 + arm64)"
-  rustup target add x86_64-apple-darwin aarch64-apple-darwin >/dev/null
-  cargo build --release --target x86_64-apple-darwin --manifest-path src-tauri/Cargo.toml
-  cargo build --release --target aarch64-apple-darwin --manifest-path src-tauri/Cargo.toml
-  BIN="/tmp/ppclash-universal"
-  lipo -create \
-    src-tauri/target/x86_64-apple-darwin/release/ppclash \
-    src-tauri/target/aarch64-apple-darwin/release/ppclash \
-    -output "$BIN"
-  echo "▸ Universal: $(file "$BIN")"
+if [ "${PPCLASH_COMPILE_ONLY:-0}" = "1" ] && [ "${UNIVERSAL:-0}" = "1" ]; then
+  for target in x86_64-apple-darwin aarch64-apple-darwin; do
+    cargo build --locked --release --target "$target" --manifest-path src-tauri/Cargo.toml
+  done
+  echo "▸ 双架构编译检查完成（无 .app / DMG 产物）"
+  exit 0
+fi
+RESOURCE_ARCH="$(macos_resource_arch)"
+if [ "$RESOURCE_ARCH" = x86_64 ]; then
+  MACOS_TARGET=x86_64-apple-darwin
 else
-  echo "▸ 编译 Rust (release)"
-  cargo build --release --manifest-path src-tauri/Cargo.toml
+  MACOS_TARGET=aarch64-apple-darwin
+fi
+echo "▸ 编译 Rust (release, $MACOS_TARGET)"
+cargo build --locked --release --target "$MACOS_TARGET" --manifest-path src-tauri/Cargo.toml
+BIN="src-tauri/target/$MACOS_TARGET/release/ppclash"
+if [ "${PPCLASH_COMPILE_ONLY:-0}" = "1" ]; then
+  echo "▸ 单架构编译检查完成（无 .app / DMG 产物）"
+  exit 0
 fi
 
-echo "▸ 组装 $APP"
-rm -rf "$APP"
+mkdir -p "$(dirname "$FINAL_APP")"
+BUNDLE_STAGE="$(mktemp -d "$(dirname "$FINAL_APP")/.ppclash-bundle.XXXXXX")"
+trap 'rm -rf "$BUNDLE_STAGE"' EXIT
+APP="$BUNDLE_STAGE/PP Clash.app"
+echo "▸ 组装 $FINAL_APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/ppclash"
 
 cp src-tauri/icons/icon.icns "$APP/Contents/Resources/icon.icns"
 mkdir -p "$APP/Contents/Resources/resources"
-cp src-tauri/resources/kernel.zip "$APP/Contents/Resources/resources/kernel.zip"
+cp "$RESOURCE_ZIP" "$APP/Contents/Resources/resources/kernel.zip"
+validate_macos_bundle_resources "$APP/Contents/Resources/resources/kernel.zip"
 
 echo "▸ 写 Info.plist"
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -68,7 +84,9 @@ PLIST
 
 echo "▸ 签名（adhoc）"
 codesign --force --deep --sign - "$APP"
+rm -rf "$FINAL_APP"
+mv "$APP" "$FINAL_APP"
 
 echo
-echo "✅ 完成：$APP"
-du -sh "$APP"
+echo "✅ 完成：$FINAL_APP"
+du -sh "$FINAL_APP"

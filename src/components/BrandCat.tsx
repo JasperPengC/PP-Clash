@@ -7,7 +7,7 @@ export function BrandCat({ size = 30, className = '' }: { size?: number; classNa
       height={size}
       viewBox="192 186 640 640"
       aria-hidden="true"
-      style={{ color: 'var(--text-1)' }}
+      style={{ color: 'var(--text-primary)' }}
     >
       <g transform="translate(260.25 231.02) scale(0.835)">
         <path

@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "kernelVersion": "v1.19.34",
+  "kernels": {
+    "macos/x86_64": {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-darwin-amd64-compatible-v1.19.34.gz",
+      "sha256": "703bceaa494732fa456f47e6ac2f06bf0bc5593d4c927d5f61e10f1a31039c37"
+    },
+    "macos/aarch64": {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-darwin-arm64-v1.19.34.gz",
+      "sha256": "1a7a20eca63fbbaec90137717465bfde488d0db2a3a79b8fadebf9b2545b6e4c"
+    },
+    "windows/x86_64": {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-windows-amd64-compatible-v1.19.34.zip",
+      "sha256": "cd6738d4648cc1a5f48049a1343b697ab510889d648f045c5c780fc1ab443a79"
+    },
+    "windows/aarch64": {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-windows-arm64-v1.19.34.zip",
+      "sha256": "076cb04a21377675bcf009b8d1dd83006ce2464aa537e37bce1faf6d3504f554"
+    },
+    "linux/x86_64": {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-amd64-compatible-v1.19.34.gz",
+      "sha256": "2763f5b414527f7baf6dc57e3f82f3ab561eedf34bfd7c2f2cde1f7e592efe06"
+    },
+    "linux/aarch64": {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz",
+      "sha256": "daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f"
+    }
+  },
+  "geodata": {
+    "geosite.dat": {
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/99b271e327e31a937178016035016d1ab0ebadbe/geosite.dat",
+      "sha256": "03996897044b01466b85c6f109f47b9d10405b80aa02aaca56e1624be7257d2a"
+    },
+    "geoip.dat": {
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/99b271e327e31a937178016035016d1ab0ebadbe/geoip.dat",
+      "sha256": "304ac8a1cbcc8166e4f5a4f32955e4d0fb77a1bd713583e371b30ee27f3659d8"
+    },
+    "geoip.metadb": {
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/99b271e327e31a937178016035016d1ab0ebadbe/geoip.metadb",
+      "sha256": "2aea4a3de74a0a7b71e202a514973d43d7d5c343158ed939f1132de4e0d8403a"
+    },
+    "country.mmdb": {
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/99b271e327e31a937178016035016d1ab0ebadbe/country.mmdb",
+      "sha256": "bbedba6ef8584c484e35acdee4153ecf4bc9aa5e22b25d3982870ec1e780f681"
+    },
+    "ASN.mmdb": {
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/99b271e327e31a937178016035016d1ab0ebadbe/GeoLite2-ASN.mmdb",
+      "sha256": "3dceeef0f161aee0b48a3e71dd538798f5d95e9f4c2e0bc35f1c62874e22a4d5"
+    }
+  }
+}

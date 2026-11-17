@@ -1,0 +1,17 @@
+/* 唯一样式入口：保持兼容层的既有顺序，逐组件迁移时在原归属中删除旧规则。 */
+@import './tokens.css';
+@import './theme.css';
+@import './legacy-components.css';
+@import './legacy-pages.css';
+@import './legacy-platform.css';
+@import './legacy-compatibility.css';
+@import './typography.css';
+@import './desktop.css';
+@import './settings.css';
+@import './profiles.css';
+@import './proxies.css';
+@import './overview.css';
+@import './configuration.css';
+@import './data-pages.css';
+@import './segmented.css';
+@import './motion.css';

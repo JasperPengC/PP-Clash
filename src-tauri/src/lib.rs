@@ -10,8 +10,12 @@ mod mihomo;
 mod prefs;
 mod resources;
 mod subscription;
+mod backup_state;
 mod sysproxy;
+#[cfg(any(target_os = "linux", test))]
+mod linux;
 mod tray;
+mod traffic;
 
 use kernel::KernelState;
 use prefs::AppFlags;
@@ -19,13 +23,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, WindowEvent};
-#[cfg(target_os = "windows")]
-use tauri::Emitter;
+use tauri::{Emitter, Manager, WindowEvent};
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 
 static HIDDEN_TO_TRAY: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn main_window_visible(app: tauri::AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|w| w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false))
+        .unwrap_or(false)
+}
 
 /// 菜单栏常驻：禁止 macOS 在最后一个窗口关闭后自动终止进程。
 #[cfg(target_os = "macos")]
@@ -48,6 +57,7 @@ pub fn focus_main(app: &tauri::AppHandle) {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
+        let _ = w.emit("window://visible", true);
     }
 }
 
@@ -64,10 +74,13 @@ pub fn run() {
         .manage(KernelState::default())
         .manage(AppFlags::default())
         .invoke_handler(tauri::generate_handler![
+            main_window_visible,
             resources::reinstall_bundled_resources,
             resources::list_kernel_versions,
             resources::list_resource_files,
             resources::download_kernel_version,
+            resources::list_kernel_releases,
+            kernel::remove_kernel_version,
             resources::download_geo_resource,
             resources::system_helper_info,
             resources::install_system_helper,
@@ -84,6 +97,10 @@ pub fn run() {
             subscription::read_subscription_file,
             subscription::export_log_file,
             subscription::save_config,
+            subscription::prepare_config,
+            subscription::commit_config,
+            subscription::finish_config,
+            subscription::discard_config,
             subscription::save_app_state,
             subscription::load_app_state,
             subscription::backup_app_state,
@@ -104,6 +121,7 @@ pub fn run() {
             services::probe_services,
             services::probe_services_auto,
             services::probe_service_auto,
+            services::probe_node_health,
             services::lookup_ip_country,
             services::lookup_ip_country_auto,
             tray::traffic_rates,
@@ -156,21 +174,38 @@ pub fn run() {
                 });
             }
 
-            // macOS：单色模板图自适应菜单栏；Windows：彩色状态图标 + 原生右键菜单。
-            #[cfg(target_os = "macos")]
-            let tray_icon = tauri::include_image!("icons/tray_icon.png");
-            #[cfg(target_os = "windows")]
+            // 猫头保留状态眼睛色；macOS 的头部/网速由菜单栏按钮自身外观适配。
             let tray_icon = tauri::include_image!("resources/tray/off-dark.png");
-
-            let mut tray_builder = TrayIconBuilder::with_id("main")
+            let tray_builder = TrayIconBuilder::with_id("main")
                 .icon(tray_icon)
+                .icon_as_template(false)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| tray::on_tray_click(tray.app_handle(), event));
 
-            #[cfg(target_os = "macos")]
-            {
-                tray_builder = tray_builder.icon_as_template(true);
-            }
+            // AppIndicator 不转发 TrayIconEvent::Click；保留菜单才能从托盘唤回窗口。
+            #[cfg(target_os = "linux")]
+            let tray_builder = {
+                use tauri::menu::{Menu, MenuItem};
+                let open = MenuItem::with_id(app, "open", "打开 PP Clash", true, None::<&str>)?;
+                let panel = MenuItem::with_id(app, "panel", "快捷面板", true, None::<&str>)?;
+                let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+                tray_builder.menu(&Menu::with_items(app, &[&open,&panel,&settings,&quit])?)
+                    .show_menu_on_left_click(true)
+                    .on_menu_event(|app,event| {
+                        let app = app.clone();
+                        let id = event.id().as_ref().to_string();
+                        tauri::async_runtime::spawn(async move {
+                            match id.as_str() {
+                                "panel" => tray::open_panel_from_menu(&app),
+                                "settings" => { let _ = tray::tray_action(app,"open".into(),Some(serde_json::json!("settings"))).await; },
+                                "open" => focus_main(&app),
+                                "quit" => { let _ = tray::tray_action(app,"quit".into(),None).await; },
+                                _ => {}
+                            }
+                        });
+                    })
+            };
 
             tray_builder.build(app)?;
 
@@ -183,6 +218,8 @@ pub fn run() {
             });
 
             // 每秒刷新托盘图标状态与实时网速；不重建菜单
+            let traffic_handle = app.handle().clone();
+            tauri::async_runtime::spawn(traffic::run(traffic_handle));
             let tick_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {
@@ -195,6 +232,11 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if window.label() == "main" {
+                if matches!(event, WindowEvent::Focused(_) | WindowEvent::Resized(_)) {
+                    let visible = window.is_visible().unwrap_or(true)
+                        && !window.is_minimized().unwrap_or(false);
+                    let _ = window.emit("window://visible", visible);
+                }
                 if let WindowEvent::Focused(true) = event {
                     #[cfg(target_os = "macos")]
                     let _ = window
@@ -208,7 +250,7 @@ pub fn run() {
                 }
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    let _ = window.hide();
+                    tray::hide_panel(window.app_handle());
                 }
                 return;
             }
@@ -223,6 +265,7 @@ pub fn run() {
                     api.prevent_close();
                     HIDDEN_TO_TRAY.store(true, Ordering::Relaxed);
                     let _ = window.hide();
+                    let _ = window.emit("window://visible", false);
                     let hide_dock = *window
                         .state::<AppFlags>()
                         .hide_dock_on_close

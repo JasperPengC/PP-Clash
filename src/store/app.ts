@@ -1,199 +1,30 @@
+import { isGroupNode, parseRuntimeGroups } from '../core/proxy-runtime';
+import { createStatePersistence } from '../application/persistence';
+import { createTrayPublisher } from '../application/tray-sync';
+import { runtimeOf, overrideOf, configurationInputs, prepareConfigCandidate, type ConfigInputs } from '../application/configuration';
+import type { Profile, CustomRule, ProxyRuntimeSnapshot, ProxyGroup, ToastKind, Toast, AppSettings, OutboundMode, KernelPhase } from '../domain/app';
+import { DEFAULT_SETTINGS } from '../domain/settings';
+export type { Profile, CustomRule, ProxyNode, ProxyRuntimeSnapshot, ProxyGroup, ThemeMode, ToastKind, Toast, AppSettings, OutboundMode, DnsNameserverMode, OverrideFile, KernelPhase } from '../domain/app';
+export { DEFAULT_SETTINGS } from '../domain/settings';
 import { create } from 'zustand';
+import { createSettingsApplication, type SettingsApplicationOptions, type SettingsApplicationResult } from '../application/apply-runtime-settings';
+import { Lifecycle } from '../core/lifecycle';
 import { api, DATA_DIR, isTauri, setMihomoBase, setMihomoSecret } from '../core/api';
-import { generateConfig, listProxyNames, type ConfigStats, type RuleEditState, STABLE_EGRESS_DOMAINS, STABLE_EGRESS_GROUP } from '../core/generator';
+import { generateConfig, type ConfigStats, type RuleEditState } from '../core/generator';
 import type { AppUpdateInfo } from '../core/api';
 import type { Finding } from '../core/audit';
 import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
-import { countRealNodes, isInfoNode, parseSubscriptionMeta, type TrafficInfo } from '../core/subscription';
+import { countRealNodes, parseSubscriptionMeta, validateSubscriptionCandidate } from '../core/subscription';
 import { useTheme } from './theme';
+import { currentTextSize, normalizeTextSize, restoreTextSize, setTextSize, textSizeRevision } from './text-size';
 import { isWindows } from '../core/platform';
 import { logEvent } from '../core/logger';
 import { APP_VERSION, UPDATE_REPO } from '../core/update';
-
-export interface Profile {
-  id: string;
-  /** 优先用订阅响应头里的名字；没有则回落到 URL 主机名。 */
-  name: string;
-  url: string;
-  raw: string;
-  updatedAt: number;
-  /** subscription-userinfo：已用 / 总量 / 到期时间。旧版本保存的订阅没有这个字段。 */
-  userinfo: TrafficInfo | null;
-  /** profile-update-interval（小时）。 */
-  updateIntervalHours: number | null;
-  /** 自动更新间隔：null = 跟随订阅；0 = 关闭；其它为小时。 */
-  autoUpdateHours?: number | null;
-  /** 更新订阅时走本机代理（需要内核运行）。 */
-  useProxy?: boolean;
-  /** 来源：远程订阅链接或本地文件；旧数据没有该字段时按 url 处理。 */
-  sourceType?: 'url' | 'file';
-  /** 订阅规则的启停/目标/排序覆盖。 */
-  ruleEdits?: RuleEditState;
-}
-
-export interface CustomRule {
-  id: string;
-  type: string;
-  payload: string;
-  target: string;
-  enabled: boolean;
-}
-
-export interface ProxyNode {
-  name: string;
-  type: string;
-  delay: number | null;
-}
-
-export interface ProxyGroup {
-  name: string;
-  type: string;
-  now: string;
-  nodes: ProxyNode[];
-}
-
-export type ThemeMode = 'system' | 'light' | 'dark';
-
-export type ToastKind = 'error' | 'success' | 'info';
-
-export interface Toast {
-  id: number;
-  kind: ToastKind;
-  text: string;
-}
-
-/** 用户真正会改、且需要跨启动保留的偏好。 */
-export interface AppSettings {
-  theme: ThemeMode;
-  /** 混合端口：系统/应用代理指向这里。 */
-  mixedPort: number;
-  /** mihomo 控制端口：前端经它读流量/延迟/切换节点。 */
-  controllerPort: number;
-  /** mihomo 控制端口 bearer secret。 */
-  controllerSecret: string;
-  /** 自定义内核路径；留空则按优先级自动查找。 */
-  kernelPath: string;
-  /** 开机自启（macOS LaunchAgent）。 */
-  launchAtLogin: boolean;
-  /** 关窗最小化到托盘而不是退出。 */
-  closeToTray: boolean;
-  /** 出站模式：规则 / 全局 / 直连。 */
-  mode: OutboundMode;
-  /** 额外监听端口；0 表示关闭。 */
-  socksPort: number;
-  httpPort: number;
-  redirPort: number;
-  bindAddress: string;
-  authUser: string;
-  authPass: string;
-  /** 允许局域网设备连接本机代理。 */
-  allowLan: boolean;
-  /** 进阶模式：显示规则、日志、覆写、内核等高级页面。 */
-  advancedMode: boolean;
-  traySpeed: boolean;
-  /** 关闭窗口后隐藏 Dock 图标（菜单栏常驻）。 */
-  hideDockOnClose: boolean;
-  /** 设置结构版本，用于一次性迁移。 */
-  settingsVersion: number;
-  /** 内核 DNS 监听端口。 */
-  dnsPort: number;
-  /** DNS 服务器：自动（安全策略）/ 预设 DoH / 自定义。 */
-  dnsNameserver: DnsNameserverMode;
-  /** Geo 数据模式：db 使用 metadb，dat 使用旧 dat 文件。 */
-  geoDataMode: 'db' | 'dat';
-  /** 内核按 interval 自动更新 Geo 数据。 */
-  geoAutoUpdate: boolean;
-  geoUpdateInterval: number;
-  /** 内置在线 Geo 源；资源页可直接编辑。 */
-  geoUrls: {
-    geoip: string;
-    geosite: string;
-    mmdb: string;
-    asn: string;
-    country: string;
-  };
-  dnsCustom: string;
-  /** 嗅探：从握手提取域名。 */
-  snifferEnabled: boolean;
-  snifferOverrideDestination: boolean;
-  /** 订阅自动更新（按机场返回的 profile-update-interval，缺省 24h）。 */
-  autoUpdate: boolean;
-  /** 节点不可用时自动探测并切换到同组可用节点。 */
-  autoFailover: boolean;
-  /** 进阶覆写：多份 YAML/JS 文件，按顺序合并到生成配置。 */
-  overrides: OverrideFile[];
-  /** GitHub 下载代理前缀（下载内核/资源时使用，留空直连）。 */
-  githubProxy: string;
-  /** 自定义规则（插在防护规则之后、订阅规则之前）。 */
-  customRules: CustomRule[];
-  /** GitHub 等登录敏感站点固定出口，避免切换节点导致出口 IP 频繁变化。 */
-  egressGuard: boolean;
-  /** 固定出口节点名；空字符串表示首次连接后自动取当前节点。 */
-  egressGuardNode: string;
-  /** 应用更新 feed；留空关闭检查。 */
-  updateFeedUrl: string;
-  /** 启动时自动检查应用更新。 */
-  updateCheckOnLaunch: boolean;
-}
-
-export type OutboundMode = 'rule' | 'global' | 'direct';
-export type DnsNameserverMode = 'auto' | 'cloudflare' | 'google' | 'quad9' | 'custom';
-
-export interface OverrideFile {
-  id: string;
-  name: string;
-  mode: 'yaml' | 'js';
-  enabled: boolean;
-  text: string;
-}
-
-export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'system',
-  mixedPort: 7890,
-  controllerPort: 9090,
-  controllerSecret: '',
-  kernelPath: '',
-  launchAtLogin: false,
-  closeToTray: true,
-  mode: 'rule',
-  allowLan: false,
-  socksPort: 0,
-  httpPort: 0,
-  redirPort: 0,
-  bindAddress: '127.0.0.1',
-  authUser: '',
-  authPass: '',
-  advancedMode: true,
-  traySpeed: true,
-  hideDockOnClose: true,
-  settingsVersion: 3,
-  dnsPort: 1053,
-  dnsNameserver: 'auto',
-  dnsCustom: '',
-  geoDataMode: 'db',
-  geoAutoUpdate: false,
-  geoUpdateInterval: 24,
-  geoUrls: {
-    geoip: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat',
-    geosite: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat',
-    mmdb: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb',
-    asn: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb',
-    country: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb',
-  },
-  snifferEnabled: true,
-  snifferOverrideDestination: false,
-  autoUpdate: true,
-  autoFailover: true,
-  egressGuard: true,
-  egressGuardNode: '',
-  overrides: [],
-  githubProxy: 'auto',
-  customRules: [],
-  updateFeedUrl: '',
-  updateCheckOnLaunch: true,
-};
-
-export type KernelPhase = 'stopped' | 'starting' | 'running' | 'stopping' | 'failed';
+import { routingPolicy, subscriptionRoutingPolicy, type RoutingPolicy } from '../core/routing-policy';
+import { DEFAULT_LATENCY_URL, GITHUB_LATENCY_URL, groupLatencyTarget, latencyTestQuery, normalizeLatency, parseTargetLatencies, type TargetLatencies } from '../core/latency';
+import type { DelayTestOptions, LatencyResult } from '../core/latency-batch';
+import { readProxyConfiguration } from '../core/proxy-domain';
+import { normalizeSubscriptionUrl, sameSubscriptionUrl } from '../core/subscription-source';
 
 interface AppStore {
   profiles: Profile[];
@@ -207,25 +38,48 @@ interface AppStore {
   elevationPrompt: boolean;
   elevationBusy: boolean;
   policy: SecurityPolicy;
+  policyApplying: boolean;
+  policyError: string | null;
   settings: AppSettings;
   tunEnabled: boolean;
   sysProxyEnabled: boolean;
+  /** 本会话确认或已经请求过的代理端口，不能随待应用设置丢失。 */
+  ownedProxyPorts: number[];
   kernelPhase: KernelPhase;
   /** 本次连接开始时间（ms），用于概览显示运行时长。 */
   connectedAt: number | null;
   /** 最近一次内核启动/运行失败的原因，直接展示给用户。 */
   kernelError: string | null;
   groups: ProxyGroup[];
-  /** 节点页手动固定的节点：groupName -> nodeName[]。 */
+  proxyRuntime: ProxyRuntimeSnapshot | null;
+  routing: RoutingPolicy | null;
+  routeRevision: number;
+  /** 已尝试生效的运行配置代次；节点选择不会改变它。 */
+  runtimeConfigRevision: number;
+  runtimeConfigTransition: boolean;
+  /** 恢复/水合期间阻止所有旧内存切片持久化。 */
+  persistenceFrozen: boolean;
+  /** 磁盘已恢复而内存尚未接受恢复态；普通读取取消不能解除此屏障。 */
+  restoredStatePending: boolean;
+  restoringBackup: boolean;
+  persistenceSession?: string;
+  /** 旧版收藏/置顶排序数据，不代表固定使用。 */
   pinnedNodes: Record<string, string[]>;
+  /** 明确确认过的固定选择：订阅 ID -> 分组 -> 节点；旧置顶不迁移为出口命令。 */
+  fixedNodes: Record<string, Record<string, string>>;
+  /** 已由控制器确认的选择，按订阅隔离；与固定策略独立。 */
+  selectedNodes: Record<string, Record<string, string>>;
   audit: Finding[];
   stats: ConfigStats | null;
   toast: Toast | null;
   busy: boolean;
   /** 正在导入订阅。 */
   importing: boolean;
+  activatingProfile: boolean;
   /** 正在更新哪些订阅。 */
   refreshingIds: string[];
+  /** 仅当前会话显示的订阅更新失败原因，不写入持久化状态。 */
+  profileRefreshErrors: Record<string, string>;
 
   /** 非持久化的派生路径：save_config 返回的绝对 config.yaml 与其所在目录。 */
   configPath: string;
@@ -233,9 +87,10 @@ interface AppStore {
 
   /** 启动时从磁盘水合。 */
   hydrate: () => Promise<void>;
-  importProfile: (url: string, useProxy?: boolean) => Promise<void>;
+  restoreBackup: (name: string) => Promise<void>;
+  importProfile: (url: string, useProxy?: boolean) => Promise<boolean>;
   /** 导入本地 YAML/JSON 文件；url 字段保存文件路径，便于后续重新读取。 */
-  importProfileFile: (path: string) => Promise<void>;
+  importProfileFile: (path: string) => Promise<boolean>;
   activate: (id: string) => Promise<void>;
   removeProfile: (id: string) => Promise<void>;
   refreshProfile: (id: string, quiet?: boolean) => Promise<boolean>;
@@ -247,25 +102,31 @@ interface AppStore {
   moveProfile: (id: string, dir: -1 | 1) => void;
   /** 拖拽排序：把 fromId 移到 toId 的位置。 */
   reorderProfiles: (fromId: string, toId: string) => void;
-  applyConfig: () => Promise<void>;
+  applyConfig: () => Promise<boolean>;
   startKernel: (quiet?: boolean) => Promise<void>;
   stopKernel: (quiet?: boolean) => Promise<void>;
   /** 串行重启内核：避免多个配置修改同时 stop/start 互相踩踏。 */
-  restartKernel: (quiet?: boolean) => Promise<boolean>;
+  restartKernel: (quiet?: boolean, expectedToken?: number, prepared?: boolean) => Promise<boolean>;
   /** 彻底断开：停内核并清掉系统代理 / TUN 两个接管开关。 */
   disconnect: () => Promise<void>;
   /** 内核意外退出时由心跳探测调用：纠正 UI 状态并兜底关闭系统代理。 */
   handleKernelLost: () => Promise<void>;
-  refreshGroups: (quiet?: boolean) => Promise<void>;
-  selectNode: (group: string, node: string) => Promise<void>;
+  refreshGroups: (quiet?: boolean) => Promise<boolean>;
+  /** 来源元数据按会话读取一次；显式刷新可重试，不能阻塞节点确认。 */
+  refreshProxyProviders: (force?: boolean) => Promise<boolean>;
+  selectNode: (group: string, node: string, expectedRevision?: string) => Promise<boolean>;
   togglePinNode: (group: string, node: string) => void;
-  testDelay: (node: string) => Promise<number | null>;
+  toggleFixedNode: (group: string, node: string) => Promise<boolean>;
+  testDelay: (node: string, targetUrl?: string, options?: DelayTestOptions) => Promise<number | null>;
+  publishDelayBatch: (results: LatencyResult[]) => void;
   toggleSystemProxy: (on: boolean) => Promise<void>;
   /** 托盘事件回写（只改状态并持久化，不再发系统调用）。 */
   setSysProxyEnabled: (on: boolean) => void;
   setTun: (on: boolean) => Promise<void>;
-  setPolicy: (patch: Partial<SecurityPolicy>) => Promise<void>;
+  setPolicy: (patch: Partial<SecurityPolicy>) => Promise<boolean>;
   updateSettings: (patch: Partial<AppSettings>) => void;
+  applyRuntimeSettings: (patch: Partial<AppSettings>, options?: SettingsApplicationOptions) => Promise<SettingsApplicationResult>;
+  changeOutboundMode: (mode: OutboundMode) => Promise<void>;
   notify: (kind: ToastKind, text: string) => void;
   clearToast: () => void;
   checkUpdate: (silent?: boolean) => Promise<void>;
@@ -303,157 +164,410 @@ async function disableProxyOnFailure(port: number) {
   }
 }
 
-let restartChain: Promise<void> = Promise.resolve();
-let kernelStartRetry = 0;
-let recoveryToken = 0;
-let recoveryRunning = false;
+const lifecycle = new Lifecycle();
+const applyRuntimeSettings = createSettingsApplication({
+  read: () => { const s = useApp.getState(); return { settings: s.settings, kernelPhase: s.kernelPhase, hasProfile: s.profiles.some(p => p.id === s.activeId) }; },
+  token: () => lifecycle.token(), current: token => lifecycle.current(token),
+  update: patch => useApp.getState().updateSettings(patch),
+  invalidate: () => useApp.setState({ configPath: '' }),
+  apply: () => useApp.getState().applyConfig(),
+  restart: token => useApp.getState().restartKernel(true, token, true),
+});
+export const getLifecycleToken = () => lifecycle.token();
+export const isLifecycleCurrent = (token: number) => lifecycle.current(token);
+let configRequest = 0;
+let configPending = 0;
+let configCommitChain: Promise<unknown> = Promise.resolve();
+const profileRefreshes = new Map<string, Promise<boolean>>();
+let proxyReadEpoch = 0;
+const proxyProviderReads = new Map<number, Promise<boolean>>();
+const proxySessionIdentity = (state: AppStore) => JSON.stringify([state.activeId, state.runtimeConfigRevision,
+  state.runtimeConfigTransition, state.connectedAt, state.kernelPhase, state.settings.controllerPort, state.settings.controllerSecret]);
+const proxySnapshotMatches = (snapshot: ProxyRuntimeSnapshot | null, state: AppStore) => Boolean(snapshot
+  && snapshot.profileId === state.activeId && snapshot.revision === state.runtimeConfigRevision && snapshot.connectedAt === state.connectedAt
+  && (snapshot.sessionEpoch === undefined || snapshot.sessionEpoch === proxyReadEpoch));
 let configRevision = 0;
+let manualSelectionRequest = 0;
+let persistenceRevision = 0;
+let hydrationRequest = 0;
+let preparedRouting: RoutingPolicy | null = null;
+export const getRoutingRevision = (): string => String(useApp.getState().routeRevision);
+let globalGroup: ProxyGroup | undefined;
+export const getGlobalGroup = () => globalGroup;
+
+export function primaryRoutingGroup(s: Pick<AppStore, 'groups' | 'profiles' | 'activeId' | 'settings'> & { routing?: RoutingPolicy | null }): ProxyGroup | undefined {
+  if (s.settings.mode === 'global') return globalGroup;
+  const raw = s.profiles.find(p => p.id === s.activeId)?.raw ?? '';
+  const primary = (s.routing ?? subscriptionRoutingPolicy(raw)).primary;
+  return s.groups.find(g => g.name === primary) ?? s.groups[0];
+}
 let validatedRevision = -1;
-let egressGroupRepairing = false;
+let validatedPath = '';
+let preparedInputs: ConfigInputs | null = null;
+let preparedInputKey = '';
+let preparedDataDir = '';
 
-const GROUP_PRIORITY: Record<string, number> = {
-  Selector: 0,
-  URLTest: 1,
-  Fallback: 2,
-  LoadBalance: 3,
-  Relay: 4,
-};
-
-function parseGroups(raw: any): ProxyGroup[] {
-  const map = raw?.proxies ?? {};
-  const out: ProxyGroup[] = [];
-
-  for (const [name, info] of Object.entries<any>(map)) {
-    // GLOBAL 是 mihomo 的全局兜底组，不是订阅分组：
-    // 放进来会把「DIRECT / REJECT」当成当前节点顶到最前，概览和节点页都会显示错。
-    if (name === 'GLOBAL') continue;
-    if (!GROUP_PRIORITY[String(info?.type ?? '')] && !(info?.type in GROUP_PRIORITY)) continue;
-    const nodes: ProxyNode[] = (info.all ?? [])
-      // 机场喜欢把「剩余流量：1.91 TB」这类信息塞成节点，节点列表里要滤掉
-      .filter((n: string) => !isInfoNode(n))
-      .map((n: string) => {
-        const d = map[n];
-        const history = d?.history;
-        const delay = Array.isArray(history) && history.length
-          ? (history[history.length - 1]?.delay ?? null)
-          : null;
-        return { name: n, type: d?.type ?? '', delay };
-      });
-    out.push({ name, type: info.type, now: info.now ?? '', nodes });
-  }
-
-  // 主选择组优先（Selector 在前）；同类型里节点多的更可能是订阅主分组
-  out.sort(
-    (a, b) =>
-      GROUP_PRIORITY[a.type] - GROUP_PRIORITY[b.type] ||
-      b.nodes.length - a.nodes.length ||
-      a.name.localeCompare(b.name)
-  );
-  return out;
+function preparedFor(s: AppStore): boolean {
+  return Boolean(preparedInputKey && s.configPath && s.configPath === validatedPath
+    && s.dataDir === preparedDataDir && validatedRevision === configRevision
+    && JSON.stringify(configInputsOf(s)) === preparedInputKey);
 }
 
-/**
- * 分组里选中的可能还是另一个分组（例如「Example Air」的当前项是「自动选择」）。
- * 一直往下追到真实节点，只用于展示；切换/选中判断仍然用原始 now。
- */
-export function resolveEffectiveGroup(groups: ProxyGroup[], name: string): ProxyGroup | undefined {
-  let group = groups.find((g) => g.name === name);
-  const seen = new Set<string>();
-  while (group && !seen.has(group.name)) {
-    seen.add(group.name);
-    const next = groups.find((g) => g.name === group!.now);
-    if (!next) break;
-    group = next;
-  }
-  return group;
+function rememberProxyPort(port: number) {
+  const ports = useApp.getState().ownedProxyPorts;
+  if (!ports.includes(port)) useApp.setState({ ownedProxyPorts: [...ports, port] });
 }
 
-export function resolveActiveNode(groups: ProxyGroup[], name: string): string {
-  let cur = name;
-  const seen = new Set<string>();
-  for (let i = 0; i < 8 && cur; i++) {
-    if (seen.has(cur)) return cur;
-    seen.add(cur);
-    const g = groups.find((x) => x.name === cur);
-    if (!g) return cur;
-    if (!g.now) return cur;
-    cur = g.now;
-  }
-  return cur;
+async function enableSystemProxy(port: number) {
+  // 记录已发出的写入，停止即使先于成功回调也能识别所属端点。
+  rememberProxyPort(port);
+  return api.setSystemProxy(true, '127.0.0.1', port);
 }
 
-/** 把持久化切片写盘。落盘失败只记日志，绝不让内存态崩。 */
-async function persist(s: AppStore) {
-  if (!isTauri) return;
-  const payload = JSON.stringify({
-    profiles: s.profiles,
-    activeId: s.activeId,
-    policy: s.policy,
-    settings: s.settings,
-    tunEnabled: s.tunEnabled,
-    sysProxyEnabled: s.sysProxyEnabled,
-    pinnedNodes: s.pinnedNodes,
-  });
+function saveFixedNode(profileId: string, group: string, node?: string) {
+  const s = useApp.getState();
+  const records = { ...s.fixedNodes[profileId] };
+  if (node) records[group] = node;
+  else delete records[group];
+  useApp.setState({ fixedNodes: { ...s.fixedNodes, [profileId]: records } });
+  void persist(useApp.getState());
+}
+
+async function saveSelectedNode(profileId: string, group: string, node?: string) {
+  const s = useApp.getState();
+  const records = { ...s.selectedNodes[profileId] };
+  if (node) records[group] = node;
+  else delete records[group];
+  useApp.setState({ selectedNodes: { ...s.selectedNodes, [profileId]: records } });
+  await persist(useApp.getState());
+}
+
+function normalizeFixedNodes(value: unknown, profiles: Profile[]): Record<string, Record<string, string>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(profiles.map(profile => {
+    const groups = (value as Record<string, unknown>)[profile.id];
+    return [profile.id, groups && typeof groups === 'object' && !Array.isArray(groups)
+      ? Object.fromEntries(Object.entries(groups).filter(([group, node]) => group && typeof node === 'string' && node)) : {}];
+  }));
+}
+
+/** 调用方持有 lifecycle 串行队列；启动恢复直接复用，避免嵌套排队。 */
+async function selectNodeFor(token: number, profileId: string | null, group: string, node: string,
+  revision: string, kind: 'manual' | 'automatic' | 'fixed' | 'restore' | 'remember', context = restorationContextOf(useApp.getState())): Promise<boolean> {
+  const restoring = kind === 'restore' || kind === 'remember';
+  const current = () => lifecycle.current(token) && useApp.getState().activeId === profileId
+    && (useApp.getState().kernelPhase === 'running' || (restoring && useApp.getState().kernelPhase === 'starting'))
+    && (restoring ? Boolean(profileId && (kind === 'restore' ? useApp.getState().fixedNodes : useApp.getState().selectedNodes)[profileId]?.[group] === node
+      && context === restorationContextOf(useApp.getState()))
+      : getRoutingRevision() === revision);
+  if (!current()) return false;
+  const target = group === 'GLOBAL' ? globalGroup : useApp.getState().groups.find(g => g.name === group);
+  const member = target?.nodes.find(n => n.name === node);
+  // 面板快照和点击之间，组类型可能已改变；手选在执行边界再次校验。
+  if ((kind === 'manual' || kind === 'remember') && target?.type !== 'Selector') return false;
+  if (!member || ((kind === 'fixed' || kind === 'restore')
+      && (target?.type !== 'Selector' || isGroupNode(member, useApp.getState().groups)))) return false;
   try {
-    await api.saveAppState(payload, DATA_DIR);
+    await api.mihomo('PUT', `/proxies/${encodeURIComponent(group)}`, { name: node });
+    if (!current()) return false;
+    const refreshed = restoring ? await refreshFixedGroupsFor(token, profileId, context)
+      : await useApp.getState().refreshGroups();
+    if (!current()) return false;
+    const confirmed = group === 'GLOBAL' ? globalGroup : useApp.getState().groups.find(g => g.name === group);
+    if (!refreshed || confirmed?.now !== node) throw new Error('控制器未确认选中该节点');
+    if ((kind === 'fixed' || kind === 'restore')
+        && confirmed.nodes.some(n => n.name === node && isGroupNode(n, useApp.getState().groups))) return false;
+    if (profileId) {
+      const fixed = useApp.getState().fixedNodes[profileId]?.[group];
+      if (kind === 'fixed' || (kind === 'automatic' && fixed)) saveFixedNode(profileId, group, node);
+      else if (kind === 'manual' && fixed && fixed !== node) saveFixedNode(profileId, group);
+      if (!restoring && confirmed?.type === 'Selector') await saveSelectedNode(profileId, group, node);
+    }
+    await pushTray(useApp.getState());
+    return current();
   } catch (e) {
-    console.error('[PPClash] 状态落盘失败', e);
+    if (current()) useApp.getState().notify('error', `切换节点失败：${errorText(e)}`);
+    return false;
   }
 }
 
-const runtimeOf = (s: AppStore) => ({
-  mixedPort: s.settings.mixedPort,
-  controllerPort: s.settings.controllerPort,
-  controllerSecret: s.settings.controllerSecret,
-  tunEnabled: s.tunEnabled,
-  mode: s.settings.mode,
-  allowLan: s.settings.allowLan,
-  dnsPort: s.settings.dnsPort,
-  socksPort: s.settings.socksPort,
-  httpPort: s.settings.httpPort,
-  redirPort: s.settings.redirPort,
-  bindAddress: s.settings.bindAddress,
-  authUser: s.settings.authUser,
-  authPass: s.settings.authPass,
-  dnsNameserver: s.settings.dnsNameserver,
-  dnsCustom: s.settings.dnsCustom,
-  geoDataMode: s.settings.geoDataMode,
-  geoAutoUpdate: s.settings.geoAutoUpdate,
-  geoUpdateInterval: s.settings.geoUpdateInterval,
-  geoUrls: s.settings.geoUrls,
-  snifferEnabled: s.settings.snifferEnabled,
-  snifferOverrideDestination: s.settings.snifferOverrideDestination,
-  customRules: s.settings.customRules,
-  currentNode: resolveActiveNode(s.groups, s.groups[0]?.now ?? ''),
-  stableEgress: {
-    enabled: s.settings.egressGuard,
-    node: s.settings.egressGuardNode,
-    domains: STABLE_EGRESS_DOMAINS,
-  },
+function restorationContextOf(s: AppStore): string {
+  const inputs = configInputsOf(s);
+  // 恢复会改变观测节点；取消其它分组固定也不改变本次连接的配置/控制器身份。
+  return JSON.stringify(inputs && { ...inputs, runtime: { ...inputs.runtime, currentNode: '', fixedNodes: {}, selectedNodes: {} } });
+}
+
+function restorationCurrent(token: number, profileId: string | null, context: string): boolean {
+  return lifecycle.current(token) && useApp.getState().activeId === profileId && restorationContextOf(useApp.getState()) === context;
+}
+
+async function refreshFixedGroupsFor(token: number, profileId: string | null, context: string): Promise<boolean> {
+  const revision = getRoutingRevision();
+  const refreshed = await useApp.getState().refreshGroups();
+  if (!restorationCurrent(token, profileId, context)) return false;
+  // 取消其它固定会使在途读结果过期；只重读一次，绝不据旧分组发出恢复。
+  return refreshed || (revision !== getRoutingRevision() && await useApp.getState().refreshGroups()
+    && restorationCurrent(token, profileId, context));
+}
+
+async function restoreFixedNodesFor(token: number, profileId: string | null, context: string): Promise<boolean> {
+  if (!profileId) return true;
+  const current = () => restorationCurrent(token, profileId, context);
+  for (const [group, node] of Object.entries(useApp.getState().fixedNodes[profileId] ?? {})) {
+    if (!current()) return false;
+    if (useApp.getState().fixedNodes[profileId]?.[group] !== node) continue;
+    const target = useApp.getState().groups.find(g => g.name === group);
+    if (target?.type !== 'Selector' || !target.nodes.some(n => n.name === node && !isGroupNode(n, useApp.getState().groups))) {
+      saveFixedNode(profileId, group);
+      continue;
+    }
+    if (target.now === node) continue;
+    const restored = await selectNodeFor(token, profileId, group, node, getRoutingRevision(), 'restore', context);
+    if (!current()) return false;
+    // 用户取消固定后，迟到的控制器应答不重新发布固定，也不继续恢复旧意图。
+    if (useApp.getState().fixedNodes[profileId]?.[group] !== node) continue;
+    if (!restored) return false;
+  }
+  return current();
+}
+
+/** 普通记忆按实际成员恢复；移除/改类型时回退，不能把过期偏好当成固定命令。 */
+async function restoreSelectedNodesFor(token: number, profileId: string | null, context: string): Promise<void> {
+  if (!profileId) return;
+  for (const [group, node] of Object.entries(useApp.getState().selectedNodes[profileId] ?? {})) {
+    if (!restorationCurrent(token, profileId, context)) return;
+    if (useApp.getState().fixedNodes[profileId]?.[group]) continue;
+    const target = group === 'GLOBAL' ? globalGroup : useApp.getState().groups.find(g => g.name === group);
+    if (target?.type !== 'Selector' || !target.nodes.some(member => member.name === node)) {
+      await saveSelectedNode(profileId, group);
+      continue;
+    }
+    if (target.now !== node) await selectNodeFor(token, profileId, group, node, getRoutingRevision(), 'remember', context);
+  }
+}
+
+/** 接管已运行的内核不拥有其启动；读失败保留现有会话，只阻止新增代理接管。 */
+async function adoptRunningKernelFor(token: number, wantsTun: boolean, wantsSysProxy: boolean): Promise<void> {
+  const profileId = useApp.getState().activeId;
+  const context = restorationContextOf(useApp.getState());
+  useApp.setState({ kernelPhase: 'starting', connectedAt: Date.now() });
+  await lifecycle.serial(async () => {
+    const current = () => lifecycle.current(token);
+    if (!current()) return;
+    const refreshed = await refreshFixedGroupsFor(token, profileId, context);
+    if (!current()) return;
+    const restored = restorationCurrent(token, profileId, context)
+      && (!Object.keys(useApp.getState().fixedNodes[profileId ?? ''] ?? {}).length
+        || (refreshed && await restoreFixedNodesFor(token, profileId, context)));
+    if (refreshed && restored) await restoreSelectedNodesFor(token, profileId, context);
+    if (!current()) return;
+    const actual = await api.getSystemProxy().catch(() => null);
+    if (!current()) return;
+    const settings = useApp.getState().settings;
+    if (actual) {
+      if (actual.enabled && actual.port === settings.mixedPort) rememberProxyPort(actual.port);
+      useApp.setState({ sysProxyEnabled: actual.enabled });
+    }
+    if (restored && restorationCurrent(token, profileId, context) && wantsSysProxy && actual && !actual.enabled) {
+      try {
+        const sp = await enableSystemProxy(settings.mixedPort);
+        if (!current()) return;
+        useApp.setState({ sysProxyEnabled: sp.enabled });
+        void persist(useApp.getState());
+      } catch (e) {
+        if (current()) useApp.getState().notify('error', `恢复系统代理失败：${errorText(e)}`);
+      }
+    }
+    if (!current()) return;
+    if (wantsTun) useApp.setState({ tunEnabled: true });
+    const message = restored ? null : '固定节点尚未确认，已保留现有连接，请检查后重新选择';
+    useApp.setState({ kernelPhase: 'running', kernelError: message });
+    if (message) useApp.getState().notify('error', message);
+    await pushTray(useApp.getState());
+  });
+}
+
+async function startFor(token: number, quiet: boolean, retry = true): Promise<void> {
+  const current = () => lifecycle.current(token);
+  if (!current()) return;
+  if (!isTauri) {
+    useApp.getState().notify('error', '浏览器预览模式无法启动内核，请用 npm run app 启动桌面端');
+    return;
+  }
+  if (!preparedFor(useApp.getState())) {
+    if (!useApp.getState().profiles.some(p => p.id === useApp.getState().activeId)) {
+      useApp.getState().notify('error', '还没有订阅，先在「订阅」页导入一份');
+      return;
+    }
+    const prepared = await useApp.getState().applyConfig();
+    if (!current() || !prepared) return;
+  }
+  await lifecycle.serial(async () => {
+    if (!current() || useApp.getState().kernelPhase === 'running') return;
+    if (!preparedFor(useApp.getState())) return;
+    const { configPath, dataDir, settings, tunEnabled, activeId } = useApp.getState();
+    const restoreContext = restorationContextOf(useApp.getState());
+    const routing = preparedRouting;
+    useApp.setState({ kernelPhase: 'starting', kernelError: null });
+    if (!quiet) useApp.getState().notify('info', '正在启动内核…');
+    try {
+      const st = await api.startKernel(configPath, dataDir || DATA_DIR, settings.kernelPath || null,
+        tunEnabled, settings.controllerPort, settings.controllerSecret);
+      if (!current()) return; // 已发出的启动由排队的停止清理。
+      if (!st.running) throw new Error('内核未就绪，请检查内核路径或配置');
+      useApp.setState({ connectedAt: Date.now(), kernelError: null, routing });
+      if (st.reclaimed?.length) useApp.getState().notify('info', `已自动关闭 ${st.reclaimed.length} 个占用端口的进程`);
+      const refreshed = await refreshFixedGroupsFor(token, activeId, restoreContext);
+      if (!current()) return;
+      if (!restorationCurrent(token, activeId, restoreContext) ||
+          (Object.keys(useApp.getState().fixedNodes[activeId ?? ''] ?? {}).length
+          && (!refreshed || !await restoreFixedNodesFor(token, activeId, restoreContext)))) {
+        if (!current()) return;
+        await api.stopKernel();
+        if (!current()) return;
+        throw new Error('固定节点恢复未确认，已停止本次连接，请检查节点后重试');
+      }
+      if (!current()) return;
+      if (refreshed) await restoreSelectedNodesFor(token, activeId, restoreContext);
+      if (!restorationCurrent(token, activeId, restoreContext)) return;
+      useApp.setState({ kernelPhase: 'running' });
+      if (!tunEnabled) {
+        try {
+          const sp = await enableSystemProxy(settings.mixedPort);
+          if (!current()) return;
+          useApp.setState({ sysProxyEnabled: sp.enabled });
+          void persist(useApp.getState());
+        } catch (e) {
+          if (!current()) return;
+          useApp.getState().notify('error', `内核已启动，但系统代理打开失败：${errorText(e)}`);
+        }
+      }
+      if (!quiet) useApp.getState().notify('success', '已连接');
+    } catch (e) {
+      if (!current()) return;
+      const msg = errorText(e);
+      useApp.setState({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
+      if (retry && /address already in use|没有监听/.test(msg)) {
+        lifecycle.schedule(token, 1200, () => void startFor(token, true, false));
+      } else {
+        if (useApp.getState().sysProxyEnabled) {
+          await disableProxyOnFailure(settings.mixedPort);
+          if (!current()) return;
+          useApp.setState({ sysProxyEnabled: false });
+          void persist(useApp.getState());
+        }
+        if (!quiet) useApp.getState().notify('error', `启动内核失败：${msg}`);
+      }
+    }
+    if (current()) await pushTray(useApp.getState());
+  });
+}
+
+async function stopFor(token: number, quiet: boolean): Promise<void> {
+  if (!lifecycle.current(token)) return;
+  useApp.setState({ kernelPhase: 'stopping' });
+  await lifecycle.serial(async () => {
+    // 即便之后又请求连接，也要先收尾已经发出的启动和代理开启。
+    const port = useApp.getState().settings.mixedPort;
+    const actual = await api.getSystemProxy().catch(() => null);
+    if (!actual || actual.port === port || useApp.getState().ownedProxyPorts.includes(actual.port)) {
+      try {
+        await api.setSystemProxy(false, '127.0.0.1', actual?.port ?? port);
+        useApp.setState({ ownedProxyPorts: [] });
+        if (lifecycle.current(token)) {
+          useApp.setState({ sysProxyEnabled: false });
+          void persist(useApp.getState());
+        }
+      } catch (e) {
+        if (lifecycle.current(token)) useApp.getState().notify('error', `关闭系统代理失败：${errorText(e)}`);
+      }
+    }
+    try {
+      await api.stopKernel();
+      if (!lifecycle.current(token)) return;
+      useApp.setState({ kernelPhase: 'stopped', connectedAt: null, groups: [], kernelError: null });
+      if (!quiet) useApp.getState().notify('info', '已断开连接');
+    } catch (e) {
+      if (!lifecycle.current(token)) return;
+      useApp.setState({ kernelPhase: 'failed', connectedAt: null, kernelError: `停止内核失败：${errorText(e)}` });
+      if (!quiet) useApp.getState().notify('error', `停止内核失败：${errorText(e)}`);
+    }
+    if (lifecycle.current(token)) await pushTray(useApp.getState());
+  });
+}
+
+/** 配置调用方沿用动作开始时的代次，不能让旧续体重新取得接管权。 */
+export async function restartKernelFor(token: number, quiet = true, prepared = false): Promise<boolean> {
+  const current = () => lifecycle.current(token);
+  if (!current()) return false;
+  if (!prepared) {
+    const applied = await useApp.getState().applyConfig();
+    if (!current() || !applied) return false;
+  }
+  if (!current() || !preparedFor(useApp.getState())) return false;
+  // 内部停机保留本次代次；用户停止则会立即使它失效。
+  await stopFor(token, true);
+  if (!current() || useApp.getState().kernelPhase !== 'stopped') return false;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await new Promise(r => setTimeout(r, attempt === 1 ? 400 : 1200 * attempt));
+    if (!current()) return false;
+    await startFor(token, true, false);
+    if (!current()) return false;
+    if (useApp.getState().kernelPhase === 'running') {
+      if (!quiet) useApp.getState().notify('success', '内核已重启');
+      return true;
+    }
+  }
+  useApp.getState().notify('error', '内核重启失败，详见 kernel.log');
+  return false;
+}
+
+export { isGroupNode } from '../core/proxy-runtime';
+function parseGroups(raw: unknown, publishGlobal = true, profileRaw?: string) {
+  const state = useApp.getState();
+  return parseRuntimeGroups(raw, profileRaw ?? state.profiles.find(profile => profile.id === state.activeId)?.raw ?? '',
+    publishGlobal ? group => { globalGroup = group; } : undefined);
+}
+
+export { resolveEffectiveGroup } from '../core/effective-group';
+
+export { resolveActiveNode } from '../core/active-node';
+
+const persist = createStatePersistence({
+  allowed: () => isTauri && !useApp.getState().persistenceFrozen,
+  write: (payload, session) => api.saveAppState(payload, DATA_DIR, session),
+  report: error => console.error('[PPClash] 状态落盘失败', error),
 });
 
-const overrideOf = (s: AppStore) =>
-  s.settings.overrides
-    .filter((o) => o.enabled)
-    .map((o) => ({ mode: o.mode, text: o.text, name: o.name }));
+function configInputsOf(s: AppStore) { return configurationInputs(s, preparedInputs); }
 
-/** 把前端状态推给托盘（更新勾选态并重建菜单）。失败静默，托盘不是关键路径。 */
-async function pushTray(s: AppStore) {
-  if (!isTauri) return;
+/** 候选只借用生成输入，不提前替换订阅或修改活动身份。 */
+function configInputsForProfile(s: AppStore, profile: Profile): ConfigInputs {
+  return configInputsOf({ ...s, activeId: profile.id,
+    profiles: s.profiles.map(p => p.id === profile.id ? profile : p),
+    groups: s.activeId === profile.id ? s.groups : [] })!;
+}
+
+async function validateImportedProfile(state: AppStore, profile: Profile, current: () => boolean) {
+  validateSubscriptionCandidate(profile.raw);
+  const inputs = configInputsForProfile({ ...state, profiles: [...state.profiles, profile] }, profile);
+  const prepared = await prepareConfigCandidate(inputs, current);
+  if (!prepared) throw new Error('操作状态已变化，请重新导入');
   try {
-    await api.setTrayFlags(
-      s.tunEnabled,
-      s.sysProxyEnabled,
-      s.settings.mixedPort,
-      s.settings.mode,
-      s.settings.traySpeed,
-      s.settings.hideDockOnClose,
-      s.settings.controllerSecret
-    );
-  } catch (e) {
-    console.error('[PPClash] 同步托盘失败', e);
+    if (!current()) throw new Error('操作状态已变化，请重新导入');
+    return { audit: prepared.audit, stats: prepared.stats };
+  } finally {
+    await api.discardConfig(prepared.candidate);
   }
 }
+
+const publishTray = createTrayPublisher({
+  enabled: () => isTauri,
+  primaryGroup: state => primaryRoutingGroup(state)?.name ?? '',
+  write: (...flags) => api.setTrayFlags(...flags),
+  report: error => console.error('[PPClash] 同步托盘失败', error),
+});
+const pushTray = (state: AppStore) => publishTray(state);
 
 let toastSeq = 0;
 
@@ -467,20 +581,35 @@ export const useApp = create<AppStore>((set, get) => ({
   elevationPrompt: false,
   elevationBusy: false,
   policy: DEFAULT_POLICY,
-  settings: DEFAULT_SETTINGS,
+  policyApplying: false,
+  policyError: null,
+  settings: { ...DEFAULT_SETTINGS, textSize: currentTextSize() },
   tunEnabled: false,
   sysProxyEnabled: false,
+  ownedProxyPorts: [],
   kernelPhase: 'stopped',
   connectedAt: null,
   kernelError: null,
   groups: [],
+  proxyRuntime: null,
+  routing: null,
+  routeRevision: 0,
+  runtimeConfigRevision: 0,
+  runtimeConfigTransition: false,
+  persistenceFrozen: false,
+  restoredStatePending: false,
+  restoringBackup: false,
   pinnedNodes: {},
+  fixedNodes: {},
+  selectedNodes: {},
   audit: [],
   stats: null,
   toast: null,
   busy: false,
   importing: false,
+  activatingProfile: false,
   refreshingIds: [],
+  profileRefreshErrors: {},
   configPath: '',
   dataDir: '',
 
@@ -549,17 +678,44 @@ export const useApp = create<AppStore>((set, get) => ({
 
   clearToast: () => set({ toast: null }),
 
+  restoreBackup: async (name) => {
+    if (get().persistenceFrozen) throw new Error('状态正在读取或恢复，请稍后重试');
+    set({ persistenceFrozen: true, restoringBackup: true });
+    persistenceRevision++;
+    try {
+      await api.restoreBackup(DATA_DIR, name);
+      // 恢复成功后旧内存保持只读，只有完整水合恢复态才重新获得写权限。
+      set({ persistenceSession: undefined, persistenceFrozen: true, restoredStatePending: true, restoringBackup: false });
+    } catch (error) {
+      set({ persistenceFrozen: false, restoringBackup: false });
+      await persist(get());
+      throw error;
+    }
+  },
+
   hydrate: async () => {
-    if (!isTauri) return;
+    if (!isTauri || get().restoringBackup) return;
+    const token = lifecycle.token();
+    const request = ++hydrationRequest;
+    const revision = persistenceRevision;
+    set({ persistenceFrozen: true });
+    const session = crypto.randomUUID();
+    const current = () => lifecycle.current(token) && request === hydrationRequest && revision === persistenceRevision;
+    const appearanceRevision = textSizeRevision();
     try {
       const elevated = await api.isElevated().catch(() => true);
+      if (!current()) return;
       set({ elevated });
-      const raw = await api.loadAppState(DATA_DIR);
+      const raw = await api.loadAppState(DATA_DIR, session);
+      if (!current()) return;
       const saved = raw ? (JSON.parse(raw) as Partial<AppStore>) : {};
 
       const rawSettings = (saved.settings ?? {}) as Partial<AppSettings> &
         Record<string, unknown>;
       const settings: AppSettings = { ...DEFAULT_SETTINGS, ...rawSettings };
+      delete (settings as AppSettings & Record<string, unknown>).egressGuard;
+      delete (settings as AppSettings & Record<string, unknown>).egressGuardNode;
+      settings.textSize = normalizeTextSize(rawSettings.textSize);
       // v2：进阶功能默认开启（老用户只迁移一次，之后尊重用户选择）
       const savedVersion = typeof rawSettings.settingsVersion === 'number'
         ? rawSettings.settingsVersion
@@ -642,6 +798,7 @@ export const useApp = create<AppStore>((set, get) => ({
         ).join('');
       }
       setMihomoSecret(settings.controllerSecret);
+      settings.textSize = restoreTextSize(rawSettings.textSize, appearanceRevision);
       set({
         profiles,
         activeId: saved.activeId ?? null,
@@ -650,10 +807,16 @@ export const useApp = create<AppStore>((set, get) => ({
         tunEnabled: saved.tunEnabled ?? false,
         sysProxyEnabled: saved.sysProxyEnabled ?? false,
         pinnedNodes: saved.pinnedNodes ?? {},
+        fixedNodes: normalizeFixedNodes(saved.fixedNodes, profiles),
+        selectedNodes: normalizeFixedNodes(saved.selectedNodes, profiles),
+        persistenceSession: session,
+        persistenceFrozen: false,
+        restoredStatePending: false,
       });
       // 首次生成 controller secret 必须落盘，否则下次启动会生成新的，
       // 与已生成配置里的 secret 不一致，内核 API 会 401。
       await persist(get());
+      if (!current()) return;
       setMihomoBase(settings.controllerPort);
       const desiredTun = saved.tunEnabled ?? false;
       const desiredSysProxy = saved.sysProxyEnabled ?? false;
@@ -672,32 +835,34 @@ export const useApp = create<AppStore>((set, get) => ({
         saved.activeId && (saved.profiles ?? []).some((p) => p.id === saved.activeId);
       if (stillValid) {
         await get().applyConfig();
+        if (!current()) return;
       }
 
       // 内核可能在应用上次退出后仍在运行（或用户外部启动过），以实际探测为准
       const st = await api.kernelStatus(settings.controllerSecret).catch(() => null);
+      if (!current()) return;
       if (st?.running) {
-        set({ kernelPhase: 'running', connectedAt: Date.now() });
-        await get().refreshGroups();
-      } else {
+        await adoptRunningKernelFor(token, desiredTun, desiredSysProxy && !desiredTun);
+        if (!current()) return;
+      } else if (st?.running === false) {
         // 上次崩溃/强退可能留下 TUN 内核：不清掉会把系统流量继续劫持走
         void api.cleanupStaleKernel().catch(() => null);
       }
 
       // 系统代理的真实状态以 networksetup 为准（用户可能在系统设置里改过）
-      const sp = await api.getSystemProxy().catch(() => null);
-      let actualSysProxy = false;
+      const sp = st?.running ? null : await api.getSystemProxy().catch(() => null);
+      if (!current()) return;
       if (sp) {
-        actualSysProxy = sp.enabled;
+        if (sp.enabled && sp.port === settings.mixedPort) rememberProxyPort(sp.port);
         set({ sysProxyEnabled: sp.enabled });
-        if (sp.enabled && !st?.running) {
+        if (sp.enabled && st?.running === false) {
           if (sp.port === get().settings.mixedPort) {
             // 上次退出时内核被强杀/崩溃，系统代理指向了已经不存在的端口：
             // 这会表现为「电脑断网」，必须自动撤掉。
             await api
               .setSystemProxy(false, '127.0.0.1', get().settings.mixedPort)
               .catch(() => null);
-            actualSysProxy = false;
+            if (!current()) return;
             set({ sysProxyEnabled: false });
             get().notify('info', '已关闭遗留的系统代理');
           } else {
@@ -718,59 +883,18 @@ export const useApp = create<AppStore>((set, get) => ({
       // 状态记忆：上次开启的系统代理/TUN，启动后自动恢复。
       const wantsTun = desiredTun;
       const wantsSysProxy = desiredSysProxy && !desiredTun;
-      if (st?.running) {
-        // 内核还在，直接补回系统代理即可；TUN 内核一般本身仍是 TUN 模式。
-        if (wantsSysProxy && !actualSysProxy) {
-          try {
-            const restored = await api.setSystemProxy(
-              true,
-              '127.0.0.1',
-              settings.mixedPort
-            );
-            set({ sysProxyEnabled: restored.enabled });
-            void persist(get());
-            get().notify('info', '已恢复系统代理');
-          } catch (e) {
-            get().notify('error', `恢复系统代理失败：${errorText(e)}`);
-          }
-        }
-        if (wantsTun) set({ tunEnabled: true, sysProxyEnabled: false });
-      } else if (get().activeId) {
+      if (st?.running === false && get().activeId) {
         if (wantsTun && isWindows && !elevated) {
           // Windows TUN 需要管理员：先弹确认框，确认后 UAC 重启应用再自动恢复。
           set({ tunEnabled: false, sysProxyEnabled: false, elevationPrompt: true });
           get().notify('info', '上次开启了 TUN，需要管理员权限才能恢复');
         } else if (wantsTun) {
           set({ tunEnabled: true, sysProxyEnabled: false });
-          window.setTimeout(() => void get().startKernel(true), 600);
+          lifecycle.schedule(token, 600, () => void startFor(token, true));
           get().notify('info', '正在恢复上次的 TUN 接管');
         } else if (wantsSysProxy) {
           set({ tunEnabled: false, sysProxyEnabled: false });
-          const restoreSysProxy = async () => {
-            await get().startKernel(true);
-            if (get().kernelPhase !== 'running') return;
-            // 启动成功后再显式确认一次系统代理，避免 mixed 端口刚就绪时的竞态。
-            for (let i = 0; i < 3; i += 1) {
-              try {
-                const restored = await api.setSystemProxy(
-                  true,
-                  '127.0.0.1',
-                  get().settings.mixedPort
-                );
-                if (restored.enabled) {
-                  set({ sysProxyEnabled: true });
-                  void persist(get());
-                  await pushTray(get());
-                  get().notify('info', '已恢复上次的系统代理');
-                  return;
-                }
-              } catch {
-                /* 端口/服务可能还未就绪，稍后重试 */
-              }
-              await new Promise((r) => setTimeout(r, 800));
-            }
-          };
-          window.setTimeout(() => void restoreSysProxy(), 600);
+          lifecycle.schedule(token, 600, () => void startFor(token, true));
           get().notify('info', '正在恢复上次的系统代理');
         }
       }
@@ -780,15 +904,33 @@ export const useApp = create<AppStore>((set, get) => ({
         window.setTimeout(() => void get().checkUpdate(true), 1200);
       }
     } catch (e) {
+      if (!current()) return;
       console.error('[PPClash] 水合失败', e);
       get().notify('error', `读取本地状态失败：${errorText(e)}`);
+    } finally {
+      // 生命周期作废也需释放普通读取的冻结，但只能由最新持有者释放；
+      // 恢复已替换磁盘时，失败/取消读取必须保留恢复屏障。
+      if (request === hydrationRequest && revision === persistenceRevision && get().persistenceFrozen
+          && !get().restoringBackup && !get().restoredStatePending) {
+        set({ persistenceFrozen: false });
+        // 首次读取失败时内存尚未水合，不能用默认空状态自动覆盖原磁盘。
+        if (get().persistenceSession) await persist(get());
+      }
     }
   },
 
   importProfile: async (url, useProxy = false) => {
+    const token = lifecycle.token();
     if (!isTauri) {
       set({ toast: { id: ++toastSeq, kind: 'error', text: '浏览器预览模式无法拉取订阅，请用 npm run app 启动桌面端' } });
-      return;
+      return false;
+    }
+    if (get().importing) return false;
+    try { url = normalizeSubscriptionUrl(url); }
+    catch (error) { get().notify('error', errorText(error)); return false; }
+    if (get().profiles.some(p => p.sourceType !== 'file' && sameSubscriptionUrl(p.url, url))) {
+      get().notify('info', '此订阅已添加，请使用已有订阅');
+      return false;
     }
     set({ busy: true, importing: true });
     try {
@@ -798,6 +940,7 @@ export const useApp = create<AppStore>((set, get) => ({
         get().notify('info', '内核未运行，直连导入');
       }
       const payload = await api.fetchSubscription(url, proxyPort);
+      if (!lifecycle.current(token)) throw new Error('操作状态已变化，请重新导入');
       const meta = parseSubscriptionMeta(payload);
       const id = crypto.randomUUID();
       const profile: Profile = {
@@ -813,43 +956,54 @@ export const useApp = create<AppStore>((set, get) => ({
         useProxy,
         sourceType: 'url',
       };
-      const { audit, stats } = await generateConfig(
-        payload.raw,
-        get().policy,
-        runtimeOf(get()),
-        overrideOf(get())
-      );
-      set((s) => ({
-        profiles: [...s.profiles, profile],
-        // 导入新订阅不抢占当前订阅；只有还没有订阅时才自动激活
-        activeId: s.activeId ?? id,
-        audit,
-        stats,
-        busy: false,
-        importing: false,
-      }));
-      await get().applyConfig();
-      if (get().kernelPhase === 'running') await get().restartKernel(true);
+      const { audit, stats } = await validateImportedProfile(get(), profile, () => lifecycle.current(token));
+      if (!lifecycle.current(token)) throw new Error('操作状态已变化，请重新导入');
+      set((s) => {
+        const hasActive = s.profiles.some(p => p.id === s.activeId);
+        return { profiles: [...s.profiles, profile], activeId: hasActive ? s.activeId : id,
+          ...(!hasActive ? { audit, stats } : {}) };
+      });
       void persist(get());
+      // 新增订阅不打断当前订阅；首次导入才需要生成当前配置。
+      if (get().activeId === id && lifecycle.current(token)) {
+        const applied = await get().applyConfig();
+        const ready = applied && lifecycle.current(token) && (get().kernelPhase !== 'running' || await get().restartKernel(true, token, true));
+        if (!ready) {
+          get().notify('error', '订阅已保存，但配置未应用，请检查配置后重新连接');
+          return true;
+        }
+      }
       const realNodes = countRealNodes(payload.raw);
       get().notify(
         'success',
         `订阅已导入${meta.name ? ` · ${meta.name}` : ''}${realNodes ? ` · ${realNodes} 个节点` : ''}`
       );
+      return true;
     } catch (e) {
-      set({ busy: false, importing: false });
       get().notify('error', `导入失败：${errorText(e)}`);
+      return false;
+    } finally {
+      set({ busy: configPending > 0, importing: false });
     }
   },
 
   importProfileFile: async (path) => {
+    const token = lifecycle.token();
     if (!isTauri) {
       set({ toast: { id: ++toastSeq, kind: 'error', text: '浏览器预览模式无法读取本地文件' } });
-      return;
+      return false;
+    }
+    if (get().importing) return false;
+    path = path.trim();
+    if (!path) { get().notify('error', '请选择本地配置文件'); return false; }
+    if (get().profiles.some(p => p.sourceType === 'file' && p.url === path)) {
+      get().notify('info', '此文件已添加，请使用已有订阅');
+      return false;
     }
     set({ busy: true, importing: true });
     try {
       const raw = await api.readSubscriptionFile(path);
+      if (!lifecycle.current(token)) throw new Error('操作状态已变化，请重新导入');
       const id = crypto.randomUUID();
       const profile: Profile = {
         id,
@@ -863,46 +1017,68 @@ export const useApp = create<AppStore>((set, get) => ({
         useProxy: false,
         sourceType: 'file',
       };
-      const { audit, stats } = await generateConfig(raw, get().policy, runtimeOf(get()), overrideOf(get()));
-      set((s) => ({
-        profiles: [...s.profiles, profile],
-        activeId: s.activeId ?? id,
-        audit,
-        stats,
-        busy: false,
-        importing: false,
-      }));
-      await get().applyConfig();
-      if (get().kernelPhase === 'running') await get().restartKernel(true);
+      const { audit, stats } = await validateImportedProfile(get(), profile, () => lifecycle.current(token));
+      if (!lifecycle.current(token)) throw new Error('操作状态已变化，请重新导入');
+      set((s) => {
+        const hasActive = s.profiles.some(p => p.id === s.activeId);
+        return { profiles: [...s.profiles, profile], activeId: hasActive ? s.activeId : id,
+          ...(!hasActive ? { audit, stats } : {}) };
+      });
       void persist(get());
+      // 新增订阅不打断当前订阅；首次导入才需要生成当前配置。
+      if (get().activeId === id && lifecycle.current(token)) {
+        const applied = await get().applyConfig();
+        const ready = applied && lifecycle.current(token) && (get().kernelPhase !== 'running' || await get().restartKernel(true, token, true));
+        if (!ready) {
+          get().notify('error', '订阅已保存，但配置未应用，请检查配置后重新连接');
+          return true;
+        }
+      }
       const realNodes = countRealNodes(raw);
       get().notify(
         'success',
         `本地订阅已导入${realNodes ? ` · ${realNodes} 个节点` : ''}`
       );
+      return true;
     } catch (e) {
-      set({ busy: false, importing: false });
       get().notify('error', `导入失败：${errorText(e)}`);
+      return false;
+    } finally {
+      set({ busy: configPending > 0, importing: false });
     }
   },
 
   activate: async (id) => {
-    const p = get().profiles.find((x) => x.id === id);
-    if (!p || get().activeId === id) return;
-    const { audit, stats } = await generateConfig(
-      p.raw,
-      get().policy,
-      runtimeOf(get()),
-      overrideOf(get()),
-      p.ruleEdits
-    );
-    set({ activeId: id, audit, stats });
-    await get().applyConfig();
-    void persist(get());
-    // 切换订阅后让运行中的内核立刻使用新配置
-    if (get().kernelPhase === 'running') {
-      await get().restartKernel(true);
+    const token = lifecycle.token();
+    const before = get();
+    const p = before.profiles.find((x) => x.id === id);
+    if (!p || before.activeId === id || before.activatingProfile || before.importing) return;
+    set({ activatingProfile: true });
+    try {
+      const { audit, stats } = await generateConfig(p.raw, get().policy, runtimeOf(get()), overrideOf(get()), p.ruleEdits);
+      if (!lifecycle.current(token)) return;
+      set({ activeId: id, audit, stats });
+      const applied = await get().applyConfig();
+      if (!lifecycle.current(token)) return;
+      if (!applied) {
+        set({ activeId: before.activeId, audit: before.audit, stats: before.stats, configPath: before.configPath });
+        get().notify('error', '订阅配置生成失败，保留原订阅');
+        return;
+      }
+      void persist(get());
+      if (lifecycle.current(token) && get().kernelPhase === 'running' && !await get().restartKernel(true, token, true)) {
+        if (get().kernelPhase === 'running') {
+          set({ activeId: before.activeId, audit: before.audit, stats: before.stats, configPath: '', routing: before.routing });
+          void persist(get());
+          get().notify('error', '新订阅未能应用，继续使用原订阅');
+        }
+        return;
+      }
       get().notify('info', `已切换到 ${p.name}`);
+    } catch (error) {
+      get().notify('error', `切换订阅失败：${errorText(error)}`);
+    } finally {
+      set({ activatingProfile: false });
     }
   },
 
@@ -910,6 +1086,8 @@ export const useApp = create<AppStore>((set, get) => ({
     const wasActive = get().activeId === id;
     set((s) => ({
       profiles: s.profiles.filter((p) => p.id !== id),
+      fixedNodes: Object.fromEntries(Object.entries(s.fixedNodes).filter(([profileId]) => profileId !== id)),
+      selectedNodes: Object.fromEntries(Object.entries(s.selectedNodes).filter(([profileId]) => profileId !== id)),
       // 删掉活动订阅后配置链路失效，清空派生状态
       ...(wasActive ? { activeId: null, audit: [], stats: null, groups: [] } : {}),
     }));
@@ -928,6 +1106,7 @@ export const useApp = create<AppStore>((set, get) => ({
   },
 
   updateRuleEdits: async (edits) => {
+    const token = lifecycle.token();
     const id = get().activeId;
     if (!id) return;
     set((s) => ({
@@ -935,9 +1114,14 @@ export const useApp = create<AppStore>((set, get) => ({
     }));
     void persist(get());
     const st = get();
-    await st.applyConfig();
+    const applied = await st.applyConfig();
+    if (!lifecycle.current(token)) return;
+    if (!applied) {
+      get().notify('error', '订阅规则已保存但配置生成失败，未应用');
+      return;
+    }
     if (st.kernelPhase === 'running') {
-      const ok = await st.restartKernel(true);
+      const ok = await get().restartKernel(true, token, true);
       if (!ok) return;
     }
     get().notify('success', '订阅规则已更新');
@@ -964,405 +1148,416 @@ export const useApp = create<AppStore>((set, get) => ({
     void persist(get());
   },
 
-  refreshProfile: async (id, quiet = false) => {
-    const p = get().profiles.find((x) => x.id === id);
-    if (!p) return false;
-    set((s) => ({
-      refreshingIds: s.refreshingIds.includes(id) ? s.refreshingIds : [...s.refreshingIds, id],
-    }));
-    try {
-      const useProxy = Boolean(p.useProxy);
-      if (useProxy && get().kernelPhase !== 'running' && !quiet) {
-        get().notify('info', '内核未运行，直连更新');
-      }
-      const proxyPort =
-        useProxy && get().kernelPhase === 'running' ? get().settings.mixedPort : undefined;
-      const payload =
-        p.sourceType === 'file'
-          ? {
-              raw: await api.readSubscriptionFile(p.url),
-              profileTitle: null,
-              contentDisposition: null,
-              subscriptionUserinfo: null,
-              profileUpdateInterval: null,
-            }
+  refreshProfile: (id, quiet = false) => {
+    const pending = profileRefreshes.get(id);
+    if (pending) return pending;
+    const token = lifecycle.token();
+    const before = get();
+    const p = before.profiles.find(x => x.id === id);
+    if (!p || !isTauri) return Promise.resolve(false);
+    const sourceKey = JSON.stringify(configInputsForProfile(before, p));
+    let stale = false;
+    let request: number | undefined;
+    // 记录经过的变化，A→B→A 也不能让旧下载重新取得提交权。
+    const unsubscribe = useApp.subscribe(s => {
+      if (s.profiles.find(x => x.id === id) !== p || s.activeId !== before.activeId
+        || s.kernelPhase !== before.kernelPhase || s.connectedAt !== before.connectedAt
+        || JSON.stringify(configInputsForProfile(s, p)) !== sourceKey) stale = true;
+    });
+    const current = () => !stale && lifecycle.current(token) && (request === undefined || request === configRequest);
+    const run = (async () => {
+      let candidate: string | undefined;
+      let counted = false;
+      let stage = '下载订阅';
+      let rollbackFailure = '';
+      set(s => ({ refreshingIds: [...s.refreshingIds.filter(x => x !== id), id],
+        profileRefreshErrors: Object.fromEntries(Object.entries(s.profileRefreshErrors).filter(([key]) => key !== id)) }));
+      try {
+        if (p.useProxy && before.kernelPhase !== 'running' && !quiet) get().notify('info', '内核未运行，直连更新');
+        const proxyPort = p.useProxy && before.kernelPhase === 'running' ? before.settings.mixedPort : undefined;
+        const payload = p.sourceType === 'file'
+          ? { raw: await api.readSubscriptionFile(p.url), profileTitle: null, contentDisposition: null,
+            subscriptionUserinfo: null, profileUpdateInterval: null }
           : await api.fetchSubscription(p.url, proxyPort);
-      const meta = parseSubscriptionMeta(payload);
-      set((s) => ({
-        profiles: s.profiles.map((x) =>
-          x.id === id
-            ? {
-                ...x,
-                name: meta.name ?? x.name,
-                raw: payload.raw,
-                userinfo: meta.traffic ?? x.userinfo,
-                updateIntervalHours: meta.updateIntervalHours ?? x.updateIntervalHours,
-                updatedAt: Date.now(),
+        if (!current()) return false;
+        stage = '检查订阅结构';
+        validateSubscriptionCandidate(payload.raw);
+        const meta = parseSubscriptionMeta(payload);
+        const nextProfile = { ...p, raw: payload.raw, name: meta.name ?? p.name,
+          userinfo: meta.traffic ?? p.userinfo, updateIntervalHours: meta.updateIntervalHours ?? p.updateIntervalHours };
+        const inputs: ConfigInputs = JSON.parse(JSON.stringify(configInputsForProfile(get(), nextProfile)));
+        configPending += 1; counted = true; set({ busy: true });
+        stage = '生成或校验配置';
+        const prepared = await prepareConfigCandidate(inputs, current);
+        if (!prepared) return false;
+        candidate = prepared.candidate;
+        if (!current()) return false;
+        const publishProfile = () => {
+          unsubscribe();
+          set(s => ({ profiles: s.profiles.map(x => x.id === id ? { ...x, ...nextProfile, updatedAt: Date.now() } : x) }));
+        };
+        if (before.activeId !== id) {
+          publishProfile();
+        } else {
+          // 固定节点不能因新订阅缺失或覆写被静默移除，再把默认节点当成更新成功。
+          stage = '检查固定节点';
+          const groups = JSON.parse(prepared.config)['proxy-groups'] ?? [];
+          const fixedSelections = { ...inputs.runtime.fixedNodes };
+          for (const [group, node] of Object.entries(fixedSelections)) {
+            if (!groups.some((g: any) => g.name === group && g.type === 'select'
+              && g['default-selected'] === node)) {
+              throw new Error(`候选订阅未保留固定节点「${group} / ${node}」`);
+            }
+          }
+          request = ++configRequest;
+          const ownsRequest = current;
+          const runCommit = configCommitChain.then(() => lifecycle.serial(async () => {
+            if (!ownsRequest()) return false;
+            const receipt = candidate!;
+            stage = '提交配置';
+            const absConfig = await api.commitConfig(receipt);
+            candidate = undefined;
+            let attemptedLoad = false;
+            const base = `http://127.0.0.1:${before.settings.controllerPort}`;
+            const secret = before.settings.controllerSecret;
+            const reload = () => api.mihomo('PUT', '/configs?force=true', { path: absConfig }, base, secret);
+            const sameSession = () => lifecycle.current(token) && get().kernelPhase === 'running'
+              && get().connectedAt === before.connectedAt;
+            const rollback = async () => {
+              try {
+                await api.finishConfig(receipt, true);
+                // 超时可能发生在内核已接受之后；旧文件恢复后明确恢复旧运行版本。
+                if (attemptedLoad && sameSession()) {
+                  set(s => ({ runtimeConfigRevision: s.runtimeConfigRevision + 1 }));
+                  await reload();
+                }
+              } catch (error) {
+                rollbackFailure = errorText(error);
+                const stillCurrent = current();
+                const sessionUnknown = sameSession();
+                validatedRevision = -1; validatedPath = ''; preparedInputKey = ''; preparedRouting = null;
+                if (sessionUnknown) globalGroup = undefined;
+                set(s => ({ configPath: '', audit: [], stats: null,
+                  ...(sessionUnknown ? { groups: [], routing: null, routeRevision: s.routeRevision + 1,
+                    kernelError: '订阅更新回退未确认，请检查运行配置后重新连接' } : {}),
+                  ...(stillCurrent ? { profileRefreshErrors: { ...s.profileRefreshErrors,
+                    [id]: `回退配置失败：${rollbackFailure}；已保留原订阅内容，运行状态未确认` } } : {}) }));
+                stage = '回退配置';
+                get().notify('error', `订阅更新回退未确认：${errorText(error)}；已保留原订阅，请检查后重新连接`);
               }
-            : x
-        ),
-        refreshingIds: s.refreshingIds.filter((x) => x !== id),
-      }));
-      // 活动中的订阅更新后立即重生成配置并让运行中的内核加载
-      if (get().activeId === id) {
-        await get().applyConfig();
-        if (get().kernelPhase === 'running') await get().restartKernel(true);
+            };
+            try {
+              if (!ownsRequest()) { await rollback(); return false; }
+              let observed: unknown;
+              if (before.kernelPhase === 'running') {
+                stage = '加载配置';
+                attemptedLoad = true;
+                set(s => ({ runtimeConfigRevision: s.runtimeConfigRevision + 1, runtimeConfigTransition: true }));
+                await reload();
+                if (!ownsRequest()) { await rollback(); return false; }
+                stage = '确认运行节点';
+                observed = await api.mihomo('GET', '/proxies', undefined, base, secret);
+                if (!ownsRequest()) { await rollback(); return false; }
+                const loadedGroups = parseGroups(observed, false, nextProfile.raw);
+                for (const [group, node] of Object.entries(fixedSelections)) {
+                  const loaded = loadedGroups.find(g => g.name === group);
+                  if (loaded?.type !== 'Selector' || loaded.now !== node
+                    || !loaded.nodes.some(n => n.name === node && !isGroupNode(n, loadedGroups))) {
+                    throw new Error(`内核未确认固定节点「${group} / ${node}」`);
+                  }
+                }
+              }
+              // 同步接受候选与派生配置；之后的收尾不再撤销已发布版本。
+              unsubscribe();
+              configRevision += 1; validatedRevision = configRevision; validatedPath = absConfig;
+              preparedInputs = inputs; preparedInputKey = JSON.stringify(inputs);
+              preparedDataDir = prepared.absDir; preparedRouting = prepared.routing;
+              const groups = observed ? parseGroups(observed, true, nextProfile.raw) : undefined;
+              set(s => ({ profiles: s.profiles.map(x => x.id === id ? { ...x, ...nextProfile, updatedAt: Date.now() } : x),
+                audit: prepared.audit, stats: prepared.stats, configPath: absConfig, dataDir: prepared.absDir,
+                kernelError: null,
+                ...(groups ? { groups, proxyRuntime: {profileId: id, revision: s.runtimeConfigRevision, connectedAt: s.connectedAt, proxies: (observed as {proxies: Record<string, unknown>}).proxies}, routing: prepared.routing, routeRevision: s.routeRevision + 1 } : {}) }));
+              if (groups) void pushTray(get());
+              void persist(get());
+              await api.finishConfig(receipt, false).catch(error => {
+                get().notify('error', `配置已应用，但事务副本清理失败：${errorText(error)}`);
+              });
+              return ownsRequest();
+            } catch (error) {
+              await rollback();
+              throw error;
+            } finally {
+              if (attemptedLoad) set({ runtimeConfigTransition: false });
+            }
+          }));
+          configCommitChain = runCommit.catch(() => undefined);
+          if (!await runCommit) return false;
+        }
+        void persist(get());
+        if (!quiet) get().notify('success', '订阅已更新');
+        return true;
+      } catch (e) {
+        if (current()) {
+          const reason = rollbackFailure ? `${rollbackFailure}（原始错误：${errorText(e)}）` : errorText(e);
+          const message = `${stage}失败：${reason}；已保留原订阅内容${rollbackFailure ? '，运行状态未确认' : ''}`;
+          set(s => ({ profileRefreshErrors: { ...s.profileRefreshErrors, [id]: message } }));
+          if (!quiet) get().notify('error', message);
+        }
+        return false;
+      } finally {
+        unsubscribe();
+        if (candidate) await api.discardConfig(candidate).catch(() => undefined);
+        if (counted) configPending -= 1;
+        set(s => ({ refreshingIds: s.refreshingIds.filter(x => x !== id), busy: configPending > 0 || s.importing }));
       }
-      void persist(get());
-      if (!quiet) get().notify('success', '订阅已更新');
-      return true;
-    } catch (e) {
-      set((s) => ({
-        refreshingIds: s.refreshingIds.filter((x) => x !== id),
-      }));
-      if (!quiet) get().notify('error', `更新失败：${errorText(e)}`);
-      return false;
-    }
+    })().finally(() => { profileRefreshes.delete(id); });
+    profileRefreshes.set(id, run);
+    return run;
   },
 
   applyConfig: async () => {
-    const { activeId, profiles, policy } = get();
+    const request = ++configRequest;
+    // 文件仍保留以供事务回滚，但任何重新准备都必须成功后才能恢复启动资格。
+    preparedInputKey = '';
+    const { activeId, profiles } = get();
     const profile = profiles.find((p) => p.id === activeId);
-    if (!profile) return;
+    if (!profile || !isTauri) return false;
 
-    // 导入/更新订阅后，如果还没记录固定节点（或旧节点已不在新订阅里），
-    // 先从新订阅里选一个节点，保证这次生成的配置就带 GitHub 固定出口分组。
-    if (get().settings.egressGuard) {
-      const names = listProxyNames(profile.raw);
-      const current = get().settings.egressGuardNode;
-      if (names.length > 0 && (!current || !names.includes(current))) {
-        set({ settings: { ...get().settings, egressGuardNode: names[0] } });
-        void persist(get());
-      }
-    }
-
-    if (!isTauri) {
-      // 浏览器预览：功能不可用是预期行为，不弹错误打扰看界面
-      return;
-    }
-
+    const inputKey = JSON.stringify(configInputsOf(get()));
+    const inputs: ConfigInputs = JSON.parse(inputKey);
+    const current = () => request === configRequest && JSON.stringify(configInputsOf(get())) === inputKey;
+    configPending += 1;
     set({ busy: true });
+    let candidate: string | undefined;
     try {
-      const { config, audit, stats } = await generateConfig(
-        profile.raw,
-        policy,
-        runtimeOf(get()),
-        overrideOf(get()),
-        profile.ruleEdits
-      );
-      // save_config 返回绝对路径，直接拿来给内核用，避免相对路径错乱
-      const absConfig = await api.saveConfig(config, DATA_DIR);
-      const sep = absConfig.includes('\\') ? '\\' : '/';
-      const absDir = absConfig.slice(0, absConfig.lastIndexOf(sep));
-      configRevision += 1;
-      set({ audit, stats, configPath: absConfig, dataDir: absDir, busy: false });
+      const prepared = await prepareConfigCandidate(inputs, current);
+      if (!prepared) return false;
+      const { audit, stats, routing, absDir } = prepared;
+      candidate = prepared.candidate;
+      // 正式文件提交与启动读取共用串行队列，启动中不会被另一次提交替换内容。
+      const run = configCommitChain.then(() => lifecycle.serial(async () => {
+        if (!current()) return false;
+        const receipt = candidate!;
+        const absConfig = await api.commitConfig(receipt);
+        candidate = undefined;
+        const publish = () => {
+          configRevision += 1;
+          validatedRevision = configRevision;
+          validatedPath = absConfig;
+          preparedInputs = inputs;
+          preparedInputKey = inputKey;
+          preparedDataDir = absDir;
+          preparedRouting = routing;
+          set({ audit, stats, configPath: absConfig, dataDir: absDir });
+        };
+        if (!current()) {
+          try { await api.finishConfig(receipt, true); }
+          catch (error) {
+            // 补偿失败或外部又提交过时不能断言磁盘版本，清除可启动缓存。
+            validatedRevision = -1;
+            validatedPath = '';
+            preparedInputKey = '';
+            preparedRouting = null;
+            set({ configPath: '', audit: [], stats: null });
+            get().notify('error', `配置回滚失败，需要重新生成后连接：${errorText(error)}`);
+          }
+          return false;
+        }
+        // 不可撤销的提交与内存发布同步收尾；后续请求等待本队列完成。
+        publish();
+        await api.finishConfig(receipt, false).catch(error => {
+          get().notify('error', `配置已应用，但事务副本清理失败：${errorText(error)}`);
+        });
+        return current();
+      }));
+      configCommitChain = run.catch(() => undefined);
+      return await run;
     } catch (e) {
-      set({ busy: false });
-      get().notify('error', `生成配置失败：${errorText(e)}`);
+      if (current()) get().notify('error', `生成或校验配置失败：${errorText(e)}`);
+      return false;
+    } finally {
+      if (candidate) await api.discardConfig(candidate).catch(() => undefined);
+      configPending -= 1;
+      set({ busy: configPending > 0 || get().importing });
     }
   },
 
   startKernel: async (quiet = false) => {
-    const phase = get().kernelPhase;
-    if (phase === 'starting' || phase === 'stopping' || phase === 'running') return;
-    if (!isTauri) {
-      get().notify('error', '浏览器预览模式无法启动内核，请用 npm run app 启动桌面端');
-      return;
-    }
-
-    let { configPath, dataDir } = get();
-    if (!configPath) {
-      const hasProfile = get().profiles.some((p) => p.id === get().activeId);
-      if (!hasProfile) {
-        get().notify('error', '还没有订阅，先在「订阅」页导入一份');
-        return;
-      }
-      await get().applyConfig();
-      ({ configPath, dataDir } = get());
-      if (!configPath) return; // applyConfig 已经提示过失败原因
-    }
-
-    // 先用内核自检配置，避免坏配置把正在运行的内核停掉
-    if (isTauri && configPath && validatedRevision !== configRevision) {
-      try {
-        await api.validateConfig(configPath, dataDir || DATA_DIR);
-        validatedRevision = configRevision;
-      } catch (e) {
-        const msg = `配置校验失败：${errorText(e)}`;
-        set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
-        if (get().sysProxyEnabled) {
-          await disableProxyOnFailure(get().settings.mixedPort);
-          set({ sysProxyEnabled: false });
-          void persist(get());
-        }
-        get().notify('error', msg);
-        return;
-      }
-    }
-
-    set({ kernelPhase: 'starting', kernelError: null });
-    if (!quiet) get().notify('info', '正在启动内核…');
-    try {
-      const st = await api.startKernel(
-        configPath,
-        dataDir || DATA_DIR,
-        get().settings.kernelPath || null,
-        get().tunEnabled,
-        get().settings.controllerPort,
-        get().settings.controllerSecret
-      );
-      if (st.running) {
-        kernelStartRetry = 0;
-        set({ kernelPhase: 'running', connectedAt: Date.now(), kernelError: null });
-        recoveryToken += 1;
-        if (st.reclaimed && st.reclaimed.length > 0) {
-          get().notify('info', `已自动关闭 ${st.reclaimed.length} 个占用端口的进程`);
-        }
-        await get().refreshGroups();
-        // 「连接」的语义是接管流量：非 TUN 模式下把系统代理指向本机端口。
-        // 不管之前是否开着都重设一次，避免指向别的客户端遗留的旧端口。
-        if (!get().tunEnabled) {
-          try {
-            const sp = await api.setSystemProxy(
-              true,
-              '127.0.0.1',
-              get().settings.mixedPort
-            );
-            set({ sysProxyEnabled: sp.enabled });
-            void persist(get());
-          } catch (e) {
-            get().notify('error', `内核已启动，但系统代理打开失败：${errorText(e)}`);
-          }
-        }
-        if (!quiet) get().notify('success', '已连接');
-      } else {
-        const msg = '内核未就绪，请检查内核路径或配置';
-        set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
-        if (!quiet) get().notify('error', msg);
-      }
-    } catch (e) {
-      const msg = errorText(e);
-      // 端口刚被旧内核释放时会有一次短暂冲突；自动重试一次，避免用户看到假失败。
-      if (kernelStartRetry < 1 && /address already in use|没有监听/.test(msg)) {
-        kernelStartRetry += 1;
-        set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
-        if (!quiet) get().notify('info', '端口刚释放，正在重试启动…');
-        window.setTimeout(() => void get().startKernel(true), 1200);
-        await pushTray(get());
-        return;
-      }
-      kernelStartRetry = 0;
-      set({ kernelPhase: 'failed', connectedAt: null, kernelError: msg });
-      if (get().sysProxyEnabled) {
-        await disableProxyOnFailure(get().settings.mixedPort);
-        set({ sysProxyEnabled: false });
-        void persist(get());
-      }
-      if (!quiet) get().notify('error', `启动内核失败：${msg}`);
-    }
-    await pushTray(get());
+    if (['starting', 'running'].includes(get().kernelPhase)) return;
+    await startFor(lifecycle.begin(), quiet);
   },
 
   handleKernelLost: async () => {
-    if (get().kernelPhase !== 'running' || recoveryRunning) return;
-
+    if (get().kernelPhase !== 'running') return;
+    const token = lifecycle.begin();
+    const current = () => lifecycle.current(token);
     const wantedCapture = get().sysProxyEnabled || get().tunEnabled;
-    set({
-      kernelPhase: 'failed',
-      connectedAt: null,
-      kernelError: '内核已停止，详见 kernel.log',
-      groups: [],
+    set({ kernelPhase: 'failed', connectedAt: null, kernelError: '内核已停止，详见 kernel.log', groups: [] });
+    await lifecycle.serial(async () => {
+      if (!current() || !get().sysProxyEnabled) return;
+      await disableProxyOnFailure(get().settings.mixedPort);
+      if (!current()) return;
+      set({ sysProxyEnabled: false });
+      void persist(get());
     });
-
-    // 内核没了还留着系统代理 = 全网断线，静默撤掉
-    if (get().sysProxyEnabled) {
-      try {
-        const sp = await api.setSystemProxy(false, '127.0.0.1', get().settings.mixedPort);
-        set({ sysProxyEnabled: sp.enabled });
-        void persist(get());
-      } catch {
-        /* 关不掉就下次再试 */
-      }
-    }
-
+    if (!current()) return;
     if (wantedCapture) {
-      recoveryRunning = true;
-      const token = ++recoveryToken;
       get().notify('info', '内核已退出，正在恢复…');
       for (let attempt = 1; attempt <= 3; attempt += 1) {
-        await new Promise((r) => setTimeout(r, 800 * attempt));
-        if (get().kernelPhase === 'running' || token !== recoveryToken) break;
-        await get().applyConfig();
-        await get().startKernel(true);
+        await new Promise(r => setTimeout(r, 800 * attempt));
+        if (!current()) return;
+        const prepared = await get().applyConfig();
+        if (!current()) return;
+        if (prepared) await startFor(token, true, false);
+        if (!current()) return;
         if (get().kernelPhase === 'running') {
           get().notify('success', '内核已自动恢复');
           break;
         }
-        if (attempt === 3) {
-          get().notify('error', '内核恢复失败，详见 kernel.log');
-        }
+        if (attempt === 3) get().notify('error', '内核恢复失败，详见 kernel.log');
       }
-      recoveryRunning = false;
-    } else {
-      get().notify('error', '内核已停止，系统代理已关闭。');
-    }
-    await pushTray(get());
+    } else get().notify('error', '内核已停止，系统代理已关闭。');
+    if (current()) await pushTray(get());
   },
 
-  restartKernel: async (quiet = true) => {
-    let ok = false;
-    const run = restartChain.then(async () => {
-      // 先重建并校验配置；校验失败就不要停掉正在工作的内核
-      await get().applyConfig();
-      const cfg = get().configPath;
-      if (isTauri && cfg) {
-        try {
-          await api.validateConfig(cfg, get().dataDir || DATA_DIR);
-          validatedRevision = configRevision;
-        } catch (e) {
-          get().notify('error', `配置校验失败：${errorText(e)}`);
-          return;
-        }
-      }
-      await get().stopKernel(true);
-      for (let attempt = 1; attempt <= 3; attempt += 1) {
-        await new Promise((r) => setTimeout(r, attempt === 1 ? 400 : 1200 * attempt));
-        await get().startKernel(true);
-        if (get().kernelPhase === 'running') {
-          ok = true;
-          return;
-        }
-      }
-    });
-    restartChain = run.catch(() => undefined);
-    await run;
-    if (ok) {
-      if (!quiet) get().notify('success', '内核已重启');
-    } else {
-      get().notify('error', '内核重启失败，详见 kernel.log');
-    }
-    return ok;
-  },
+  restartKernel: async (quiet = true, expectedToken, prepared = false) =>
+    restartKernelFor(expectedToken ?? lifecycle.begin(), quiet, prepared),
 
   stopKernel: async (quiet = false) => {
-    recoveryToken += 1;
-    const phase = get().kernelPhase;
-    if (phase === 'stopping') return;
-    set({ kernelPhase: 'stopping' });
-
-    // 先撤系统代理：内核停了还留着代理，会表现为「整个系统断网」。
-    // 只撤指向本公司端口的代理，别误关其它客户端设置的代理。
-    if (get().sysProxyEnabled) {
-      const current = await api.getSystemProxy().catch(() => null);
-      const pointingAtUs = !current || current.port === get().settings.mixedPort;
-      if (pointingAtUs) {
-        try {
-          const sp = await api.setSystemProxy(false, '127.0.0.1', get().settings.mixedPort);
-          set({ sysProxyEnabled: sp.enabled });
-          void persist(get());
-        } catch (e) {
-          get().notify('error', `关闭系统代理失败：${errorText(e)}`);
-        }
-      }
-    }
-
-    try {
-      await api.stopKernel();
-    } catch (e) {
-      set({
-        kernelPhase: 'failed',
-        connectedAt: null,
-        kernelError: `停止内核失败：${errorText(e)}`,
-      });
-      if (!quiet) get().notify('error', `停止内核失败：${errorText(e)}`);
-      await pushTray(get());
-      return;
-    }
-    set({ kernelPhase: 'stopped', connectedAt: null, groups: [], kernelError: null });
-    if (!quiet) get().notify('info', '已断开连接');
-    await pushTray(get());
+    await stopFor(lifecycle.begin(), quiet);
   },
 
   disconnect: async () => {
-    await get().stopKernel();
+    const token = lifecycle.begin();
+    await stopFor(token, false);
+    if (!lifecycle.current(token) || get().kernelPhase !== 'stopped') return;
     if (get().tunEnabled || get().sysProxyEnabled) {
       set({ tunEnabled: false, sysProxyEnabled: false });
-      // 让下次启动使用非 TUN 配置
       await get().applyConfig();
+      if (!lifecycle.current(token)) return;
       void persist(get());
       await pushTray(get());
     }
   },
 
   refreshGroups: async (quiet = true) => {
-    if (!isTauri) return;
+    if (!isTauri || get().runtimeConfigTransition) return false;
+    const revision = getRoutingRevision();
+    const session = get();
+    const epoch = proxyReadEpoch;
+    const current = () => epoch === proxyReadEpoch && !get().runtimeConfigTransition
+      && proxySessionIdentity(get()) === proxySessionIdentity(session) && revision === getRoutingRevision();
     try {
       const raw = await api.mihomo('GET', '/proxies');
+      if (!current()) return false;
+      // 首次接管现有内核时从实际规则获取主路由；绝不在读取节点时重启/改配置。
+      let routing = get().routing;
+      if (!routing) {
+        const rules = await api.mihomo('GET', '/rules') as { rules?: Array<{ type: string; proxy: string }> };
+        if (!current()) return false;
+        const parsed = parseGroups(raw, false);
+        routing = routingPolicy(parsed.map(g => ({ name: g.name,
+          type: ({ Selector: 'select', URLTest: 'url-test', Fallback: 'fallback' } as Record<string, string>)[g.type] ?? g.type,
+          proxies: g.nodes.map(n => n.name) })),
+          (rules?.rules ?? []).map(r => `${['Match', 'MATCH', 'Final'].includes(r.type) ? 'MATCH' : r.type},${r.proxy}`));
+      }
+      if (!current()) return false;
       const groups = parseGroups(raw);
-      set({ groups });
-      // 打开了固定出口但还没记录节点时，用当前实际节点初始化一次；
-      // 之后再切节点，GitHub 仍走这个节点。
-      const settings = get().settings;
-      const available = new Set(groups.flatMap((g) => g.nodes.map((n) => n.name)));
-      if (
-        settings.egressGuard &&
-        (!settings.egressGuardNode || !available.has(settings.egressGuardNode))
-      ) {
-        // 订阅更新后旧节点可能已经消失；自动改用当前实际节点并重新生成配置，
-        // 否则固定出口规则会被跳过，用户以为启用了但其实没生效。
-        const node = resolveActiveNode(groups, groups[0]?.now ?? '');
-        if (node && node !== settings.egressGuardNode) {
-          set({ settings: { ...settings, egressGuardNode: node } });
-          void persist(get());
-          if (get().kernelPhase === 'running') void get().applyConfig();
-        }
-      }
-
-      // 迁移旧配置：旧版本追加的 GitHub 固定出口只有固定节点一个成员。
-      // 新版本改为展示全部节点；发现旧格式时自动重生成并重启一次内核。
-      const current = get();
-      const stableGroup = groups.find((g) => g.name === STABLE_EGRESS_GROUP);
-      const otherNodeCount = new Set(
-        groups
-          .filter((g) => g.name !== STABLE_EGRESS_GROUP)
-          .flatMap((g) => g.nodes.map((n) => n.name))
-      ).size;
-      if (
-        current.settings.egressGuard &&
-        current.kernelPhase === 'running' &&
-        stableGroup &&
-        stableGroup.nodes.length <= 1 &&
-        otherNodeCount > 1 &&
-        !egressGroupRepairing
-      ) {
-        egressGroupRepairing = true;
-        try {
-          await current.applyConfig();
-          await current.restartKernel(true);
-          get().notify('info', '已更新 GitHub 固定出口分组，保留全部节点');
-        } finally {
-          egressGroupRepairing = false;
-        }
-      }
+      const orderChanged = JSON.stringify(get().groups.map(group => group.name)) !== JSON.stringify(groups.map(group => group.name));
+      // 使用发布时的最新来源快照，避免并发节点读取覆盖刚完成的元数据。
+      const previous = proxySnapshotMatches(get().proxyRuntime, session) ? get().proxyRuntime : null;
+      set({ groups, routing, proxyRuntime: { profileId: session.activeId, revision: session.runtimeConfigRevision,
+        connectedAt: session.connectedAt, sessionEpoch: epoch, proxies: (raw as {proxies?: Record<string, unknown>})?.proxies ?? {},
+        providers: previous?.providers, providersError: previous?.providersError, providersChecked: previous?.providersChecked } });
+      if (orderChanged) void pushTray(get());
+      // 可选元数据独立完成；手选/固定的确认仅等待上述 /proxies 事实。
+      void get().refreshProxyProviders();
+      return true;
     } catch (e) {
-      if (!quiet) get().notify('error', `读取节点失败：${errorText(e)}`);
+      if (!quiet && current()) get().notify('error', `读取节点失败：${errorText(e)}`);
+      return false;
     }
   },
 
-  selectNode: async (group, node) => {
-    try {
-      await api.mihomo('PUT', `/proxies/${encodeURIComponent(group)}`, { name: node });
-      // 用户在固定出口分组里手动换节点，同步更新“固定节点”设置，
-      // 否则下一次服务探测/自动切换还会按旧节点判断。
-      if (group === STABLE_EGRESS_GROUP) {
-        set({ settings: { ...get().settings, egressGuardNode: node } });
-        void persist(get());
+  refreshProxyProviders: (force = false) => {
+    const session = get();
+    if (!isTauri || session.runtimeConfigTransition || session.kernelPhase !== 'running'
+      || !proxySnapshotMatches(session.proxyRuntime, session)) return Promise.resolve(false);
+    const epoch = proxyReadEpoch;
+    const existing = proxyProviderReads.get(epoch);
+    if (existing) return existing;
+    if (!force && session.proxyRuntime?.providersChecked) return Promise.resolve(true);
+    const config = readProxyConfiguration(session.profiles.find(profile=>profile.id===session.activeId)?.raw);
+    const providerConfig = config['proxy-providers'];
+    if (!force && (!providerConfig || typeof providerConfig !== 'object' || !Object.keys(providerConfig).length)) return Promise.resolve(false);
+    const current = () => epoch === proxyReadEpoch && !get().runtimeConfigTransition
+      && proxySessionIdentity(get()) === proxySessionIdentity(session) && proxySnapshotMatches(get().proxyRuntime, session);
+    // 先标记预算，失败只由显式刷新重试；节点轮询不重复触发整份来源读取。
+    set(state=>({proxyRuntime:state.proxyRuntime ? {...state.proxyRuntime,providersChecked:true} : null}));
+    const request = (async () => {
+      try {
+        const providers = await api.mihomo('GET', '/providers/proxies');
+        if (!current()) return false;
+        set(state=>({proxyRuntime:state.proxyRuntime ? {...state.proxyRuntime,providers,providersError:undefined} : null}));
+        return true;
+      } catch (error) {
+        if (!current()) return false;
+        set(state=>({proxyRuntime:state.proxyRuntime ? {...state.proxyRuntime,providersError:errorText(error)} : null}));
+        return false;
+      } finally {
+        proxyProviderReads.delete(epoch);
       }
-      await get().refreshGroups();
-    } catch (e) {
-      get().notify('error', `切换节点失败：${errorText(e)}`);
+    })();
+    proxyProviderReads.set(epoch, request);
+    return request;
+  },
+
+  selectNode: async (group, node, expectedRevision): Promise<boolean> => {
+    // 用户操作先使检测结果失效；串行 PUT 保证用户较晚的选择最后生效。
+    const manual = expectedRevision === undefined;
+    const request = manual ? ++manualSelectionRequest : manualSelectionRequest;
+    if (manual) set(s => ({ routeRevision: s.routeRevision + 1 }));
+    const revision = expectedRevision ?? getRoutingRevision();
+    const token = lifecycle.token();
+    const profileId = get().activeId;
+    return lifecycle.serial(async () => {
+      if (!lifecycle.current(token) || get().activeId !== profileId
+          || (manual ? request !== manualSelectionRequest : revision !== getRoutingRevision())) return false;
+      set(s => ({ routeRevision: s.routeRevision + 1 }));
+      return selectNodeFor(token, profileId, group, node, getRoutingRevision(), expectedRevision === undefined ? 'manual' : 'automatic');
+    });
+  },
+
+  toggleFixedNode: async (group, node): Promise<boolean> => {
+    const profileId = get().activeId;
+    if (!profileId) return false;
+    const request = ++manualSelectionRequest;
+    set(s => ({ routeRevision: s.routeRevision + 1 }));
+    if (get().fixedNodes[profileId]?.[group] === node) {
+      saveFixedNode(profileId, group);
+      return true;
     }
-    await pushTray(get());
+    const target = get().groups.find(g => g.name === group);
+    if (get().kernelPhase !== 'running' || target?.type !== 'Selector') {
+      get().notify('info', '固定使用需要已连接的手动选择组；自动测速、故障转移和负载均衡组暂不支持');
+      return false;
+    }
+    const member = target.nodes.find(n => n.name === node);
+    if (!member || isGroupNode(member, get().groups)) {
+      get().notify('info', '展开对应分组后固定具体节点');
+      return false;
+    }
+    const token = lifecycle.token();
+    return lifecycle.serial(async () => {
+      if (!lifecycle.current(token) || get().activeId !== profileId || request !== manualSelectionRequest) return false;
+      const latest = get().groups.find(g => g.name === group);
+      if (latest?.type !== 'Selector' || !latest.nodes.some(n => n.name === node && !isGroupNode(n, get().groups))) {
+        get().notify('info', '节点配置已变化，请重新选择要固定的节点');
+        return false;
+      }
+      set(s => ({ routeRevision: s.routeRevision + 1 }));
+      return selectNodeFor(token, profileId, group, node, getRoutingRevision(), 'fixed');
+    });
   },
 
   togglePinNode: (group, node) => {
@@ -1374,17 +1569,52 @@ export const useApp = create<AppStore>((set, get) => ({
     void persist(get());
   },
 
-  testDelay: async (node) => {
+  publishDelayBatch: (results) => {
+    if (!results.length) return;
+    const byNode = new Map<string, TargetLatencies>();
+    for (const { node, target, delay } of results) {
+      byNode.set(node, { ...byNode.get(node), [target]: delay });
+    }
+    const update = (group: ProxyGroup): ProxyGroup => ({ ...group, nodes: group.nodes.map(node => {
+      const measured = byNode.get(node.name);
+      if (!measured) return node;
+      const target = groupLatencyTarget(group.name);
+      return { ...node, delaysByTarget: { ...node.delaysByTarget, ...measured },
+        delay: Object.prototype.hasOwnProperty.call(measured, target) ? measured[target] : node.delay };
+    }) });
+    if (globalGroup) globalGroup = update(globalGroup);
+    set(s => ({ groups: s.groups.map(update) }));
+  },
+
+  testDelay: async (node, targetUrl = DEFAULT_LATENCY_URL, options = {}) => {
+    const before = get();
+    if (before.runtimeConfigTransition) return null;
+    const current = () => {
+      const state = get();
+      return !state.runtimeConfigTransition && state.runtimeConfigRevision === before.runtimeConfigRevision
+        && state.activeId === before.activeId && state.connectedAt === before.connectedAt && state.kernelPhase === before.kernelPhase && (options.isCurrent?.() ?? true);
+    };
+    const publish = (delay: number | null) => {
+      if (!current()) return null;
+      if (options.publish !== false) get().publishDelayBatch([{ node, target: targetUrl, delay }]);
+      return delay;
+    };
     try {
+      const path = `/proxies/${encodeURIComponent(node)}`;
       const r: any = await api.mihomo(
         'GET',
-        `/proxies/${encodeURIComponent(node)}/delay?url=${encodeURIComponent(
-          'https://www.gstatic.com/generate_204'
-        )}&timeout=5000`
+        `${path}/delay?${latencyTestQuery(targetUrl)}`
       );
-      return r?.delay ?? null;
+      if (!current()) return null;
+      const delay = normalizeLatency(r?.delay);
+      if (targetUrl !== GITHUB_LATENCY_URL || delay === null) return publish(delay);
+      // expected=200 只更新目标 Alive；正数 delay 本身不代表 HTTP 状态匹配。
+      const detail = await api.mihomo('GET', path) as { extra?: Record<string, { Alive?: boolean; alive?: boolean }> } | null;
+      if (!current()) return null;
+      const state = detail?.extra?.[targetUrl];
+      return publish((state?.Alive ?? state?.alive) === true ? parseTargetLatencies(detail)[targetUrl] ?? null : null);
     } catch {
-      return null;
+      return publish(null);
     }
   },
 
@@ -1393,40 +1623,44 @@ export const useApp = create<AppStore>((set, get) => ({
       get().notify('error', '浏览器预览模式无法修改系统代理');
       return;
     }
-
-    if (on && get().tunEnabled) {
+    if (!on) {
+      const token = lifecycle.begin();
+      if (!get().tunEnabled) await stopFor(token, true);
+      else await lifecycle.serial(async () => {
+        if (!lifecycle.current(token)) return;
+        const sp = await api.setSystemProxy(false, '127.0.0.1', get().settings.mixedPort);
+        if (!lifecycle.current(token)) return;
+        set({ sysProxyEnabled: sp.enabled });
+        void persist(get());
+      });
+      return;
+    }
+    if (get().tunEnabled) {
       get().notify('info', 'TUN 已开启，先关闭 TUN 再开系统代理');
       return;
     }
-
-    // 联动：开启系统代理即视为接管流量，内核没跑就先拉起
-    if (on && get().kernelPhase !== 'running') {
-      await get().startKernel();
-      if (get().kernelPhase !== 'running') return;
-      // startKernel 成功时已经开过一次系统代理，避免重复 spawn networksetup/reg
-      if (get().sysProxyEnabled) {
-        await pushTray(get());
-        return;
-      }
+    const token = lifecycle.begin();
+    if (get().kernelPhase !== 'running') {
+      await startFor(token, false);
+      return;
     }
-
-    try {
-      const st = await api.setSystemProxy(on, '127.0.0.1', get().settings.mixedPort);
-      set({ sysProxyEnabled: st.enabled });
-      void persist(get());
-      if (!on && !get().tunEnabled && get().kernelPhase === 'running') {
-        await get().stopKernel(true);
-        get().notify('info', '系统代理已关闭，内核已停止');
-      } else {
-        get().notify('info', on ? '系统代理已开启' : '系统代理已关闭');
+    await lifecycle.serial(async () => {
+      if (!lifecycle.current(token)) return;
+      try {
+        const sp = await enableSystemProxy(get().settings.mixedPort);
+        if (!lifecycle.current(token)) return;
+        set({ sysProxyEnabled: sp.enabled });
+        void persist(get());
+        get().notify('info', '系统代理已开启');
+      } catch (e) {
+        if (lifecycle.current(token)) get().notify('error', `设置系统代理失败：${errorText(e)}`);
       }
-    } catch (e) {
-      get().notify('error', `设置系统代理失败：${errorText(e)}`);
-    }
-    await pushTray(get());
+      if (lifecycle.current(token)) await pushTray(get());
+    });
   },
 
   setSysProxyEnabled: (on) => {
+    if (on) rememberProxyPort(get().settings.mixedPort);
     set({ sysProxyEnabled: on });
     void persist(get());
     void pushTray(get());
@@ -1441,81 +1675,105 @@ export const useApp = create<AppStore>((set, get) => ({
       set({ elevationPrompt: true });
       return;
     }
+    const token = lifecycle.begin();
+    const current = () => lifecycle.current(token);
+    const wasRunning = get().kernelPhase === 'running';
+    const previousCapture = { tunEnabled: get().tunEnabled, sysProxyEnabled: get().sysProxyEnabled };
     set({ tunEnabled: on });
     void persist(get());
-    await pushTray(get());
-    await get().applyConfig();
-
-    if (on) {
-      // TUN 接管全部流量，系统代理就多余了
-      if (get().sysProxyEnabled) {
-        try {
-          const sp = await api.setSystemProxy(false, '127.0.0.1', get().settings.mixedPort);
-          set({ sysProxyEnabled: sp.enabled });
-        } catch {
-          /* 忽略 */
-        }
+    if (!on && !get().sysProxyEnabled) {
+      await stopFor(token, true);
+      if (!current()) return;
+      if (get().kernelPhase !== 'stopped') {
+        set({ tunEnabled: true });
+        void persist(get());
+        get().notify('error', 'TUN 关闭失败，内核仍在运行，请重试');
+        return;
       }
-      if (get().kernelPhase === 'running') {
-        get().notify('info', 'TUN 已开启，正在重启内核…');
-        await get().restartKernel(true);
-      } else {
-        // 联动：开 TUN 就自动拉起内核
-        await get().startKernel();
-        if (get().kernelPhase !== 'running') {
-          set({ tunEnabled: false });
-          await get().applyConfig();
-        }
-      }
-      void persist(get());
+      const prepared = await get().applyConfig();
+      if (!current()) return;
+      get().notify(prepared ? 'info' : 'error', prepared
+        ? 'TUN 已关闭，内核已停止' : 'TUN 已关闭，内核已停止；配置生成失败，请修正后重新连接');
       await pushTray(get());
       return;
     }
-
-    // 关闭 TUN
-    if (get().kernelPhase === 'running') {
-      if (get().sysProxyEnabled) {
-        get().notify('info', 'TUN 已关闭，正在重启内核…');
-        await get().restartKernel(true);
-      } else {
-        await get().stopKernel(true);
-        if (get().kernelPhase !== 'stopped') {
-          set({ tunEnabled: true });
-          void persist(get());
-          await pushTray(get());
-          get().notify('error', 'TUN 关闭失败，内核仍在运行，请重试');
-          return;
-        }
-        get().notify('info', 'TUN 已关闭，内核已停止');
-      }
-    } else {
-      get().notify('info', 'TUN 已关闭');
+    let prepared = false;
+    try { prepared = await get().applyConfig(); }
+    catch (error) { if (current()) get().notify('error', `配置生成失败：${errorText(error)}`); }
+    if (!current()) return;
+    if (!prepared) {
+      set(previousCapture);
+      await persist(get());
+      if (current()) await pushTray(get());
+      return;
+    }
+    if (wasRunning) {
+      // 不调用公开重启入口，避免创建另一个代次。
+      await stopFor(token, true);
+      if (!current() || get().kernelPhase !== 'stopped') return;
+    }
+    if (on || wasRunning) await startFor(token, false);
+    if (!current()) return;
+    if (on && get().kernelPhase !== 'running') {
+      set({ tunEnabled: false });
+      await get().applyConfig();
+      if (!current()) return;
     }
     void persist(get());
     await pushTray(get());
   },
 
   setPolicy: async (patch) => {
-    set((s) => ({ policy: { ...s.policy, ...patch } }));
+    const token = lifecycle.token();
+    if (get().policyApplying || get().kernelPhase === 'starting' || get().kernelPhase === 'stopping') return false;
+    set((s) => ({ policy: { ...s.policy, ...patch }, policyApplying: true, policyError: null }));
     void persist(get());
-    // 先等配置落盘，再重启内核，避免 start 读到旧配置
-    await get().applyConfig();
-    if (get().kernelPhase === 'running') {
-      const ok = await get().restartKernel(true);
-      if (ok) get().notify('info', '安全策略已生效');
+    try {
+      if (!get().profiles.some(p => p.id === get().activeId)) {
+        get().notify('info', '安全策略已保存，导入订阅并连接后生效');
+        return true;
+      }
+      const applied = await get().applyConfig();
+      if (!lifecycle.current(token)) return false;
+      if (!applied) throw new Error('配置生成失败');
+      const running = get().kernelPhase === 'running';
+      if (running && !await get().restartKernel(true, token, true)) throw new Error('内核重启失败');
+      get().notify('info', running ? '安全策略已生效' : '安全策略已保存，连接后生效');
+      return true;
+    } catch (error) {
+      const message = `策略已保存但未生效：${errorText(error)}，请重试`;
+      set({ policyError: message });
+      get().notify('error', message);
+      return false;
+    } finally {
+      set({ policyApplying: false });
     }
   },
 
+  applyRuntimeSettings,
+
+  changeOutboundMode: async (mode) => {
+    const result = await applyRuntimeSettings({ mode }, {
+      allowWithoutProfile: true, rollback: { config: true, restart: 'if-running' },
+    });
+    if (result.status !== 'failed') return;
+    if (result.stage === 'config') get().notify('error', '配置生成失败，出站模式未切换');
+    else if (result.stage === 'restart') get().notify('error', result.rolledBack
+      ? '出站模式未能应用，继续使用原模式' : '模式已保存，但重新连接失败，请重试连接');
+    else get().notify('error', `切换模式失败：${String(result.error)}`);
+  },
+
   updateSettings: (patch) => {
+    if (patch.mixedPort !== undefined && get().sysProxyEnabled) rememberProxyPort(get().settings.mixedPort);
     const next: AppSettings = { ...get().settings, ...patch };
-    if (patch.egressGuard === true && !next.egressGuardNode) {
-      const node = resolveActiveNode(get().groups, get().groups[0]?.now ?? '');
-      if (node) next.egressGuardNode = node;
-    }
+    if (patch.textSize !== undefined) next.textSize = normalizeTextSize(patch.textSize);
     set({ settings: next });
+    // 只保存待生效选项；下次连接生成，已运行的内核保持当前配置。
+    if (patch.stableRouting !== undefined) set({ configPath: '' });
 
     // 主题即时生效
     if (patch.theme) useTheme.getState().setMode(patch.theme);
+    if (patch.textSize !== undefined) setTextSize(next.textSize);
 
     // 跨启动的偏好同步到后端（失败不阻断 UI）
     if (patch.launchAtLogin !== undefined && isTauri) {
@@ -1545,15 +1803,26 @@ export const useApp = create<AppStore>((set, get) => ({
       void pushTray(get());
       // 系统代理指向的端口变了，立即改过去，否则旧端口会失效
       if (get().sysProxyEnabled && isTauri) {
-        void api
-          .setSystemProxy(true, '127.0.0.1', next.mixedPort)
-          .catch((e) => console.error('[PPClash] 更新系统代理端口失败', e));
+        const token = lifecycle.token();
+        void lifecycle.serial(async () => {
+          if (!lifecycle.current(token) || !get().sysProxyEnabled) return;
+          await enableSystemProxy(next.mixedPort);
+        }).catch((e) => console.error('[PPClash] 更新系统代理端口失败', e));
       }
     }
 
     void persist(get());
   },
 }));
+
+// 控制状态的每次变更都使旧检测失效，包括关开开关和快速 A→B→A。
+useApp.subscribe((next, prev) => {
+  if (proxySessionIdentity(next) !== proxySessionIdentity(prev)) proxyReadEpoch++;
+  const identity = (s: AppStore) => JSON.stringify([s.activeId, s.connectedAt, s.kernelPhase,
+    s.tunEnabled, s.sysProxyEnabled, s.settings.mode, s.settings.autoFailover,
+    s.settings.controllerPort, s.settings.controllerSecret]);
+  if (identity(next) !== identity(prev)) useApp.setState({ routeRevision: next.routeRevision + 1 });
+});
 
 // 开发期调试钩子：浏览器预览时可在控制台模拟「已连接」状态，方便调 UI
 if (import.meta.env.DEV) {

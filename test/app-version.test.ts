@@ -16,6 +16,6 @@ it.each([
   ['src-tauri/tauri.conf.json', tauri.version],
   ['src-tauri/Cargo.toml', version(cargoPackage)],
   ['src-tauri/Cargo.lock ppclash', version(lockedPackage)],
-])('%s 的应用版本为 0.2.0', (_path, actual) => {
-  expect(actual).toBe('0.2.0');
+])('%s 的应用版本为 0.2.1', (_path, actual) => {
+  expect(actual).toBe('0.2.1');
 });

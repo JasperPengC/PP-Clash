@@ -1,92 +1,37 @@
-/**
- * JS 覆写沙箱。
- *
- * 生产环境放进 Blob Worker：
- * - 没有 DOM / window / Tauri IPC
- * - 禁用 fetch / XHR / WebSocket / importScripts
- * - 300ms 超时后 terminate，死循环不会卡住主界面
- *
- * Node 单测环境没有 Worker，回退为同步执行；浏览器/WKWebView 始终走 Worker。
- */
-
+/** JS 覆写在独立解释器中执行，浏览器再用 Worker 隔离 CPU 工作。 */
 const TIMEOUT_MS = 300;
-
-const WORKER_SOURCE = `
-self.onmessage = function (event) {
-  var script = event.data.script;
-  var config = event.data.config;
-  try {
-    self.fetch = function () { throw new Error('sandbox: network disabled'); };
-    self.XMLHttpRequest = function () { throw new Error('sandbox: network disabled'); };
-    self.WebSocket = function () { throw new Error('sandbox: network disabled'); };
-    self.EventSource = function () { throw new Error('sandbox: network disabled'); };
-    self.importScripts = function () { throw new Error('sandbox: importScripts disabled'); };
-    var fn = new Function('config', script + '\\n;return config;');
-    var out = fn(config);
-    self.postMessage({ ok: true, config: out });
-  } catch (e) {
-    self.postMessage({ ok: false, error: String(e && e.message ? e.message : e) });
-  }
-};
-`;
-
-export interface SandboxRunOptions {
-  timeoutMs?: number;
-}
-
+const INITIALIZE_TIMEOUT_MS = 10_000;
+export interface SandboxRunOptions { timeoutMs?: number }
 export async function runJsOverride(
-  config: Record<string, unknown>,
-  script: string,
-  options: SandboxRunOptions = {}
+  config: Record<string, unknown>, script: string, options: SandboxRunOptions = {},
 ): Promise<Record<string, unknown>> {
-  const timeoutMs = options.timeoutMs ?? TIMEOUT_MS;
-
-  if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') {
-    // 单测 / Node 环境：Worker 不可用，退回同进程执行。生产构建不会走到这里。
-    const fn = new Function('config', `${script}\n;return config;`);
-    return fn(config) as Record<string, unknown>;
+  const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? TIMEOUT_MS, TIMEOUT_MS));
+  if (typeof Worker === 'undefined') {
+    if (typeof window !== 'undefined') throw new Error('当前环境不支持隔离脚本，请使用 YAML 覆写');
+    // Node 验证也执行同一隔离解释器，绝不回退到宿主 new Function。
+    const { evaluateOverride } = await import('./js-runtime');
+    return evaluateOverride(config, script, timeoutMs);
   }
-
   return new Promise((resolve, reject) => {
-    const blob = new Blob([WORKER_SOURCE], { type: 'text/javascript' });
-    const url = URL.createObjectURL(blob);
-    const worker = new Worker(url);
+    const worker = new Worker(new URL('./js-sandbox.worker.ts', import.meta.url), { type: 'module' });
     let settled = false;
-
-    const cleanup = () => {
+    const finish = (action: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       worker.terminate();
-      URL.revokeObjectURL(url);
+      action();
     };
-
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`JS 覆写执行超时（${timeoutMs}ms）`));
-    }, timeoutMs);
-
-    worker.onmessage = (event: MessageEvent) => {
-      const data = event.data || {};
-      if (data.ok) {
-        cleanup();
-        const out = data.config;
-        if (!out || typeof out !== 'object' || Array.isArray(out)) {
-          reject(new Error('JS 覆写必须返回配置对象'));
-        } else {
-          resolve(out as Record<string, unknown>);
-        }
-      } else {
-        cleanup();
-        reject(new Error(String(data.error || 'JS 覆写执行失败')));
-      }
-    };
-
-    worker.onerror = (event: ErrorEvent) => {
-      cleanup();
-      reject(new Error(event.message || 'JS Worker 执行失败'));
-    };
-
-    worker.postMessage({ script, config });
+    // 初始化不占用脚本300ms执行预算；解释器内还有时间/内存上限。
+    const timer = setTimeout(() => finish(() => reject(new Error('JS 覆写初始化或执行超时'))), INITIALIZE_TIMEOUT_MS + timeoutMs);
+    worker.onmessage = (event: MessageEvent) => finish(() => {
+      const data = event.data;
+      if (!data?.ok) reject(new Error(typeof data?.error === 'string' ? data.error : 'JS 覆写执行失败'));
+      else if (!data.config || typeof data.config !== 'object' || Array.isArray(data.config)) reject(new Error('JS 覆写必须返回配置对象'));
+      else resolve(data.config);
+    });
+    worker.onerror = () => finish(() => reject(new Error('JS 覆写运行环境加载失败')));
+    try { worker.postMessage({ config, script, timeoutMs }); }
+    catch { finish(() => reject(new Error('JS 覆写输入无法序列化'))); }
   });
 }

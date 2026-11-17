@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { EmptyState, navigate, ReadError, Spinner } from '../components/ui';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { EmptyState, PageLink, ReadError, Segmented, Spinner } from '../components/ui';
 import {
   IconActivity,
   IconChevronDown,
@@ -12,6 +12,7 @@ import { useApp } from '../store/app';
 import { api } from '../core/api';
 import { formatBytes } from '../core/format';
 import { startPolling } from '../core/polling';
+import { VirtualList } from '../components/VirtualList';
 
 interface RawConn {
   id: string;
@@ -41,6 +42,8 @@ function hostOf(c: RawConn): string {
 export function ConnectionsPage({ active = true }: { active?: boolean }) {
   const kernelPhase = useApp((s) => s.kernelPhase);
   const notify = useApp((s) => s.notify);
+  const textSize = useApp(s => s.settings.textSize);
+  const rowHeight = textSize === 'large' ? 56 : textSize === 'larger' ? 54 : 52;
   const connected = kernelPhase === 'running';
 
   const [conns, setConns] = useState<RawConn[]>([]);
@@ -55,6 +58,7 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
   available.current = active && connected;
   const [closing, setClosing] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const [sortBy, setSortBy] = useState<'time' | 'down' | 'up'>('time');
   const [closingAll, setClosingAll] = useState(false);
   const [confirmCloseAll, setConfirmCloseAll] = useState(false);
@@ -116,7 +120,8 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
   };
 
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    if (view !== 'conn') return [];
+    const q = deferredQuery.trim().toLowerCase();
     const list = (q
       ? conns.filter((c) =>
           `${hostOf(c)} ${c.metadata?.process ?? ''} ${(c.chains ?? []).join(' ')} ${c.rule ?? ''} ${c.rulePayload ?? ''}`
@@ -130,10 +135,11 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
       return Date.parse(b.start) - Date.parse(a.start);
     });
     return list;
-  }, [conns, query, sortBy]);
+  }, [conns, deferredQuery, sortBy, view]);
 
   const processGroups = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    if (view !== 'process') return [];
+    const q = deferredQuery.trim().toLowerCase();
     const map = new Map<
       string,
       { process: string; conns: RawConn[]; up: number; down: number; chains: Set<string> }
@@ -163,7 +169,20 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
       sortBy === 'up' ? b.up - a.up : sortBy === 'down' ? b.down - a.down : a.process.localeCompare(b.process)
     );
     return list;
-  }, [conns, query, sortBy]);
+  }, [conns, deferredQuery, sortBy, view]);
+
+  // 展开的连接与进程标题共用一个虚拟视口，避免每组创建滚动区或全量挂载。
+  const processRows = useMemo(() => {
+    type Row = { kind: 'group'; group: typeof processGroups[number] } | { kind: 'connection'; connection: RawConn };
+    const rows: Row[] = [];
+    for (const group of processGroups) {
+      rows.push({ kind: 'group', group });
+      if (expandedProcess === group.process) {
+        for (const connection of group.conns) rows.push({ kind: 'connection', connection });
+      }
+    }
+    return rows;
+  }, [processGroups, expandedProcess]);
 
   const closeProcess = async (name: string, items: RawConn[]) => {
     if (!available.current || operation.current) return;
@@ -255,9 +274,7 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
                 title="内核未运行"
                 desc="连接后显示网络连接"
                 action={
-                  <button type="button" className="btn btn-primary" onClick={() => navigate('overview')}>
-                    去概览
-                  </button>
+                  <PageLink page="overview" label="去概览" />
                 }
               />
             </section>
@@ -272,44 +289,11 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
           ) : (
             <>
               <div className="row conn-toolbar dp-table-toolbar">
-                <div className="seg" role="group" aria-label="连接视图">
-                  {(
-                    [
-                      ['conn', '连接'],
-                      ['process', '按进程'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`seg-btn${view === value ? ' active' : ''}`}
-                      aria-pressed={view === value}
-                      onClick={() => setView(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <Segmented ariaLabel="连接视图" value={view} onChange={setView}
+                  options={[{ value: 'conn', label: '连接' }, { value: 'process', label: '按进程' }]} />
                 <span className="dp-tool-label">排序</span>
-                <div className="seg" role="group" aria-label="连接排序">
-                  {(
-                    [
-                      ['time', '时间'],
-                      ['down', '下载'],
-                      ['up', '上传'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`seg-btn${sortBy === value ? ' active' : ''}`}
-                      aria-pressed={sortBy === value}
-                      onClick={() => setSortBy(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <Segmented ariaLabel="连接排序" value={sortBy} onChange={setSortBy}
+                  options={[{ value: 'time', label: '时间' }, { value: 'down', label: '下载' }, { value: 'up', label: '上传' }]} />
                 <div className="spacer" />
                 <div className="node-search">
                   <IconSearch size={12} />
@@ -346,11 +330,11 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
                     {visible.length === 0 && (
                       <EmptyState icon={<IconSearch size={19} />} title="没有匹配的连接" action={<button type="button" className="btn btn-sm" onClick={() => setQuery('')}>清除筛选</button>} />
                     )}
-                    {visible.map((c) => (
+                    <VirtualList items={visible} rowHeight={rowHeight} maxHeight={560} label="活动连接列表" resetKey={`${deferredQuery}:${sortBy}`} itemKey={c => c.id} renderItem={c => (
                       <div key={c.id} className="conn-row">
                         <span className="conn-main">
-                          <span className="conn-host">{hostOf(c)}</span>
-                          <span className="conn-sub">
+                          <span className="conn-host" title={hostOf(c)}>{hostOf(c)}</span>
+                          <span className="conn-sub" title={[c.metadata?.process, c.metadata?.network ?? 'tcp', c.chains?.join(' → '), [c.rule, c.rulePayload].filter(Boolean).join(' ')].filter(Boolean).join(' · ')}>
                             {c.metadata?.process ? `${c.metadata.process} · ` : ''}
                             {c.metadata?.network ?? 'tcp'}
                             {c.chains && c.chains.length > 0
@@ -373,17 +357,27 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
                           {closing === c.id ? <Spinner small /> : <IconX size={12} />}
                         </button>
                       </div>
-                    ))}
+                    )} />
                   </div>
                 ) : (
                   <div className="list conn-list">
                     {processGroups.length === 0 && (
                       <EmptyState icon={<IconSearch size={19} />} title="没有匹配的连接" action={<button type="button" className="btn btn-sm" onClick={() => setQuery('')}>清除筛选</button>} />
                     )}
-                    {processGroups.map((g) => {
+                    <VirtualList items={processRows} rowHeight={rowHeight} maxHeight={560} label="进程连接列表" resetKey={`${deferredQuery}:${sortBy}`} itemKey={row => row.kind === 'group' ? `group:${row.group.process}` : `conn:${row.connection.id}`} renderItem={row => {
+                      if (row.kind === 'connection') {
+                        const c = row.connection;
+                        return <div className="conn-row proc-child">
+                          <span className="conn-main">
+                            <span className="conn-host" title={hostOf(c)}>{hostOf(c)}</span>
+                            <span className="conn-sub">{c.metadata?.network ?? 'tcp'}{c.rule ? ` · ${c.rule}${c.rulePayload ? ` ${c.rulePayload}` : ''}` : ''}</span>
+                          </span>
+                          <span className="conn-traffic"><span className="dp-conn-up">↑ {formatBytes(c.upload)}</span><span className="dp-conn-down">↓ {formatBytes(c.download)}</span></span>
+                        </div>;
+                      }
+                      const g = row.group;
                       const open = expandedProcess === g.process;
                       return (
-                        <div key={g.process} className="proc-group">
                           <div className="conn-row proc-row">
                             <button
                               type="button"
@@ -395,7 +389,7 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
                               {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
                             </button>
                             <span className="conn-main">
-                              <span className="conn-host">{g.process}</span>
+                              <span className="conn-host" title={g.process}>{g.process}</span>
                               <span className="conn-sub">
                                 {g.conns.length} 条连接
                                 {g.chains.size ? ` · ${[...g.chains].slice(0, 4).join(' → ')}` : ''}
@@ -413,27 +407,8 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
                               {closingProcess === g.process ? '关闭中…' : confirmProcess === g.process ? '确认关闭' : '关闭进程连接'}
                             </button>
                           </div>
-                          {open && (
-                            <div className="proc-children">
-                              {g.conns.map((c) => (
-                                <div key={c.id} className="conn-row proc-child">
-                                  <span className="conn-main">
-                                    <span className="conn-host">{hostOf(c)}</span>
-                                    <span className="conn-sub">
-                                      {c.metadata?.network ?? 'tcp'}
-                                      {c.rule ? ` · ${c.rule}${c.rulePayload ? ` ${c.rulePayload}` : ''}` : ''}
-                                    </span>
-                                  </span>
-                                  <span className="conn-traffic">
-                                    <span className="dp-conn-up">↑ {formatBytes(c.upload)}</span><span className="dp-conn-down">↓ {formatBytes(c.download)}</span>
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
                       );
-                    })}
+                    }} />
                   </div>
                 )}
               </section>

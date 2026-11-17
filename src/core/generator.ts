@@ -1,6 +1,10 @@
+import type { RuleEditState } from '../domain/rules';
+import type { CustomRule } from '../domain/app';
 import yaml from 'js-yaml';
+import { routingPolicy, type RoutingPolicy } from './routing-policy';
 import { auditSubscription, type Finding } from './audit';
 import { runJsOverride } from './js-sandbox';
+import { auditFinalConfig, validateConfigExposure } from './config-security';
 import { stripInfoNodes } from './subscription';
 import {
   buildDns,
@@ -10,27 +14,6 @@ import {
   buildTun,
   type SecurityPolicy,
 } from './security';
-
-/** GitHub 登录/API/资源域名。登录态对出口 IP 很敏感，切节点时保持固定出口。 */
-export const STABLE_EGRESS_GROUP = 'GitHub 固定出口';
-export const STABLE_EGRESS_DOMAINS = [
-  'github.com',
-  'githubusercontent.com',
-  'githubassets.com',
-  'githubapp.com',
-] as const;
-
-/** 订阅里已有的 GitHub / 代码相关分组，优先复用，不重复追加。 */
-export function findStableEgressGroup(groups: unknown[]): string | null {
-  const patterns = [/github/i, /git\s*hub/i, /代码/, /开发/, /程序/];
-  for (const item of groups) {
-    if (!item || typeof item !== 'object') continue;
-    const name = String((item as { name?: unknown }).name ?? '');
-    if (!name || name === STABLE_EGRESS_GROUP) continue;
-    if (patterns.some((re) => re.test(name))) return name;
-  }
-  return null;
-}
 
 export interface RuntimeOptions {
   mixedPort: number;
@@ -66,23 +49,18 @@ export interface RuntimeOptions {
   snifferEnabled?: boolean;
   snifferOverrideDestination?: boolean;
   /** 自定义规则：插在内置防护规则之后、订阅规则之前。 */
-  customRules?: import('../store/app').CustomRule[];
+  customRules?: CustomRule[];
   /** 当前实际使用的节点名；供 MATCH/当前节点与覆写占位符使用。 */
   currentNode?: string;
-  /** GitHub 等登录敏感站点固定出口，避免节点切换导致 IP 频繁变化。 */
-  stableEgress?: {
-    enabled: boolean;
-    node: string;
-    domains: readonly string[];
-  };
+  /** 当前订阅明确固定的 Selector 选择，在 TUN 启动接管前生效。 */
+  fixedNodes?: Record<string, string>;
+  /** 当前订阅已确认的手动选择；无效记忆跳过，不固定自动策略。 */
+  selectedNodes?: Record<string, string>;
+  /** 将延迟驱动的自动选择组交给保守健康检查控制，保持当前出口。 */
+  stableRouting?: boolean;
 }
 
-export interface RuleEditState {
-  /** 完整顺序；未出现的下标按原始顺序补在后面。 */
-  order: number[];
-  edits: Record<number, { enabled?: boolean; target?: string }>;
-}
-
+export type { RuleEditState } from '../domain/rules';
 /** 应用订阅规则编辑：排序、启停、目标覆盖。防护规则和自定义规则不参与。 */
 function applyRuleEdits(rules: string[], edits?: RuleEditState): string[] {
   if (!edits) return rules;
@@ -141,6 +119,7 @@ export interface ConfigStats {
 }
 
 export interface GeneratedConfig {
+  routing: RoutingPolicy;
   /** 最终交给内核的配置文本（JSON，YAML 超集）。 */
   config: string;
   stats: ConfigStats;
@@ -202,43 +181,6 @@ export async function generateConfig(
 
   const guardRules = buildGuardRules(policy);
 
-  // 把 GitHub 域名固定到一个节点：主选择组怎么切都不影响 GitHub 的出口 IP。
-  const stable = runtime.stableEgress;
-  const proxyNames = new Set(
-    proxies.map((p) => String(asDict(p).name ?? '')).filter(Boolean)
-  );
-  const stableNode =
-    stable?.enabled && stable.node && proxyNames.has(stable.node)
-      ? stable.node
-      : '';
-  const existingStableGroup = findStableEgressGroup(groups);
-  const stableGroupName = existingStableGroup || STABLE_EGRESS_GROUP;
-  const hasStableGroup = groups.some(
-    (g) => String(asDict(g).name ?? '') === stableGroupName
-  );
-  // 订阅已有 GitHub 分组时直接复用；没有才追加固定出口分组。
-  // 分组保留全部节点，固定节点排第一；节点失效时仍有手动/自动切换的余地。
-  if (!existingStableGroup && stableNode && !hasStableGroup) {
-    const allProxyNames = proxies
-      .map((p) => String(asDict(p).name ?? ''))
-      .filter(Boolean);
-    const proxiesForGroup = [
-      stableNode,
-      ...allProxyNames.filter((name) => name !== stableNode),
-    ];
-    groups.push({
-      name: stableGroupName,
-      type: 'select',
-      proxies: proxiesForGroup,
-    });
-  }
-  const stableRules =
-    (existingStableGroup || stableNode)
-      ? (stable?.domains ?? STABLE_EGRESS_DOMAINS).map(
-          (domain) => `DOMAIN-SUFFIX,${domain},${stableGroupName}`
-        )
-      : [];
-
   let config: Dict = {
     // 安全策略负责的顶层字段
     ...buildTopLevel(policy),
@@ -282,7 +224,6 @@ export async function generateConfig(
 
     // 登录敏感站点的固定出口优先，其次才是防护与订阅规则
     rules: [
-      ...stableRules,
       ...guardRules,
       ...(runtime.customRules ?? [])
         .filter((r) => r.enabled)
@@ -351,17 +292,66 @@ export async function generateConfig(
     }
   }
 
+  const finalGroups = asArray(config['proxy-groups']).map(asDict);
+  const plan = routingPolicy(finalGroups as Array<{ name: string; type: string; proxies?: string[] }>, asArray(config.rules).map(String));
+  if (runtime.stableRouting) {
+    config['proxy-groups'] = asArray(config['proxy-groups']).map(value => {
+      const group = { ...asDict(value) };
+      if (plan.managed.includes(String(group.name)) && (group.type === 'url-test' || group.type === 'fallback')) {
+        group.type = 'select';
+        for (const key of ['url', 'interval', 'tolerance', 'lazy', 'expected-status']) delete group[key];
+      }
+      return group;
+    });
+    // 独立自动组/负载均衡仍需要 provider 健康检查，不能为了省资源破坏其恢复能力。
+    const unmanagedAuto = finalGroups.some(g => ['url-test', 'fallback', 'load-balance'].includes(String(g.type)) && !plan.managed.includes(String(g.name)));
+    for (const provider of unmanagedAuto ? [] : Object.values(asDict(config['proxy-providers']))) {
+      const p = asDict(provider);
+      if (p['health-check']) p['health-check'] = { ...asDict(p['health-check']), enable: false };
+    }
+  }
+
+  const selectedGroups = asArray(config['proxy-groups']).map(asDict);
+  for (const [name, node] of Object.entries(runtime.selectedNodes ?? {})) {
+    const group = selectedGroups.find(g => g.name === name);
+    if (group?.type === 'select' && asArray(group.proxies).includes(node)
+      && !['filter', 'exclude-filter', 'exclude-type'].some(key => Boolean(group[key]))) {
+      group['default-selected'] = node;
+    }
+  }
+  let hasFixedSelection = false;
+  for (const [name, node] of Object.entries(runtime.fixedNodes ?? {})) {
+    const group = selectedGroups.find(g => g.name === name);
+    // 动态 provider/过滤器不能在生成时证明此节点会进入启动分组；TUN 必须先拒绝。
+    const safe = group?.type === 'select' && asArray(group.proxies).includes(node)
+      && !selectedGroups.some(candidate => candidate.name === node)
+      && !['filter', 'exclude-filter', 'exclude-type'].some(key => Boolean(group[key]));
+    if (!safe) {
+      if (runtime.tunEnabled) throw new Error(`固定分组「${name}」无法在 TUN 启动前确认节点，请取消固定或改用系统代理后重新选择`);
+      continue;
+    }
+    group.proxies = [node, ...asArray(group.proxies).filter(value => value !== node)];
+    group['default-selected'] = node;
+    hasFixedSelection = true;
+  }
+  if (hasFixedSelection || runtime.selectedNodes !== undefined) {
+    // 选择缓存不按订阅隔离，不能覆盖应用显式固定的启动选择。
+    config.profile = { ...asDict(config.profile), 'store-selected': false };
+  }
+
+  validateConfigExposure(config);
   return {
     // mihomo 的配置解析器是 YAML 解析器，而 JSON 是 YAML 的子集，
     // 所以直接输出 JSON：序列化可靠，不用自己写 YAML emitter 处理各种转义。
     config: JSON.stringify(config, null, 2),
+    routing: plan,
     stats: {
       proxyCount: proxies.length,
       groupCount: groups.length,
       ruleCount: subscriptionRules.length,
       guardRuleCount: guardRules.length,
     },
-    audit: auditSubscription(subscriptionYaml),
+    audit: [...auditSubscription(subscriptionYaml), ...auditFinalConfig(config, policy, runtime.tunEnabled)],
   };
 }
 

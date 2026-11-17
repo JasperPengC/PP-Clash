@@ -1,4 +1,17 @@
 use std::time::Duration;
+use std::sync::OnceLock;
+
+/// 控制器连接与系统代理独立；复用连接池，不为每次轮询重复创建客户端。
+pub fn client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT.get_or_init(|| reqwest::Client::builder()
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(2))
+        .pool_max_idle_per_host(4)
+        .build()
+        .map_err(|e| format!("创建控制器客户端失败：{e}")))
+        .as_ref().map_err(Clone::clone)
+}
 
 /// 转发一次 mihomo external-controller 请求。
 ///
@@ -12,16 +25,13 @@ pub async fn request(
     path: &str,
     body: Option<&str>,
 ) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败：{e}"))?;
+    let client = client()?;
 
     let url = format!("{}{}", base.trim_end_matches('/'), path);
     let m = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
         .map_err(|_| format!("不支持的请求方法：{method}"))?;
 
-    let mut req = client.request(m, &url);
+    let mut req = client.request(m, &url).timeout(Duration::from_secs(8));
     if !secret.is_empty() {
         req = req.bearer_auth(secret);
     }
@@ -49,4 +59,40 @@ pub async fn mihomo_request(
     body: Option<String>,
 ) -> Result<String, String> {
     request(&base, &secret, &method, path.as_str(), body.as_deref()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    #[tokio::test]
+    async fn reuses_controller_connection() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut requests = 0;
+            let mut connections = 0;
+            while requests < 2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                connections += 1;
+                stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
+                    loop {
+                        line.clear();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" { break; }
+                    }
+                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}").unwrap();
+                    requests += 1;
+                    if requests == 2 { break; }
+                }
+            }
+            connections
+        });
+        assert_eq!(request(&base, "", "GET", "/one", None).await.unwrap(), "{}");
+        assert_eq!(request(&base, "", "GET", "/two", None).await.unwrap(), "{}");
+        assert_eq!(server.join().unwrap(), 1, "连续控制器请求应复用 TCP 连接");
+    }
 }

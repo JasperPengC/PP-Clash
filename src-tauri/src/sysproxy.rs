@@ -136,7 +136,9 @@ pub fn set_system_proxy(enable: bool, host: String, port: u16) -> Result<SysProx
         set_windows_proxy(enable, &host, port)?;
         return Ok(SysProxyState { enabled: enable, host, port });
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    { return crate::linux::set_proxy(enable, &host, port); }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = (enable, host, port);
         return Err("当前平台暂未实现系统代理设置".to_string());
@@ -202,7 +204,9 @@ pub fn get_system_proxy() -> Result<SysProxyState, String> {
     {
         return Ok(get_windows_proxy());
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    { return crate::linux::get_proxy(); }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         return Ok(SysProxyState {
             enabled: false,

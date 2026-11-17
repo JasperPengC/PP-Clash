@@ -1,12 +1,16 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
-import { TrayPanel } from './components/TrayPanel';
+import { asyncView } from './components/AsyncView';
 import { initTheme } from './store/theme';
 import { installLogger } from './core/logger';
-import { useApp } from './store/app';
+import { initTextSize } from './store/text-size';
+import { installOverlayScrollbars } from './core/overlay-scrollbars';
+import { api, DATA_DIR, isTauri } from './core/api';
 import 'flag-icons/css/flag-icons.min.css';
-import './styles/theme.css';
+import './styles/index.css';
+
+const stopOverlayScrollbars = installOverlayScrollbars();
+if (import.meta.hot) import.meta.hot.dispose(stopOverlayScrollbars);
 
 // 首帧之前定主题，避免深色系统上闪一下白屏
 initTheme();
@@ -14,21 +18,25 @@ installLogger();
 
 const params = new URLSearchParams(window.location.search);
 const isTrayPanel = params.get('panel') === 'tray';
-if (import.meta.env.DEV && params.get('theme') === 'light') {
-  document.documentElement.dataset.theme = 'light';
+const stopTextSize = initTextSize(isTrayPanel && isTauri ? async () => {
+  const raw = await api.loadAppState(DATA_DIR);
+  return raw ? JSON.parse(raw).settings?.textSize : undefined;
+} : undefined);
+if (import.meta.hot) import.meta.hot.dispose(stopTextSize);
+if (import.meta.env.DEV && ['light', 'dark'].includes(params.get('theme') ?? '')) {
+  document.documentElement.dataset.theme = params.get('theme')!;
 }
-if (isTrayPanel) document.body.classList.add('tray-panel-window');
-
-// 水合：从磁盘恢复订阅 / 策略 / 设置。必须在渲染前尽量早执行
-if (!isTrayPanel) void useApp.getState().hydrate();
-
-// 仅开发环境：访问 /?preview=connected 时注入「已连接」演示数据，用于检查 UI
-if (import.meta.env.DEV && !isTrayPanel) {
-  void import('./dev/preview').then((m) => m.applyPreviewIfRequested());
+if (isTrayPanel) {
+  document.body.classList.add('tray-panel-window');
+  document.documentElement.classList.add('tray-panel-window');
 }
+
+const WindowView = isTrayPanel
+  ? asyncView(() => import('./components/TrayPanel').then(module => ({ default: module.TrayPanel })))
+  : asyncView(() => import('./bootstrap/main-window'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {isTrayPanel ? <TrayPanel /> : <App />}
+    <WindowView />
   </StrictMode>
 );

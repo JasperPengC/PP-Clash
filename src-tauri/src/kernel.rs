@@ -22,7 +22,7 @@ pub struct KernelState {
     /// 当前内核二进制路径（内核信息展示）。
     binary_path: Mutex<Option<String>>,
     /// mihomo external-controller 的 bearer secret。
-    controller_secret: Mutex<String>,
+    pub(crate) controller_secret: Mutex<String>,
     /// 防止并发 start 互相踩踏（前端状态更新前的竞态）。
     start_lock: tokio::sync::Mutex<()>,
 }
@@ -440,24 +440,21 @@ async fn preflight_ports(
 /// 探测控制端口是否可连，能连上说明内核活着。
 async fn probe_controller(port: u16, secret: &str) -> bool {
     let url = format!("http://127.0.0.1:{port}/version");
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(1))
-        .build()
-    {
+    let client = match crate::mihomo::client() {
         Ok(c) => c,
         Err(_) => return false,
     };
-    let req = client.get(&url);
+    let req = client.get(&url).timeout(Duration::from_secs(1));
     let req = if secret.is_empty() { req } else { req.bearer_auth(secret) };
-    matches!(req.send().await, Ok(resp) if resp.status().is_success())
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => resp.bytes().await.is_ok(),
+        _ => false,
+    }
 }
 
 async fn controller_version(port: u16, secret: &str) -> Option<String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(1))
-        .build()
-        .ok()?;
-    let req = client.get(format!("http://127.0.0.1:{port}/version"));
+    let client = crate::mihomo::client().ok()?;
+    let req = client.get(format!("http://127.0.0.1:{port}/version")).timeout(Duration::from_secs(1));
     let req = if secret.is_empty() { req } else { req.bearer_auth(secret) };
     let resp = req.send().await.ok()?;
     if !resp.status().is_success() {
@@ -587,7 +584,11 @@ pub async fn kernel_status(
         None => state.controller_secret.lock().await.clone(),
     };
 
-    if probe_controller(port, &probe_secret).await {
+    observe_kernel(&state, probe_controller(port, &probe_secret).await).await
+}
+
+async fn observe_kernel(state: &KernelState, controller_ready: bool) -> Result<KernelStatus, String> {
+    if controller_ready {
         let pid = state.child.lock().await.as_ref().and_then(|c| c.id());
         return Ok(KernelStatus {
             running: true,
@@ -596,17 +597,27 @@ pub async fn kernel_status(
         });
     }
 
-    // 连不上：清掉残留状态，下次启动重新拉起
-    *state.child.lock().await = None;
-    *state.privileged.lock().await = false;
-    // 等端口真正释放再返回：否则紧接着的 restart 会撞上「仍被占用」
-    if let Some(cfg) = state.config_path.lock().await.clone() {
-        let (mixed, controller, _, _) = config_ports(Path::new(&cfg));
-        for _ in 0..80 {
-            if tcp_port_free(mixed) && tcp_port_free(controller) {
-                break;
+    let mut child = state.child.lock().await;
+    if let Some(process) = child.as_mut() {
+        match process.try_wait() {
+            Ok(Some(_)) => {
+                // 只有操作系统确认退出才能释放 kill_on_drop 句柄。
+                *child = None;
+                *state.privileged.lock().await = false;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            Ok(None) => return Err("控制器暂时不可用，内核进程仍存活".to_string()),
+            Err(error) => return Err(format!("无法确认内核状态：{error}")),
+        }
+    } else {
+        let config_path = state.config_path.lock().await.clone();
+        if let Some(path) = config_path {
+            // 提权启动没有 Child，必须成功查询进程列表才可确认已经退出。
+            if !external_process_exited(&path)? {
+                return Err("控制器暂时不可用，内核进程仍存活".to_string());
+            }
+            *state.privileged.lock().await = false;
+        } else if *state.privileged.lock().await || tcp_port_open(*state.controller_port.lock().await) {
+            return Err("控制器暂时不可用，内核进程状态未知".to_string());
         }
     }
 
@@ -615,6 +626,30 @@ pub async fn kernel_status(
         pid: None,
         reclaimed: Vec::new(),
     })
+}
+
+fn external_process_exited(config_path: &str) -> Result<bool, String> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let result = crate::platform::command("pgrep").arg("-f").arg(config_path).output()
+            .map_err(|e| format!("无法确认内核进程状态：{e}"))?;
+        match result.status.code() {
+            Some(0) => Ok(false),
+            Some(1) => Ok(true),
+            _ => Err("无法确认内核进程状态".to_string()),
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!("$ErrorActionPreference='Stop'; $p = Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -like '*{}*' -and $_.ProcessId -ne $PID }} | Select-Object -First 1 -ExpandProperty ProcessId; if ($p) {{ 'running' }} else {{ 'stopped' }}", config_path.replace('\'', "''"));
+        let result = crate::platform::command("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &script]).output()
+            .map_err(|e| format!("无法确认内核进程状态：{e}"))?;
+        if !result.status.success() { return Err("无法确认内核进程状态".to_string()); }
+        match String::from_utf8_lossy(&result.stdout).trim() {
+            "stopped" => Ok(true), "running" => Ok(false),
+            _ => Err("无法确认内核进程状态".to_string()),
+        }
+    }
 }
 
 /// 内核信息：版本 / 内存 / 路径（设置页展示）。
@@ -662,6 +697,22 @@ pub async fn read_kernel_log(lines: usize) -> Result<String, String> {
     resources::read_log_tail(lines.min(2000))
 }
 
+/// 与启动及下载互斥，只能删除未运行的应用管理版本。
+#[tauri::command]
+pub async fn remove_kernel_version(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let state = app.state::<KernelState>();
+    let _start_guard = state.start_lock.try_lock().map_err(|_| "内核正在启动，请稍候".to_string())?;
+    let _files_guard = resources::KERNEL_FILES_LOCK.try_lock().map_err(|_| "内核文件正在处理，请稍候".to_string())?;
+    let target = resources::managed_kernel_version_dir(Path::new(&path))?;
+    if let Some(binary) = state.binary_path.lock().await.as_ref() {
+        let running_binary = Path::new(binary).canonicalize().map_err(|_| "无法确认运行文件，未删除内核".to_string())?;
+        if running_binary.starts_with(&target) { return Err("运行中的内核版本不能删除".into()); }
+    }
+    tauri::async_runtime::spawn_blocking(move || std::fs::remove_dir_all(&target))
+        .await.map_err(|e| format!("删除内核任务失败：{e}"))?
+        .map_err(|e| format!("删除内核版本失败：{e}"))
+}
+
 #[tauri::command]
 pub async fn start_kernel(
     app: tauri::AppHandle,
@@ -672,6 +723,8 @@ pub async fn start_kernel(
     controller_port: u16,
     controller_secret: String,
 ) -> Result<KernelStatus, String> {
+    let config_path = crate::platform::kernel_path(Path::new(&config_path)).to_string_lossy().into_owned();
+    let data_dir = crate::platform::kernel_path(Path::new(&data_dir)).to_string_lossy().into_owned();
     let state = app.state::<KernelState>();
     *state.controller_secret.lock().await = controller_secret.clone();
     let _start_guard = state
@@ -723,11 +776,16 @@ pub async fn start_kernel(
                     // Windows 没有 setuid：用 UAC 提权启动用户目录内核
                     use_osascript = true;
                 }
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
                 {
                     return Err("当前平台暂未实现 TUN".to_string());
                 }
             }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            binary = crate::linux::authorize_kernel(&binary, false)?;
+            use_osascript = false;
         }
         #[cfg(target_os = "windows")]
         if crate::platform::is_elevated() {
@@ -776,10 +834,11 @@ pub async fn start_kernel(
         #[cfg(target_os = "windows")]
         {
             let ps = format!(
-                "$p = Start-Process -FilePath '{}' -ArgumentList @('-d','{}','-f','{}') -Verb RunAs -WindowStyle Hidden -PassThru; exit $p.Id",
-                binary.display(),
-                data.display(),
-                config.display()
+                "& {{ {} }} '{}' '{}' '{}'",
+                include_str!("windows-start-kernel.ps1"),
+                binary.display().to_string().replace('\'', "''"),
+                data.display().to_string().replace('\'', "''"),
+                config.display().to_string().replace('\'', "''")
             );
             let status = crate::platform::async_command("powershell")
                 .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
@@ -800,7 +859,7 @@ pub async fn start_kernel(
             }
             return Ok(st);
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         {
         // 非 setuid 内核的 TUN：借 osascript 提权启动，会弹一次系统密码框
         let script = format!(
@@ -900,7 +959,7 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
                 terminate_elevated(pid);
             }
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         if let Some(cfg) = &config_path {
             // osascript 提权启动的进程普通用户杀不掉，同样借管理员权限
             let script = format!(
@@ -948,6 +1007,10 @@ pub async fn stop_kernel(app: tauri::AppHandle) -> Result<KernelStatus, String> 
         return Err("内核仍在运行，停止未完成".to_string());
     }
 
+    *state.config_path.lock().await = None;
+    *state.binary_path.lock().await = None;
+    *state.privileged.lock().await = false;
+
     Ok(KernelStatus {
         running: false,
         pid: None,
@@ -980,6 +1043,49 @@ pub async fn cleanup_stale_kernel() -> Result<(), String> {
 mod tests {
     use super::*;
     use std::process::{Command as StdCommand, Stdio};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_probe_preserves_live_child_and_privilege() {
+        let state = KernelState::default();
+        let child = tokio::process::Command::new("sleep")
+            .arg("30").kill_on_drop(true).spawn().unwrap();
+        let pid = child.id();
+        *state.child.lock().await = Some(child);
+        *state.privileged.lock().await = true;
+        let result = observe_kernel(&state, false).await;
+        let mut child = state.child.lock().await.take();
+        let alive = child.as_mut().map(|c| c.try_wait().unwrap().is_none()).unwrap_or(false);
+        let preserved_pid = child.as_ref().and_then(|c| c.id());
+        // 只清理本测试直接创建的 sleep，不触碰任何内核或端口。
+        if let Some(c) = child.as_mut() { let _ = c.kill().await; let _ = c.wait().await; }
+        assert!(result.is_err(), "controller failure is unknown, not stopped");
+        assert!(alive, "a status read must retain the live child");
+        assert_eq!(preserved_pid, pid);
+        assert!(*state.privileged.lock().await);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_probe_releases_only_confirmed_exited_child() {
+        let state = KernelState::default();
+        let mut child = tokio::process::Command::new("true").kill_on_drop(true).spawn().unwrap();
+        child.wait().await.unwrap();
+        *state.child.lock().await = Some(child);
+        *state.privileged.lock().await = true;
+        let status = observe_kernel(&state, false).await.unwrap();
+        assert!(!status.running);
+        assert!(state.child.lock().await.is_none());
+        assert!(!*state.privileged.lock().await);
+    }
+
+    #[tokio::test]
+    async fn failed_probe_without_child_keeps_unconfirmed_privilege() {
+        let state = KernelState::default();
+        *state.privileged.lock().await = true;
+        assert!(observe_kernel(&state, false).await.is_err());
+        assert!(*state.privileged.lock().await);
+    }
 
     #[test]
     fn reclaim_kills_user_listener() {
@@ -1025,10 +1131,13 @@ pub async fn validate_config(
     if !config.is_file() {
         return Err(format!("配置文件不存在：{config_path}"));
     }
+    let digest = crate::subscription::config_digest(&config)?;
     let (bin, _) = resources::ensure_kernel(&app)?;
+    let kernel_config = crate::platform::kernel_path(&config);
+    let kernel_data = crate::platform::kernel_path(Path::new(&data_dir));
     let out = tokio::task::spawn_blocking(move || {
         crate::platform::command(&bin)
-            .args(["-t", "-d", &data_dir, "-f", &config_path])
+            .arg("-t").arg("-d").arg(kernel_data).arg("-f").arg(kernel_config)
             .output()
     })
     .await
@@ -1036,7 +1145,7 @@ pub async fn validate_config(
     .map_err(|e| format!("执行内核校验失败：{e}"))?;
 
     if out.status.success() {
-        return Ok(());
+        return crate::subscription::mark_config_validated(&config, &digest);
     }
     let mut text = String::from_utf8_lossy(&out.stderr).trim().to_string();
     if text.is_empty() {

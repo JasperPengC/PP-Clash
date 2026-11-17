@@ -4,93 +4,208 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '明确授权发布 GitHub Release（须选择匹配版本的 v 标签；默认仅构建）'
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  macos:
-    runs-on: macos-14
+  preflight:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - name: Fetch bundled kernel
+          node-version: 22
+      - name: Validate application version and release reference
         env:
-          KERNEL_ZIP_URL: ${{ vars.KERNEL_ZIP_URL }}
+          RELEASE_REF: ${{ github.ref }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release || false }}
         run: |
-          if [ -z "$KERNEL_ZIP_URL" ]; then
-            echo "::error::未配置仓库变量 KERNEL_ZIP_URL（macOS kernel.zip 下载地址）"
-            exit 1
-          fi
-          mkdir -p src-tauri/resources
-          curl -fL "$KERNEL_ZIP_URL" -o src-tauri/resources/kernel.zip
-      - name: Build and package
-        run: ./scripts/ci.sh build-macos-release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-dmg
-          path: src-tauri/target/release/bundle/dmg/PP_Clash-*-macos-universal.dmg
+          node scripts/check-version.mjs
+          VERSION="$(node -p "require('./package.json').version")"
+          python3 scripts/validate-release.py ref --version "$VERSION" --ref "$RELEASE_REF" --publish "$PUBLISH_RELEASE"
 
-  windows:
-    runs-on: windows-latest
+  checks:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  desktop:
+    needs: checks
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - os: macos
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: x86_64
+          - os: macos
+            runner: macos-15
+            target: aarch64-apple-darwin
+            arch: aarch64
+          - os: windows
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            arch: x86_64
+          - os: windows
+            runner: windows-2022
+            target: aarch64-pc-windows-msvc
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Fetch Windows kernel
-        shell: pwsh
+        with:
+          targets: ${{ matrix.target }}
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.os == 'windows'
+        with:
+          arch: ${{ matrix.arch == 'aarch64' && 'amd64_arm64' || 'amd64' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare verified matching kernel
+        run: python scripts/prepare-resources.py '${{ matrix.os }}' '${{ matrix.arch }}'
+      - name: Build installer
         env:
-          KERNEL_ZIP_URL_WINDOWS: ${{ vars.KERNEL_ZIP_URL_WINDOWS }}
-          KERNEL_ZIP_URL: ${{ vars.KERNEL_ZIP_URL }}
+          RELEASE_TARGET: ${{ matrix.target }}
+          MACOS_TARGET: ${{ matrix.target }}
         run: |
-          $url = $env:KERNEL_ZIP_URL_WINDOWS
-          if (-not $url) { $url = $env:KERNEL_ZIP_URL }
-          if (-not $url) { throw "未配置 KERNEL_ZIP_URL_WINDOWS / KERNEL_ZIP_URL" }
-          New-Item -ItemType Directory -Force src-tauri/resources | Out-Null
-          Invoke-WebRequest -Uri $url -OutFile src-tauri/resources/kernel.zip
-      - name: Build NSIS installer
-        shell: bash
-        run: ./scripts/ci.sh build-windows-release
+          export KERNEL_ZIP_SHA256="$(cat src-tauri/resources/kernel.zip.sha256)"
+          ./scripts/ci.sh build-${{ matrix.os }}-release
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-nsis
-          path: src-tauri/target/release/bundle/nsis/PP_Clash-*-windows-amd64-setup.exe
+          name: installer-${{ matrix.os }}-${{ matrix.arch }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/dmg/PP_Clash-*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/PP_Clash-*.exe
+
+  linux:
+    needs: checks
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    # 两种架构使用相同 glibc 2.35 基线，避免 ARM 包只能在 Ubuntu 24.04 启动。
+    container: ubuntu:22.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+    steps:
+      - name: Install Linux build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git build-essential pkg-config libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf file wget python3 rpm libcap2-bin lsof
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Prepare verified matching kernel
+        run: python3 scripts/prepare-resources.py linux '${{ matrix.arch }}'
+      - name: Build deb, rpm and AppImage
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          export KERNEL_ZIP_SHA256="$(cat src-tauri/resources/kernel.zip.sha256)"
+          ./scripts/ci.sh build-linux-release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-linux-${{ matrix.arch }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/deb/PP_Clash-*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/rpm/PP_Clash-*.rpm
+            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/PP_Clash-*.AppImage
+
+  verify-artifacts:
+    needs: [desktop, linux]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: artifacts
+          merge-multiple: true
+      - name: Verify complete matching package set
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-checksums
+          path: artifacts/SHA256SUMS
+          retention-days: 14
+          if-no-files-found: error
 
   publish:
-    needs: [macos, windows]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    needs: verify-artifacts
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: installer-*
           path: artifacts
           merge-multiple: true
-      - name: Publish GitHub release
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-checksums
+          path: artifacts
+      - name: Publish explicitly authorized release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          python3 - <<'PY'
-          import hashlib, pathlib
-          root = pathlib.Path("artifacts")
-          lines = []
-          for path in sorted(root.iterdir()):
-              if path.suffix.lower() in {".dmg", ".exe"}:
-                  h = hashlib.sha256(path.read_bytes()).hexdigest()
-                  lines.append(f"{h}  {path.name}")
-          (root / "SHA256SUMS").write_text("\n".join(lines) + "\n")
-          PY
-          gh release create "$GITHUB_REF_NAME" \
-            artifacts/*.dmg artifacts/*.exe artifacts/SHA256SUMS \
-            --title "PP Clash $GITHUB_REF_NAME" \
-            --notes "macOS ad-hoc DMG + Windows NSIS installer" || \
-          gh release upload "$GITHUB_REF_NAME" \
-            artifacts/*.dmg artifacts/*.exe artifacts/SHA256SUMS --clobber
+          (cd artifacts && sha256sum --check SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag --title "PP Clash $GITHUB_REF_NAME" --notes "macOS Intel / Apple Silicon、Windows x64 / ARM64、Linux x64 / ARM64。每个安装包内置对应架构的 mihomo。macOS 测试包尚未公证。"

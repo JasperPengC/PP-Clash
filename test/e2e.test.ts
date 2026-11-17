@@ -78,6 +78,7 @@ describe.skipIf(!available)('端到端：真实订阅 → 生成配置 → 内�
       controllerSecret: '',
       tunEnabled: false,
       mode: 'rule',
+      stableRouting: true,
       dnsNameserver: 'custom',
       dnsCustom: 'https://dns.google/dns-query',
       snifferEnabled: true,

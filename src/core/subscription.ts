@@ -121,6 +121,53 @@ export function parseSubscriptionMeta(headers: SubscriptionHeaders): Subscriptio
   };
 }
 
+/** 下载得到的原文先做结构预检；完整内核语义仍由候选配置校验负责。 */
+export function validateSubscriptionCandidate(raw: string): void {
+  if (!raw.trim()) throw new Error('订阅内容为空');
+  if (/^\s*<(?:!doctype\s+html|html|head|body)(?:\s|>)/i.test(raw)) {
+    throw new Error('订阅返回了网页，请检查链接');
+  }
+  const value: unknown = yaml.load(raw);
+  const isRecord = (entry: unknown): entry is Record<string, unknown> =>
+    Boolean(entry && typeof entry === 'object' && !Array.isArray(entry));
+  if (!isRecord(value)) throw new Error('订阅必须是 YAML 配置对象');
+  let entries = 0;
+  for (const key of ['proxies', 'proxy-groups', 'rules']) {
+    const list = value[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) throw new Error(`订阅 ${key} 必须是列表`);
+    entries += list.length;
+    for (const entry of list) {
+      if (key === 'rules') {
+        if (typeof entry !== 'string' || !entry.trim()) throw new Error('订阅规则必须是非空文本');
+      } else {
+        if (!isRecord(entry) || typeof entry.name !== 'string' || !entry.name.trim()
+          || typeof entry.type !== 'string' || !entry.type.trim()) {
+          throw new Error(`订阅 ${key} 条目缺少名称或类型`);
+        }
+        if (key === 'proxy-groups') {
+          for (const members of [entry.proxies, entry.use]) {
+            if (members !== undefined && (!Array.isArray(members) || members.some(name => typeof name !== 'string' || !name.trim()))) {
+              throw new Error('订阅分组的节点与提供者必须是名称列表');
+            }
+          }
+        }
+      }
+    }
+  }
+  const providers = value['proxy-providers'];
+  if (providers !== undefined) {
+    if (!isRecord(providers)) throw new Error('订阅 proxy-providers 必须是对象');
+    for (const [name, provider] of Object.entries(providers)) {
+      if (!name.trim() || !isRecord(provider) || typeof provider.type !== 'string' || !provider.type.trim()) {
+        throw new Error('订阅提供者缺少名称或类型');
+      }
+    }
+    entries += Object.keys(providers).length;
+  }
+  if (!entries) throw new Error('订阅未包含节点、提供者、分组或规则');
+}
+
 // --- 订阅原文预览（内核没启动时也能看节点） ------------------------------
 
 export interface PreviewNode {

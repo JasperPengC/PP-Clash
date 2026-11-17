@@ -1,117 +1,69 @@
-# PP Clash
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/logo-dark.svg">
+    <img src="assets/readme/logo-light.svg" width="76" height="76" alt="PP Clash">
+  </picture>
+</p>
 
-把**防泄漏做成默认行为**的 Clash 客户端。原生质感，开箱即用。
+<h1 align="center">PP Clash</h1>
 
-> 显示名从 PPClash 改为 **PP Clash**；数据目录仍为 `~/Library/Application Support/PPClash`，已有数据不受影响。
+<p align="center">A desktop client for managing mihomo profiles, proxy groups, and routing.</p>
+<p align="center">macOS · Windows · Linux &nbsp; / &nbsp; System Proxy · TUN · Rule-based routing</p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
 
-> 当前状态：核心链路可用，UI/UX 已重做；进度与已知问题见 [docs/STATUS.md](docs/STATUS.md)
+> **Important — PP Clash does not provide proxy servers or subscription services.** Bring your own subscription or configuration file.
 
----
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/showcase-dark.webp">
+    <img src="assets/readme/showcase-light.webp" width="1120" alt="PP Clash running on a laptop, showing connection status, live traffic, proxy groups, and profile usage">
+  </picture>
+</p>
 
-## 为什么做这个
+<p align="center"><a href="#features">Features</a> · <a href="#downloads">Downloads</a> · <a href="#security">Security</a></p>
+<p align="center"><sub>Preview shown with sample data.</sub></p>
 
-大多数 Clash 客户端把 DNS 和泄漏防护当成「高级配置」，交给用户自己写 YAML。
-但最常见的泄漏恰恰藏在订阅自带的配置里，而且看不出来：
+## Features
 
-| 泄漏点 | 后果 |
-|---|---|
-| `nameserver` 里混着 223.5.5.5 这类明文国内 DNS | 境外域名在本地明文解析，ISP 能看到你访问了什么 |
-| `fallback` 非空 | mihomo 的 `fallback` 与 `nameserver` 是**并发**查询的，每个域名都会多问一遍 |
-| 没开 `respect-rules` | DNS 查询不走代理，解析在本地完成 |
-| 开着 IPv6 | TUN 通常只接管 v4，v6 流量绕过代理直连 |
-| 没开 `strict-route` | 不走系统代理的进程（部分 Electron 应用）直接裸奔 |
+- **Profiles and proxy groups** — import subscriptions or local configs, browse groups, search nodes, test latency, and pin a preferred node.
+- **Flexible routing** — switch between Rule, Global, and Direct modes; enable System Proxy or TUN independently.
+- **Connection details** — inspect live traffic, active connections, routing rules, DNS, and kernel logs.
+- **Tray controls** — check current status and switch profiles, nodes, or routing mode from the compact panel.
+- **Local settings** — manage mihomo versions, customize overrides, and back up or restore app data.
 
-PPClash 的判断是：**这些不该是配置项，应该是默认行为。**
+## Downloads
 
----
+Choose the package that matches your operating system and processor:
 
-## 快速开始
+| Platform | Package |
+| :--- | :--- |
+| macOS · Intel | `PP_Clash-<version>-macos-x86_64.dmg` |
+| macOS · Apple silicon | `PP_Clash-<version>-macos-aarch64.dmg` |
+| Windows · x64 | `PP_Clash-<version>-windows-amd64-setup.exe` |
+| Windows · ARM64 | `PP_Clash-<version>-windows-arm64-setup.exe` |
+| Linux · x64 / ARM64 | `.deb`, `.rpm`, or `.AppImage` |
 
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
+macOS Intel and Windows x64 have been tested on physical devices. Apple silicon, Windows ARM64, and Linux builds still need device testing.
 
-npm install
-npm run app        # 开发模式，带热更新
-npm run bundle     # 打包 .app
-```
+On Linux, PP Clash requires WebKitGTK 4.1 and Ayatana AppIndicator. AppImage packages still use the host system's GTK and WebKitGTK libraries.
 
-前置：Rust 1.77+、Node 20+、macOS 的 Command Line Tools。**不需要完整 Xcode。**
+<details>
+<summary>Opening on macOS for the first time</summary>
 
-首次构建前需要生成内核资源包（仓库不提交 35MB 的二进制）：
+Current test builds use a local signature and are not notarized by Apple. If macOS blocks the app, open System Settings → Privacy & Security and choose **Open Anyway** for PP Clash.
 
-```bash
-./scripts/prepare-resources.sh   # 生成 src-tauri/resources/kernel.zip
-```
+</details>
 
----
+To get started, import a subscription or local config, choose a node, then enable System Proxy or TUN.
 
-## 首次打开
+## Security
 
-当前分发的是 ad-hoc 签名包，没有 Apple 公证。首次打开如果被 Gatekeeper 拦截：
+App-generated configs enable encrypted DNS, rule-aware DNS resolution, and Fake-IP by default, with IPv6 disabled. In Rule mode, PP Clash also adds STUN blocking rules. The Security page checks the running DNS and STUN setup and can test WebRTC candidates inside the app.
 
-1. 右键 App →「打开」→ 再点「打开」
-2. 或执行 `xattr -dr com.apple.quarantine "/Applications/PP Clash.app"`
+System Proxy does not capture UDP traffic. Enable TUN to route UDP traffic used by WebRTC and similar protocols. Checks describe the current app and runtime configuration; they do not verify every browser, application, or network path.
 
-## 文档
+## About
 
-| 文档 | 内容 |
-|---|---|
-| [PRD](docs/PRD.md) | 产品定位、要解决的问题、功能清单、非功能指标 |
-| [PLAN](docs/PLAN.md) | 里程碑划分与任务拆解 |
-| [SPEC](docs/SPEC.md) | 技术选型、架构、模块设计、接口、性能预算 |
-| [STATUS](docs/STATUS.md) | **当前进度**，每完成一项就更新 |
+PP Clash uses [mihomo](https://github.com/MetaCubeX/mihomo) as its proxy core and is built with Tauri, Rust, React, and TypeScript.
 
----
-
-## 技术栈
-
-```
-Tauri 2        应用框架，用系统 WebView，不打包 Chromium
-Rust           内核进程管理、系统代理、托盘
-React 19 + TS  UI
-Vite 7         构建
-Zustand        状态
-```
-
-选型理由见 [SPEC 第 1 节](docs/SPEC.md#1-技术选型)。
-
----
-
-## 目录
-
-```
-docs/          产品与技术文档
-src/           前端（React）
-  core/        配置生成、安全策略、订阅体检
-  components/  通用组件
-  pages/       概览 / 节点 / 安全 / 订阅 / 设置
-  store/       Zustand
-  styles/      视觉系统（CSS 变量）
-src-tauri/     Rust 后端
-legacy/        旧 Flutter 版，仅作参考
-```
-
----
-
-## 界面
-
-![概览（浅色）](docs/screenshots/overview-light.png)
-![节点（浅色）](docs/screenshots/nodes-light.png)
-![连接（浅色）](docs/screenshots/connections-light.png)
-![规则（浅色）](docs/screenshots/rules-light.png)
-![覆写（浅色）](docs/screenshots/override-light.png)
-
-更多截图见 `docs/screenshots/`。
-
-## 自主可控
-
-- 内核（mihomo v1.19.32）与 GeoIP/GeoSite 随应用携带（`src-tauri/resources/kernel.zip`），首次启动自动释放，不依赖 Clash Party 等其它客户端。
-- TUN 首次使用会安装一份 setuid 系统内核副本（一次管理员授权），之后启停不再弹密码。
-- 内核版本、内存与重启入口在「设置 → 内核」。
-- 进阶能力：覆写（YAML/JSON 深合并或 JS）、自定义规则、订阅自动更新、备份恢复、连接/规则/日志页、出站模式、局域网、DNS 端口；托盘支持连接/断开与出站模式。
-
-## 许可证
-
-本项目以 **GNU Affero General Public License v3.0（AGPL-3.0-only）** 发布，全文见 [LICENSE](LICENSE)。
-
-分发修改版，或通过网络向用户提供修改版功能时，请遵守 AGPL-3.0 第 13 条，向这些用户提供对应的完整源码。
+Licensed under [AGPL-3.0-only](LICENSE). Third-party notices are available in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

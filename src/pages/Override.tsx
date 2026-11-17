@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import yaml from 'js-yaml';
 import { EmptyState, MiniSwitch, Segmented, Spinner, Toggle } from '../components/ui';
+import CodeEditor from '../components/CodeEditor';
+import { validateOverrideSource } from '../core/override-syntax';
 import { IconChevronDown, IconCode, IconPlus, IconTrash } from '../components/icons';
-import { getLifecycleToken, isLifecycleCurrent, useApp, type OverrideFile } from '../store/app';
+import { getLifecycleToken, isLifecycleCurrent, useApp } from '../store/app';
+import type { OverrideFile } from '../domain/app';
 
 const PLACEHOLDER_YAML = `# YAML / JSON 片段，深合并到生成的配置
 # 对象按 key 合并，数组整体替换
@@ -23,25 +25,7 @@ return config;
 function validateOverride(file: OverrideFile): string | null {
   const text = file.text.trim();
   if (!text) return null;
-  if (file.mode === 'js') {
-    try {
-      // 只做语法检查，不执行脚本；实际运行在独立解释器中。
-      // eslint-disable-next-line no-new-func
-      new Function('config', `${text}\n;return config;`);
-      return null;
-    } catch (e) {
-      return `JS 语法错误：${(e as Error).message}`;
-    }
-  }
-  try {
-    const parsed = yaml.load(text);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return 'YAML 顶层需要是一个对象（键值对）';
-    }
-    return null;
-  } catch (e) {
-    return `YAML 语法错误：${(e as Error).message}`;
-  }
+  return validateOverrideSource(file.text, file.mode)[0]?.message ?? null;
 }
 
 function newOverride(index: number): OverrideFile {
@@ -75,6 +59,8 @@ export function OverridePage() {
   const mode = draft?.mode ?? 'yaml';
   const text = draft?.text ?? '';
   const enabled = draft?.enabled ?? true;
+  const [diagnostics, setDiagnostics] = useState<ReturnType<typeof validateOverrideSource>>([]);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const applying = useRef(false);
@@ -95,6 +81,16 @@ export function OverridePage() {
     setError(null);
   };
   useEffect(() => { setError(null); setConfirmDelete(false); }, [selected?.id]);
+
+  useEffect(() => {
+    let current = true;
+    setChecking(true);
+    const timer = window.setTimeout(() => {
+      const result = validateOverrideSource(text, mode);
+      if (current) { setDiagnostics(result); setChecking(false); }
+    }, 180);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [mode, text, selected?.id]);
 
   useEffect(() => {
     if (files.length > 0 && !files.some((f) => f.id === selectedId)) {
@@ -354,15 +350,10 @@ export function OverridePage() {
                 </div>
 
                 <div className="dp-override-document">
-                  <textarea
-                    className="override-editor"
-                    value={text}
-                    disabled={saving}
-                    aria-label="覆写内容"
-                    onChange={(e) => edit({ text: e.target.value })}
+                  <CodeEditor value={text} mode={mode} disabled={saving}
                     placeholder={mode === 'yaml' ? PLACEHOLDER_YAML : PLACEHOLDER_JS}
-                    spellCheck={false}
-                  />
+                    diagnostics={diagnostics} checking={checking}
+                    onChange={value => edit({ text: value })} />
                   {mode === 'js' && (
                     <div className="override-error" style={{ color: 'var(--warning)' }}>
                       脚本运行超过 300ms 会终止。

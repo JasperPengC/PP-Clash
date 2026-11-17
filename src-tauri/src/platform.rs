@@ -73,6 +73,29 @@ pub fn user_kernel_bin() -> Result<PathBuf, String> {
     Ok(data_dir()?.join("bin").join(kernel_binary_name()))
 }
 
+/// Go 内核会给工作目录拼接正斜杠，不能接收 Rust canonicalize 的 verbatim 路径。
+/// 只在进程边界转换；配置事务内部仍使用 canonical 路径确认文件身份。
+pub fn kernel_path(path: &std::path::Path) -> PathBuf {
+    #[cfg(target_os = "windows")]
+    { PathBuf::from(windows_kernel_path(&path.to_string_lossy())) }
+    #[cfg(not(target_os = "windows"))]
+    { path.to_path_buf() }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_kernel_path(path: &str) -> String {
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{unc}");
+    }
+    if let Some(drive) = path.strip_prefix(r"\\?\") {
+        let bytes = drive.as_bytes();
+        if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'\\' {
+            return drive.to_string();
+        }
+    }
+    path.to_string()
+}
+
 /// 创建子进程命令；Windows 下隐藏控制台窗口，避免 reg/powershell/tasklist
 /// 这类控制台程序每调用一次就弹一个黑框。
 pub fn command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
@@ -177,5 +200,28 @@ pub fn is_elevated() -> bool {
     #[cfg(not(target_os = "windows"))]
     {
         true
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn mihomo_accepts_windows_canonical_paths_without_verbatim_prefix() {
+        assert_eq!(windows_kernel_path(r"\\?\C:\Users\测试 用户\PPClash"), r"C:\Users\测试 用户\PPClash");
+        assert_eq!(windows_kernel_path(r"\\?\UNC\server\share\PPClash"), r"\\server\share\PPClash");
+        assert_eq!(windows_kernel_path(r"C:\Users\example\PPClash"), r"C:\Users\example\PPClash");
+        assert_eq!(windows_kernel_path(r"\\server\share\PPClash"), r"\\server\share\PPClash");
+        let long = format!(r"C:\{}\配置.yaml", "directory\\".repeat(40));
+        assert_eq!(windows_kernel_path(&format!(r"\\?\{long}")), long);
+        assert_eq!(windows_kernel_path(r"\\?\Volume{abc}\data"), r"\\?\Volume{abc}\data");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn other_platforms_keep_paths_unchanged() {
+        let path = std::path::Path::new("/Users/测试 用户/config.yaml");
+        assert_eq!(kernel_path(path), path);
     }
 }

@@ -49,7 +49,7 @@ export const POLICY_META: Record<
   },
   fakeIp: {
     label: 'Fake-IP 模式',
-    desc: '延迟到代理解析',
+    desc: '连接时由代理解析域名',
     risk: '关闭后每次访问都需真实 DNS 查询',
   },
   blockWebRtc: {

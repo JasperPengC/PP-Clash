@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { siGoogle, siYoutube, siGithub, siOpenai, siAnthropic } from 'simple-icons';
-import { BrandCat } from '../components/BrandCat';
 import { NodeName } from '../components/NodeName';
-import { SplitSparkline } from '../components/visuals';
-import { navigate, Segmented, Select, Spinner, Toggle } from '../components/ui';
+import { LatencyRing, MiniSparkline, TrafficChart } from '../components/visuals';
+import { PageLink, Select, Spinner, Toggle } from '../components/ui';
 import {
   IconBolt,
+  IconSecurity,
   IconCheck,
   IconChevronRight,
   IconDownload,
+  IconGlobe,
+  IconProfiles,
   IconRefresh,
+  IconTun,
   IconUpload,
+  IconX,
 } from '../components/icons';
-import { getLifecycleToken, isLifecycleCurrent, primaryRoutingGroup, resolveActiveNode, resolveEffectiveGroup, useApp, type OutboundMode, type ProxyNode } from '../store/app';
+import { primaryRoutingGroup, resolveActiveNode, resolveEffectiveGroup, useApp } from '../store/app';
+import type { ProxyNode } from '../domain/app';
 import { api } from '../core/api';
 import { useTakeoverStatus } from '../core/use-takeover-status';
-import { findStableEgressGroup, STABLE_EGRESS_GROUP } from '../core/generator';
 import { buildProxyDomain, proxyGroupKind, resolveProxyRoute } from '../core/proxy-domain';
 import { useRouteDiagnostics } from '../core/use-diagnostics';
 import { startPolling } from '../core/polling';
@@ -23,7 +27,7 @@ import { formatBytes, formatDuration, formatExpire, formatSpeed, formatTime } fr
 import { GITHUB_LATENCY_URL, groupLatencyTarget, latencyKey, normalizeLatency, readGroupLatency } from '../core/latency';
 
 const EMPTY = Array.from({ length: 32 }, () => 0);
-const OVERVIEW_NODE_HEIGHT = 44;
+const OVERVIEW_NODE_HEIGHT = 34;
 const OVERVIEW_NODE_WINDOW = 16;
 
 export function OverviewPage({ active = true }: { active?: boolean }) {
@@ -40,7 +44,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const runtimeConfigRevision = useApp(s => s.runtimeConfigRevision);
   const runtimeConfigTransition = useApp(s => s.runtimeConfigTransition);
   const fixedNodes = useApp(s => s.fixedNodes);
-  const [inspectedGroup, setInspectedGroup] = useState<string | null>(null);
   const [nodeWindowStart, setNodeWindowStart] = useState(0);
   const nodeListRef = useRef<HTMLDivElement>(null);
   const [connCount, setConnCount] = useState<number | null>(null);
@@ -49,11 +52,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const setTun = useApp((s) => s.setTun);
   const selectNode = useApp((s) => s.selectNode);
   const testDelay = useApp((s) => s.testDelay);
-  const refreshProfile = useApp((s) => s.refreshProfile);
-  const refreshingIds = useApp((s) => s.refreshingIds);
-  const activate = useApp((s) => s.activate);
   const notify = useApp((s) => s.notify);
-  const updateSettings = useApp((s) => s.updateSettings);
   const blockWebRtc = useApp((s) => s.policy.blockWebRtc);
   const [retrying, setRetrying] = useState(false);
   const retryLock = useRef(false);
@@ -64,7 +63,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     catch (e) { notify('error', `重新连接失败：${String(e)}`); }
     finally { retryLock.current = false; setRetrying(false); }
   };
-  const [switchingMode, setSwitchingMode] = useState(false);
   const [groupDelays, setGroupDelays] = useState<Record<string, number | null>>({});
   const [connectionDelays, setConnectionDelays] = useState<Record<string, number | null>>({});
   const [testingGroup, setTestingGroup] = useState(false);
@@ -76,55 +74,14 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const currentLatencyRequestKey = useRef<string | null>(null);
   const currentLatencyEpoch = useRef(0);
   const currentLatencyAttempts = useRef(new Set<string>());
-  const modeLock = useRef(false);
   const [pendingNode, setPendingNode] = useState<string | null>(null);
   const nodeLock = useRef(false);
-  const changeMode = async (mode: OutboundMode) => {
-    if (mode === settings.mode || modeLock.current) return;
-    const token = getLifecycleToken();
-    modeLock.current = true;
-    setSwitchingMode(true);
-    const previous = settings.mode;
-    updateSettings({ mode });
-    try {
-      const st = useApp.getState();
-      const applied = await st.applyConfig();
-      if (!isLifecycleCurrent(token)) return;
-      if (!applied) {
-        updateSettings({ mode: previous });
-        notify('error', '配置生成失败，出站模式未切换');
-        return;
-      }
-      if (st.kernelPhase === 'running' && !await st.restartKernel(true, token, true)) {
-        if (!isLifecycleCurrent(token)) return;
-        if (useApp.getState().kernelPhase === 'running') {
-          updateSettings({ mode: previous });
-          useApp.setState({ configPath: '' });
-          notify('error', '出站模式未能应用，继续使用原模式');
-        } else notify('error', '模式已保存，但重新连接失败，请重试连接');
-      }
-    } catch (e) {
-      if (!isLifecycleCurrent(token)) return;
-      notify('error', `切换模式失败：${String(e)}`);
-    } finally {
-      modeLock.current = false;
-      setSwitchingMode(false);
-    }
-  };
-
   const connected = kernelPhase === 'running';
   const takeover = useTakeoverStatus({ active, running: connected, sysProxy: sysProxyEnabled, tun: tunEnabled,
     revision: JSON.stringify([runtimeConfigRevision, connectedAt, settings.controllerPort, settings.controllerSecret]),
     transitioning: runtimeConfigTransition,
   });
-  useEffect(() => { setInspectedGroup(null); }, [activeId]);
-  useEffect(() => {
-    testGroupEpoch.current += 1;
-    testGroupLock.current = false;
-    setGroupDelays({});
-    setTestingGroup(false);
-    return () => { testGroupEpoch.current += 1; };
-  }, [activeId, connectedAt, connected, inspectedGroup]);
+
   useEffect(() => {
     if (active) return;
     testGroupEpoch.current += 1;
@@ -168,10 +125,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   const [down, setDown] = useState<number[]>(EMPTY);
   const [upTotal, setUpTotal] = useState(0);
   const [downTotal, setDownTotal] = useState(0);
-  const [proxyUp, setProxyUp] = useState<number[]>(EMPTY);
-  const [proxyDown, setProxyDown] = useState<number[]>(EMPTY);
-  const [directUp, setDirectUp] = useState<number[]>(EMPTY);
-  const [directDown, setDirectDown] = useState<number[]>(EMPTY);
   const [proxyUpBytes, setProxyUpBytes] = useState(0);
   const [proxyDownBytes, setProxyDownBytes] = useState(0);
   const [directUpBytes, setDirectUpBytes] = useState(0);
@@ -188,8 +141,14 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     profileId: activeId, revision: runtimeConfigRevision, runtime: runtimeMatches,
     runtimeProxies: snapshot?.proxies, providers: snapshot?.providers, providersError: snapshot?.providersError }),
     [activeProfile?.raw, groups, primaryGroup, activeId, runtimeConfigRevision, runtimeMatches, snapshot]);
-  const displayGroup = domain.groups.find(g => g.name === inspectedGroup)
-    ?? domain.groups.find(g => g.name === effectiveGroup?.name) ?? domain.groups[0];
+  const displayGroup = domain.groups.find(g => g.name === effectiveGroup?.name) ?? domain.groups[0];
+  useEffect(() => {
+    testGroupEpoch.current += 1;
+    testGroupLock.current = false;
+    setGroupDelays({});
+    setTestingGroup(false);
+    return () => { testGroupEpoch.current += 1; };
+  }, [activeId, connectedAt, connected, displayGroup?.name]);
   useEffect(() => { setNodeWindowStart(0); if (nodeListRef.current) nodeListRef.current.scrollTop = 0; }, [displayGroup?.name, activeId]);
 
   useEffect(() => {
@@ -199,10 +158,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       setDown(EMPTY);
       setUpTotal(0);
       setDownTotal(0);
-      setProxyUp(EMPTY);
-      setProxyDown(EMPTY);
-      setDirectUp(EMPTY);
-      setDirectDown(EMPTY);
       setProxyUpBytes(0);
       setProxyDownBytes(0);
       setDirectUpBytes(0);
@@ -271,10 +226,6 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
         }
         prevConns.current = next;
         if (alive) {
-          setProxyUp((p) => [...p.slice(1), pu]);
-          setProxyDown((p) => [...p.slice(1), pd]);
-          setDirectUp((p) => [...p.slice(1), du]);
-          setDirectDown((p) => [...p.slice(1), dd]);
           setProxyUpBytes((v) => v + pu);
           setProxyDownBytes((v) => v + pd);
           setDirectUpBytes((v) => v + du);
@@ -313,15 +264,8 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
 
   const latestUp = up[up.length - 1] ?? 0;
   const latestDown = down[down.length - 1] ?? 0;
-  const peakUp = Math.max(...up);
-  const peakDown = Math.max(...down);
 
-  const githubGroups = runtimeMatches ? groups : domain.groups;
-  const detectedGithubGroup = findStableEgressGroup(githubGroups)
-    ?? githubGroups.find(group => group.name === STABLE_EGRESS_GROUP)?.name;
-  const stableGithubNode = settings.mode === 'rule' && settings.egressGuard
-    ? (detectedGithubGroup ? resolveActiveNode(groups, detectedGithubGroup) : settings.egressGuardNode)
-    : '';
+  const githubProbeNode = connected ? nodeName : '';
 
   const acquireLatencySlot = () => new Promise<void>(resolve => {
     if (latencyPool.current.active < 3) {
@@ -379,30 +323,10 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
     }
   };
 
-  const routeKey = JSON.stringify([routeRevision, connected, connectedAt, activeId, nodeName, settings.mode, tunEnabled, sysProxyEnabled, mixedPort, settings.dnsPort, stableGithubNode, blockWebRtc]);
+  const routeKey = JSON.stringify([routeRevision, connected, connectedAt, activeId, nodeName, settings.mode, tunEnabled, sysProxyEnabled, mixedPort, settings.dnsPort, githubProbeNode, blockWebRtc]);
   const diagnostics = useRouteDiagnostics({
-    active, connected, routeKey, mixedPort, dnsPort: settings.dnsPort, tun: tunEnabled, githubNode: stableGithubNode, blockWebRtc,
+    active, connected, routeKey, mixedPort, dnsPort: settings.dnsPort, tun: tunEnabled, githubNode: githubProbeNode, blockWebRtc,
   });
-  const { egress, egressLoading, egressCountry } = diagnostics;
-
-  const egressCountryLabel = useMemo(() => {
-    if (!egressCountry) return null;
-    if (egressCountry.code) {
-      try {
-        return new Intl.DisplayNames(['zh-CN'], { type: 'region' }).of(egressCountry.code) ?? egressCountry.name;
-      } catch {
-        /* fall through */
-      }
-    }
-    return egressCountry.name;
-  }, [egressCountry]);
-
-
-  const quota = activeProfile?.userinfo ?? null;
-  const quotaUsed = quota ? quota.upload + quota.download : 0;
-  const quotaRatio = quota && quota.total > 0 ? Math.min(quotaUsed / quota.total, 1) : 0;
-  const quotaTone = quotaRatio >= 0.9 ? 'bad' : quotaRatio >= 0.7 ? 'warn' : 'ok';
-
   const stateText = connected
     ? '运行中'
     : kernelPhase === 'starting'
@@ -421,7 +345,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       ? (kernelError ?? '内核未就绪')
       : activeProfile
         ? '开启系统代理或 TUN'
-        : '导入订阅';
+        : '尚未配置出口';
 
   const uptime = connected && connectedAt ? formatDuration(now - connectedAt) : null;
 
@@ -541,97 +465,78 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
   };
 
   const displayNow = groupHasSingleSelection && runtimeMatches ? displayGroup?.now ?? '' : '';
-  const egressFlag = egressCountryLabel ? (
-    egressCountry?.code
-      ? <span className={`fi fi-${egressCountry.code.toLowerCase()} ov-hero-flag`} role="img" aria-label={egressCountry.code} />
-      : <span className="ov-hero-region">{egressCountryLabel}</span>
-  ) : null;
-
   const visibleStart = Math.min(nodeWindowStart, Math.max(0, groupNodes.length - OVERVIEW_NODE_WINDOW));
   const visibleGroupNodes = groupNodes.slice(visibleStart, visibleStart + OVERVIEW_NODE_WINDOW);
+
+  const routeBreakdown = `代理 ↑${formatBytes(proxyUpBytes)} ↓${formatBytes(proxyDownBytes)} · 直连 ↑${formatBytes(directUpBytes)} ↓${formatBytes(directDownBytes)}`;
+  const chartMax = Math.max(1, ...up, ...down);
 
   return (
     <>
       <header className="page-head ov-page-head">
         <div className="page-heading"><h1 className="page-title">概览</h1></div>
-        <Segmented ariaLabel="出站模式" disabled={switchingMode}
-          options={[{ value: 'rule', label: '规则' }, { value: 'global', label: '全局' }, { value: 'direct', label: '直连' }]}
-          value={settings.mode} onChange={(value) => void changeMode(value)} />
+        <div className="ov-takeover-row">
+          <section className="switches-card" aria-label="流量接管">
+            {([
+              { id: 'sysproxy', title: '系统代理', subtitle: proxyPending ? '处理中…' : sysProxyEnabled ? String(mixedPort) : '未开启', detail: takeover.systemProxySubtitle,
+                enabled: sysProxyEnabled, busy: proxyPending, icon: <IconGlobe size={15} />, change: changeSystemProxy },
+              { id: 'tun', title: 'TUN 模式', subtitle: tunPending ? '处理中…' : tunEnabled ? '已开启' : '未开启', detail: takeover.tunSubtitle,
+                enabled: tunEnabled, busy: tunPending, icon: <IconTun size={15} />, change: changeTun },
+            ] as const).map(item => <div className="ov-takeover-option" key={item.id} title={item.detail}>
+              {item.icon}<span>{item.title}</span><span className="ov-meta">{item.subtitle}</span>
+              <Toggle on={item.enabled} busy={item.busy} disabled={switchesBusy} onChange={value => void item.change(value)} label={item.title} />
+            </div>)}
+          </section>
+        </div>
       </header>
       <div className="page-scroll ov-scroll">
-        <div className="ov-page">
+        <div className="dash">
           {connected && kernelError && <div className="banner warn ov-warning" role="alert"><span>{kernelError}</span></div>}
           <div className="ov-top-row">
-            <section className={`ov-hero${connected ? ' is-up' : failed ? ' is-failed' : ''}`} aria-label="当前连接">
-              <BrandCat size={150} className="ov-hero-cat" />
-              <div className="ov-hero-top">
-                <span className="ov-hero-state"><i className={`ov-hero-dot${connected ? ' is-running' : failed ? ' is-failed' : ''}`} aria-hidden="true" />{stateText}</span>
-                <span className="ov-hero-uptime">{uptime ?? (kernelBusy ? '请稍候' : '尚未连接')}</span>
+            <section className="ov-panel ov-route-card" aria-label="当前连接">
+              <div className="ov-route-meta" title={uptime ? `${stateText} · ${uptime}` : stateText}>
+                <span className={`status-dot${connected ? ' on' : failed ? ' warn' : ''}`} aria-hidden="true" />
+                <span>当前连接</span><span className="ov-connection-state">{stateText}{uptime && <span> · {uptime}</span>}</span>
               </div>
-              <div className="ov-hero-main">
-                <strong className="ov-hero-node" title={connected ? actualConnection.name : desc}>{connected ? <NodeName name={actualConnection.name} /> : desc}</strong>
-                <span className="ov-hero-route" title={actualConnection.auxiliaryLabel}>{connected ? actualConnection.auxiliaryLabel : failed ? kernelError ?? '内核未就绪' : '开启系统代理或 TUN 后连接'}</span>
-              </div>
-              <div className="ov-hero-egress"><span>出口</span><strong>{connected ? egress ?? (egressLoading ? '获取中' : '待确认') : '待确认'}</strong>{connected && egressFlag}</div>
-              <div className="ov-hero-foot">
-                <span><IconUpload size={12} />{formatBytes(connected ? upTotal : 0)}</span>
-                <span><IconDownload size={12} />{formatBytes(connected ? downTotal : 0)}</span>
+              <div className="ov-connection-body">
+                <div className="ov-identity">
+                  <h2 className="ov-hero-node" title={connected ? actualConnection.name : desc}>{connected ? <NodeName name={actualConnection.name} /> : desc}</h2>
+                    <p>{connected ? [actualConnection.node?.type, actualConnection.group ? proxyGroupKind(actualConnection.group.type) : actualConnection.targetDescription,
+                      actualConnection.node && activeId && fixedNodes[activeId]?.[actualConnection.group?.name ?? ''] === actualConnection.node.name ? '已固定' : ''].filter(Boolean).join(' · ') : activeProfile ? '连接后显示当前策略' : '添加订阅以配置代理节点'}</p>
+                </div>
+                <span className="ov-route-tag ov-hero-route" title={actualConnection.auxiliaryLabel}>{actualConnection.auxiliaryLabel}</span>
                 <button type="button" className={`ov-latency hero-gauge ${actualConnection.tone}`} disabled={!actualConnection.canTest || testingCurrentNode || testingGroup}
                   aria-label={actualConnection.delay != null ? `测速当前节点，延迟 ${actualConnection.delay} 毫秒` : actualConnection.canTest ? '测速当前节点' : actualConnection.targetDescription}
                   title={actualConnection.targetDescription} onClick={() => void testCurrentNode()}>
-                  <span className="ov-latency-reading">{actualConnection.testing ? <Spinner small /> : <IconRefresh size={12} />}<strong>{actualConnection.reading}</strong></span>
+                  <LatencyRing ms={actualConnection.canTest ? actualConnection.delay ?? null : null} reading={actualConnection.reading} busy={actualConnection.testing} />
                 </button>
               </div>
-              {failed && <div className="ov-hero-actions"><button type="button" className="btn btn-primary btn-sm" disabled={retrying || kernelBusy} onClick={() => void retryConnection()}>{retrying ? '重试中…' : '重试连接'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => navigate('logs')}>查看日志</button></div>}
-              {!connected && !activeProfile && <div className="ov-hero-actions"><button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('profiles')}>导入订阅</button></div>}
+              {failed && <div className="ov-hero-actions"><button type="button" className="btn btn-primary btn-sm" disabled={retrying || kernelBusy} onClick={() => void retryConnection()}>{retrying ? '重试中…' : '重试连接'}</button><PageLink page="logs" label="查看日志" /></div>}
             </section>
             {(['up', 'down'] as const).map(direction => {
               const upload = direction === 'up';
-              const rate = connected ? upload ? latestUp : latestDown : 0;
-              return <section className={`ov-rate-card is-${direction}`} aria-label={upload ? '上传速率' : '下载速率'} key={direction}>
-                <div className="ov-rate-head"><span className="ov-rate-title">{upload ? <IconUpload size={14} /> : <IconDownload size={14} />}{upload ? '上传' : '下载'}</span></div>
-                <div className="ov-rate-figure"><strong>{formatSpeed(rate).split(' ')[0]}</strong><span>{formatSpeed(rate).split(' ')[1]}</span></div>
-                <span className="ov-rate-peak">峰值 {formatSpeed(connected ? upload ? peakUp : peakDown : 0)}</span>
-                <SplitSparkline proxy={upload ? proxyUp : proxyDown} direct={upload ? directUp : directDown} color={upload ? 'var(--up)' : 'var(--down)'} />
-                <span className="ov-rate-total">本次 {formatBytes(connected ? upload ? upTotal : downTotal : 0)}</span>
+              const [value, unit] = formatSpeed(connected ? (upload ? latestUp : latestDown) : 0).split(' ');
+              return <section className={`ov-panel ov-speed-card is-${direction}`} aria-label={upload ? '上传速率' : '下载速率'} key={direction}>
+                <div className="ov-speed-head"><div className="ov-speed-label">{upload ? <IconUpload size={15} /> : <IconDownload size={15} />}{upload ? '上传' : '下载'}</div><span className="ov-speed-peak" title="最近 32 秒峰值速度">峰值 <b>{formatSpeed(connected ? Math.max(...(upload ? up : down)) : 0)}</b></span></div>
+                <div className="ov-speed-value">{value}<small>{unit}</small></div>
+                <div className="ov-speed-note">会话累计 {formatBytes(connected ? (upload ? upTotal : downTotal) : 0)}</div>
+                <MiniSparkline points={upload ? up : down} color={upload ? 'var(--up-chart)' : 'var(--down-chart)'} height={33} />
               </section>;
             })}
           </div>
-          <div className="ov-control-row">
-            <section className="ov-takeover" aria-label="流量接管">
-              <h2>流量接管</h2>
-              <div className="ov-takeover-controls">
-                <div className="ov-control"><span className="ov-control-copy"><strong>系统代理</strong><span>{proxyPending ? '处理中…' : kernelBusy ? '等待中…' : takeover.systemProxySubtitle}</span></span><Toggle on={sysProxyEnabled} busy={proxyPending} disabled={switchesBusy} onChange={value => void changeSystemProxy(value)} label="系统代理" /></div>
-                <div className="ov-control"><span className="ov-control-copy"><strong>TUN 模式</strong><span>{tunPending ? '处理中…' : kernelBusy ? '等待中…' : takeover.tunSubtitle}</span></span><Toggle on={tunEnabled} busy={tunPending} disabled={switchesBusy} onChange={value => void changeTun(value)} label="TUN 模式" /></div>
-              </div>
-            </section>
-            <section className="ov-subscription quota-card" aria-label="当前订阅">
-              <div className="ov-section-heading"><h2>当前订阅</h2><button type="button" className="link-action" onClick={() => navigate('profiles')}>管理<IconChevronRight size={12} /></button></div>
-              <div className="ov-subscription-main">
-                <div className="ov-profile-name">{profiles.length > 1 && activeId ? <Select value={activeId} options={profiles.map(profile => ({ value: profile.id, label: profile.name }))} ariaLabel="切换订阅" className="ov-profile-select" onChange={id => void activate(id)} /> : <strong className="quota-card-name" title={activeProfile?.name}>{activeProfile?.name ?? '未导入订阅'}</strong>}<span>{activeProfile ? `更新于 ${formatTime(activeProfile.updatedAt)}` : '导入订阅后显示配额和节点'}</span></div>
-                <div className="ov-quota-balance">{quota && quota.total > 0 ? <><span>剩余 <strong>{formatBytes(Math.max(quota.total - quotaUsed, 0))}</strong></span><span>{formatBytes(quotaUsed)} / {formatBytes(quota.total)}</span></> : <span>{activeProfile ? '暂无配额信息' : '尚未导入订阅'}</span>}</div>
-                {activeId && <button type="button" className="icon-btn" title="更新当前订阅" aria-label="更新当前订阅" disabled={refreshingIds.includes(activeId)} onClick={() => void refreshProfile(activeId)}>{refreshingIds.includes(activeId) ? <Spinner small /> : <IconRefresh size={13} />}</button>}
-              </div>
-              {quota && quota.total > 0 && <div className="ov-quota-footer"><div className="ov-quota-progress" role="progressbar" aria-label="订阅配额已用" aria-valuenow={Math.round(quotaRatio * 100)} aria-valuemin={0} aria-valuemax={100}><span className={`ov-quota-fill is-${quotaTone}`} style={{ width: `${quotaRatio * 100}%` }} /></div><span>{quota.expire > 0 ? `到期 ${formatExpire(quota.expire)}` : '不限期'}</span></div>}
-            </section>
-          </div>
           <div className="ov-main-row">
-            <section className="ov-traffic" aria-label="实时流量">
-              <div className="ov-pane-head"><h2>实时流量</h2><span className="ov-meta">{connected && connCount != null ? `${connCount} 个连接` : '最近 32 秒'} · 代理 / 直连</span><button type="button" className="link-action" onClick={() => window.dispatchEvent(new CustomEvent('ppclash:nav', { detail: 'traffic' }))}>详情<IconChevronRight size={12} /></button></div>
-              <div className="ov-traffic-chart">
-                <div className="ov-traffic-series"><span><i className="ov-legend is-up" />上传</span><SplitSparkline proxy={proxyUp} direct={directUp} color="var(--up)" /></div>
-                <div className="ov-traffic-series"><span><i className="ov-legend is-down" />下载</span><SplitSparkline proxy={proxyDown} direct={directDown} color="var(--down)" /></div>
-              </div>
-              <div className="ov-traffic-foot"><span><i className="ov-legend" />代理 ↑ {formatBytes(proxyUpBytes)}　↓ {formatBytes(proxyDownBytes)}</span><span><i className="ov-legend is-direct" />直连 ↑ {formatBytes(directUpBytes)}　↓ {formatBytes(directDownBytes)}</span></div>
+            <section className="ov-panel ov-chart-card" aria-label="实时流量">
+              <div className="ov-panel-head"><h2>实时流量</h2><div className="ov-chart-legend"><span className="is-up">上传</span><span className="is-down">下载</span></div></div>
+              <div className="ov-traffic-chart"><TrafficChart up={up} down={down} upColor="var(--up-chart)" downColor="var(--down-chart)" />
+                <div className="ov-chart-axis"><span>{formatSpeed(chartMax)}</span><span>{formatSpeed(chartMax / 2)}</span><span>0</span></div></div>
+              <div className="ov-chart-times"><span>32 秒前</span><span>现在</span></div>
+              <div className="ov-chart-footer"><span title={routeBreakdown}>{connected && connCount != null ? <><b>{connCount}</b> 个活动连接</> : '等待连接'}</span><PageLink page="connections" label="查看连接" /></div>
             </section>
-            <section className="ov-routing" aria-label="当前分组">
-              <div className="ov-pane-head"><h2>当前分组{displayedLatencyTarget === GITHUB_LATENCY_URL && <span className="ov-meta" title={GITHUB_LATENCY_URL}> · GitHub 延迟</span>}</h2><button type="button" className="link-action" title="测速当前分组" aria-label="测速当前分组" disabled={!runtimeMatches || testingGroup || testingCurrentNode} onClick={() => void testCurrentGroup()}>{testingGroup ? <Spinner small /> : <IconBolt size={13} />}{testingGroup ? '测速中' : '测速'}</button></div>
-              <div className="ov-group-picker"><select value={displayGroup?.name ?? ''} aria-label="浏览策略" disabled={!domain.groups.length} onChange={event => setInspectedGroup(event.target.value)}>{domain.groups.map(group => {
-                const route = resolveProxyRoute(domain, group.name);
-                const meaning = route.kind === 'multiple' ? '按连接分配' : route.kind === 'relay' ? '链式转发能力未核验' : proxyGroupKind(group.type);
-                return <option value={group.name} key={group.name}>{group.name} · {meaning}</option>;
-              })}{!domain.groups.length && <option value="">暂无分组</option>}</select>
-                <span className="ov-meta">{displayGroup ? proxyGroupKind(displayGroup.type) : '暂无分组'}{!canSelectMember && displayGroup ? ' · 只读' : ''}{!connected && displayGroup ? ' · 订阅预览' : ''}</span>
+            <section id="overview-members" className="ov-panel group-card ov-strategy-details ov-current-group" aria-label="当前分组">
+              <div className="group-head">
+                <h2 className="section-title">当前分组</h2>
+                <span className="ov-group-tag" title={displayGroup ? `${displayGroup.name} · ${resolveProxyRoute(domain, displayGroup.name).kind === 'multiple' ? '按连接分配' : resolveProxyRoute(domain, displayGroup.name).kind === 'relay' ? '链式转发能力未核验' : proxyGroupKind(displayGroup.type)}` : '暂无分组'}>{displayGroup?.name ?? '暂无分组'}</span>
+                <button type="button" className="link-action" title={displayedLatencyTarget === GITHUB_LATENCY_URL ? "测速当前分组 · GitHub 延迟" : "测速当前分组"} aria-label="测速当前分组" disabled={!runtimeMatches || testingGroup || testingCurrentNode} onClick={() => void testCurrentGroup()}>{testingGroup ? <Spinner small /> : <IconBolt size={13} />}{testingGroup ? '测速中' : '测速'}</button>
               </div>
               <div id="overview-nodes" className="ov-nodes-body">
                 <div ref={nodeListRef} className="ov-node-list" aria-label="当前分组候选" tabIndex={0}
@@ -641,77 +546,145 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
                     const selected = connected && displayNow === node.name;
                     const ms = nodeLatency(node);
                     return <button key={node.name} type="button" className={`ov-node group-node${selected ? ' selected' : ''}`} title={node.name} aria-pressed={selected} disabled={!canSelectMember || pendingNode !== null} onClick={() => void onSelectNode(node.name)}>
-                      <span className="ov-node-name"><NodeName name={node.name} /><span className="ov-node-type">{node.type}{selected && activeId && fixedNodes[activeId]?.[displayGroup!.name] === node.name ? ' · 固定' : ''}</span></span>
-                      <span className="ov-node-status">{pendingNode === node.name ? <Spinner small /> : selected && <span className="ov-node-current"><IconCheck size={11} />当前</span>}<span className={`ov-node-delay${ms === null ? ' is-failed' : ''}`}>{ms === undefined ? '未测' : ms === null ? '失败' : `${ms} ms`}</span></span>
+                      <span className="ov-node-name"><NodeName name={node.name} />{selected && activeId && fixedNodes[activeId]?.[displayGroup!.name] === node.name && <span className="ov-node-fixed">固定</span>}</span>
+                      <span className="ov-node-status">{pendingNode === node.name ? <Spinner small /> : selected && <span className="ov-node-current" title="当前节点" aria-label="当前节点"><IconCheck size={11} /></span>}<span className={`ov-node-delay${ms === null ? ' is-failed' : ''}`}>{ms === undefined ? '未测' : ms === null ? '失败' : `${ms} ms`}</span></span>
                     </button>;
                   })}
                   {groupNodes.length > visibleStart + visibleGroupNodes.length && <div aria-hidden="true" style={{ height: (groupNodes.length - visibleStart - visibleGroupNodes.length) * OVERVIEW_NODE_HEIGHT }} />}
                   {!groupNodes.length && <div className="ov-group-empty">{!activeProfile ? '导入订阅后显示节点' : displayGroup?.providers.some(provider => provider.state === 'error') ? '节点源读取失败，可在节点页重试' : displayGroup?.providers.some(provider => provider.state === 'waiting') ? '等待节点源加载' : '此分组暂无可见候选'}</div>}
                 </div>
               </div>
-              <button type="button" className="ov-all-nodes link-action" aria-label="查看全部节点" onClick={() => navigate('proxies')}>{groupNodes.length ? `全部 ${groupNodes.length} 个节点` : '全部节点'}<IconChevronRight size={12} /></button>
+              {displayedLatencyTarget === GITHUB_LATENCY_URL && <div className="ov-group-target">GitHub 延迟</div>}
             </section>
           </div>
-          <OverviewDiagnostics connected={connected} diagnostics={diagnostics} githubNode={stableGithubNode} />
+          <div className="ov-bottom-row">
+            <OverviewSubscriptionCard />
+            <OverviewDiagnostics connected={connected} diagnostics={diagnostics} githubNode={githubProbeNode} sysProxy={sysProxyEnabled} tun={tunEnabled} />
+          </div>
         </div>
       </div>
     </>
   );
 }
 
-function OverviewDiagnostics({ connected, diagnostics: d, githubNode }: {
-  connected: boolean; diagnostics: ReturnType<typeof useRouteDiagnostics>; githubNode: string;
+function OverviewSubscriptionCard() {
+  const profiles = useApp(s => s.profiles);
+  const activeId = useApp(s => s.activeId);
+  const activeProfile = profiles.find(profile => profile.id === activeId);
+  const refreshingIds = useApp(s => s.refreshingIds);
+  const activate = useApp(s => s.activate);
+  const refreshProfile = useApp(s => s.refreshProfile);
+  const quota = activeProfile?.userinfo ?? null;
+  const quotaUsed = quota ? quota.upload + quota.download : 0;
+  const quotaRatio = quota && quota.total > 0 ? Math.min(quotaUsed / quota.total, 1) : 0;
+  const quotaTone = quotaRatio >= 0.9 ? 'bad' : quotaRatio >= 0.7 ? 'warn' : 'ok';
+
+  return <section className="ov-panel quota-card" aria-label="当前订阅">
+    <div className="ov-panel-head"><h2>当前订阅</h2>
+      {activeId && <button type="button" className="icon-btn icon-btn-sm" title="更新当前订阅" aria-label="更新当前订阅" disabled={refreshingIds.includes(activeId)} onClick={() => void refreshProfile(activeId)}>{refreshingIds.includes(activeId) ? <Spinner small /> : <IconRefresh size={13} />}</button>}
+      <PageLink page="profiles" label={activeProfile ? '管理订阅' : '导入订阅'} />
+    </div>
+    <div className="ov-subscription-summary">
+      <div className="ov-subscription-identity"><span className="ov-subscription-icon"><IconProfiles size={18} /></span><div className="ov-subscription-copy">
+        {profiles.length > 1 && activeId
+          ? <Select value={activeId} options={profiles.map(profile => ({ value: profile.id, label: profile.name }))} ariaLabel="切换订阅" className="quota-profile-select" onChange={id => void activate(id)} />
+          : <strong className="quota-card-name" title={activeProfile?.name}>{activeProfile?.name ?? '尚未添加订阅'}</strong>}
+        <p>{activeProfile ? `${formatTime(activeProfile.updatedAt)} 更新${activeProfile.updateIntervalHours ? ` · 每 ${activeProfile.updateIntervalHours} 小时自动更新` : ''}` : '添加订阅后显示用量'}</p>
+      </div>{quota && quota.total > 0 && <div className="ov-quota-remaining">{formatBytes(Math.max(quota.total - quotaUsed, 0))}<small>剩余流量</small></div>}</div>
+      {quota && quota.total > 0 ? <>
+        <div className="ov-quota-progress" role="progressbar" aria-label="订阅配额已用" aria-valuenow={Math.round(quotaRatio * 100)} aria-valuemin={0} aria-valuemax={100}><span className={`ov-quota-fill is-${quotaTone}`} style={{ width: `${quotaRatio * 100}%` }} /></div>
+        <div className="quota-card-foot"><span>已用 {formatBytes(quotaUsed)} / {formatBytes(quota.total)}</span><span>{quota.expire > 0 ? `${formatExpire(quota.expire)} 到期` : '不限期'}</span></div>
+      </> : <div className="quota-card-foot"><span className="quota-empty">{activeProfile ? '暂无配额信息' : '流量用量会在添加订阅后显示'}</span></div>}
+    </div>
+  </section>;
+}
+
+function OverviewDiagnostics({ connected, diagnostics: d, githubNode, sysProxy, tun }: {
+  connected: boolean; diagnostics: ReturnType<typeof useRouteDiagnostics>; githubNode: string; sysProxy: boolean; tun: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const busy = d.egressLoading || d.servicesLoading || d.ipQualityLoading || d.leakPhase === 'running';
+  const busy = d.servicesLoading || d.leakPhase === 'running';
   const services = [['google', 'Google', siGoogle], ['youtube', 'YouTube', siYoutube], ['github', 'GitHub', siGithub],
-    ['openai', 'ChatGPT', siOpenai], ['anthropic', 'Claude', siAnthropic]] as const;
+    ['openai', 'OpenAI', siOpenai], ['anthropic', 'Claude', siAnthropic]] as const;
   const quality = d.ipQuality;
   const qualityTone = d.ipQualityError ? 'bad' : quality?.risk === '高' || quality?.risk === '中' ? 'warn' : quality?.risk === '低' ? 'ok' : 'pending';
-  const score = quality && quality.risk !== '未知' && Number.isFinite(quality.score) ? Math.max(0, Math.min(100, quality.score)) : null;
   useEffect(() => {
     if (!expanded) return;
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setExpanded(false); toggleRef.current?.focus(); } };
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
   }, [expanded]);
-  return <div className="ov-diagnostic-row">
-    <section className="ov-diagnostic-card" aria-label="服务连通">
-      <div className="ov-section-heading"><h2>服务连通</h2><button type="button" className="icon-btn icon-btn-sm" title="刷新出口诊断" aria-label="刷新出口诊断" disabled={!connected || busy} onClick={d.runServiceProbe}>{busy ? <Spinner small /> : <IconRefresh size={13} />}</button></div>
-      <div className="ov-service-list">{services.map(([id, name, icon]) => {
+  return <>
+    <section className="ov-panel services-card" aria-label="服务连通">
+      <div className="ov-panel-head"><h2>服务连通</h2><span className="ov-probe-state">{busy ? '检测中' : !connected ? '连接后检测' : !Object.keys(d.serviceMap).length ? '待检测' : services.filter(([id]) => !d.serviceMap[id]?.ok).length ? '部分待确认' : '连接正常'}</span>
+        <button type="button" className="icon-btn icon-btn-sm" title="刷新出口诊断" aria-label="刷新出口诊断" disabled={!connected || busy} onClick={d.runServiceProbe}>{busy ? <Spinner small /> : <IconRefresh size={13} />}</button>
+      </div>
+      <div className="service-tiles">{services.filter(([id]) => ['google', 'github', 'openai'].includes(id)).map(([id, name, icon]) => {
         const row = d.serviceMap[id];
         const tone = row ? row.ok ? 'ok' : row.status === 'error' ? 'warn' : 'bad' : 'pending';
-        return <div className="ov-check-row service-tile" key={id} title={id === 'github' && githubNode ? `固定出口：${githubNode}` : row?.detail ?? undefined}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon.path} fill="currentColor" /></svg><span>{name}{id === 'github' && githubNode && <small className="ov-service-fixed">固定出口</small>}</span>
-          <strong className={`diagnostic-status-${tone}`}>{row ? row.ok ? `${row.latency_ms ?? '—'} ms` : row.status === 'error' ? '检测异常' : '不可达' : busy ? '检测中' : '未测'}</strong>
+        return <div className="service-tile" key={id} title={id === 'github' && githubNode ? `测速节点：${githubNode}` : row?.detail ?? undefined}>
+          <span className="service-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icon.path} fill="currentColor" /></svg></span>
+          <span className="service-name">{name}</span>
+          <strong className={`service-latency diagnostic-status-${tone}`}>{row ? row.ok ? `${row.latency_ms ?? '—'} ms` : row.status === 'error' ? '异常' : '不可达' : busy ? '检测中' : '未测'}</strong>
         </div>;
       })}</div>
     </section>
-    <section className={`ov-diagnostic-card ov-quality diagnostic-status-${qualityTone}`} aria-label="IP 质量">
-      <div className="ov-section-heading"><h2>IP 质量</h2><span className="ov-meta">{d.ipQualityLoading ? '检测中' : d.ipQualityError ? '检测失败' : quality ? '参考估算' : '待确认'}</span></div>
-      <div className="ov-quality-main"><div><strong>{quality?.kind ?? '类型待确认'}</strong><span className={`diagnostic-status-${qualityTone}`}>{quality ? `${quality.risk}风险` : connected ? '等待检测' : '连接后检测'}</span></div>
-        <div className="ov-quality-ring" role="img" aria-label={score === null ? '纯净度待确认' : `参考纯净度 ${score} 分`} style={{ '--quality-score': `${score ?? 0}%` } as React.CSSProperties}><b>{score ?? '—'}<small>纯净度</small></b></div>
+    <div className="ov-evidence-note"><IconSecurity size={14} /><span>{connected ? '检测结果以当前路由为准' : '连接后可检查出口与防护'}</span>
+      <button ref={toggleRef} type="button" className="icon-btn icon-btn-sm ov-evidence-toggle" aria-label={expanded ? '收起检测证据' : '查看检测证据'} title={expanded ? '收起检测证据' : '查看检测证据'} aria-expanded={expanded} aria-controls="diagnostic-details" onClick={() => setExpanded(value => !value)}><IconChevronRight size={15} /></button>
+    </div>
+    {expanded && <div id="diagnostic-details" className="ov-diagnostic-popover" role="region" aria-label="出口诊断详情">
+    <header className="ov-evidence-heading">
+      <div><h2>出口诊断</h2><span>{d.servicesAt ? `检测于 ${formatTime(d.servicesAt)}` : connected ? '等待检测' : '连接后检测'}</span></div>
+      <button type="button" className="icon-btn" aria-label="关闭出口诊断" title="关闭出口诊断" onClick={() => { setExpanded(false); toggleRef.current?.focus(); }}><IconX size={15} /></button>
+    </header>
+    <section className="diag-card ip-quality-card" aria-label="IP 质量">
+      <div className="diag-head">
+        <div className="diag-heading"><div className="diag-title"><i className={`diag-dot ${qualityTone === 'ok' ? 'is-ok' : qualityTone === 'pending' ? '' : 'is-warn'}`} aria-hidden="true" />IP 质量</div></div>
+        <div className="spacer" />
+        <button type="button" className="icon-btn icon-btn-sm" title="重新检测 IP 质量" aria-label="重新检测 IP 质量" disabled={!connected || d.ipQualityLoading} onClick={d.loadIpQuality}>{d.ipQualityLoading ? <Spinner small /> : <IconRefresh size={13} />}</button>
       </div>
-      <div className="ov-quality-foot">{[['ASN', quality?.asn], ['地区', quality?.country], ['运营商', quality?.isp ?? quality?.org]].map(([label, value]) => <span key={label} title={value ?? undefined}>{label}<b>{value || '待确认'}</b></span>)}</div>
+      <div className="ip-quality-main">
+        <div className="ip-quality-value">
+          <div className="ip-quality-kind">
+            <strong>{quality?.kind ?? '待确认'}</strong>
+            <span className={`diagnostic-status-${qualityTone}`}>{quality ? `${quality.risk}风险` : connected ? '等待检测' : '连接后检测'}</span>
+          </div>
+          <div className="ip-quality-rows">{[['ASN', quality?.asn], ['地区', quality?.country], ['运营商', quality?.isp ?? quality?.org]].map(([label, value]) => (
+            <div className="ip-quality-row" key={label}><i>{label}</i><b title={value ?? undefined}>{value || '—'}</b></div>
+          ))}</div>
+        </div>
+        <div className="ov-quality-ring" role="img" aria-label={quality && quality.risk !== '未知' ? `参考评分 ${quality.score} 分` : '参考评分待确认'} style={{ '--quality-score': `${quality && quality.risk !== '未知' ? Math.max(0, Math.min(100, quality.score)) : 0}%` } as React.CSSProperties}><b>{quality && quality.risk !== '未知' ? quality.score : '—'}<small>参考评分</small></b></div>
+      </div>
       {d.ipQualityError && <span className="ov-quality-error" role="status" title={d.ipQualityError}>{d.ipQualityError}</span>}
     </section>
-    <section className="ov-diagnostic-card" aria-label="泄漏检查">
-      <div className="ov-section-heading diagnostics-heading"><h2>泄漏检查</h2><button ref={toggleRef} type="button" className="link-action" aria-expanded={expanded} aria-controls="diagnostic-details" onClick={() => setExpanded(value => !value)}>{expanded ? '收起详情' : '查看详情'}<IconChevronRight size={12} /></button></div>
-      <div className="ov-leak-list">{[['ip', '出口'], ['dns', 'DNS'], ['webrtc', 'WebRTC']].map(([id, label]) => {
+    <section className="diag-card protection-card" aria-label="泄漏检查">
+      <div className="diag-head">
+        <div className="diag-heading"><div className="diag-title">泄漏检查</div></div>
+        <div className="spacer" />
+        <PageLink page="security" label="安全设置" icon={<IconSecurity size={15} />} />
+      </div>
+      <div className="leak-rows">{[['ip', '出口 IP'], ['dns', 'DNS'], ['stun', 'STUN'], ['webrtc', 'WebRTC']].map(([id, label]) => {
         const row = d.leakRows.find(row => row.id === id);
-        return <div className="ov-check-row" key={id} title={row?.text}><span>{label}</span><strong className={`diagnostic-status-${row?.status === 'info' ? 'warn' : row?.status ?? 'pending'}`}>{row?.text ?? (d.leakPhase === 'running' ? '检测中' : '尚未检查')}</strong></div>;
+        const status = row ? row.status === 'info' ? 'warn' : row.status : d.leakPhase === 'running' ? 'pending' : 'pending';
+        return <div className="leak-row" key={id} title={row?.text}><i className={`leak-dot diagnostic-status-${status}`} aria-hidden="true" /><span className="leak-label">{label}</span><strong className={`diagnostic-status-${status}`}>{row?.text ?? (d.leakPhase === 'running' ? '检测中…' : '尚未检查')}</strong></div>;
       })}</div>
-      <div className="ov-diagnostic-note">{d.leakRows.find(row => row.id === 'stun')?.text ?? '策略开启与检测结果分别确认'}</div>
+      {sysProxy && !tun && <p className="ov-diagnostic-note">系统代理不接管 UDP / WebRTC / DNS，建议开启 TUN</p>}
     </section>
-    {expanded && <div id="diagnostic-details" className="ov-diagnostic-popover" role="region" aria-label="出口诊断详情">
-      <div className="ov-section-heading"><h2>出口诊断详情</h2><button type="button" className="btn btn-ghost btn-sm" onClick={() => { setExpanded(false); toggleRef.current?.focus(); }}>关闭</button></div>
-      <p className="ov-diagnostic-note">服务仅检测连接，不检查账号权限或地区限制；IP 质量按公开信息估算。</p>
-      <div className="ov-diagnostic-detail-grid">{services.map(([id, name]) => <div key={id}><strong>{name}{id === 'github' && githubNode ? ' · 固定出口' : ''}</strong><p>{d.serviceMap[id]?.detail || '尚无检测详情'}</p></div>)}</div>
-      {d.ipQualityError && <p className="diagnostic-status-bad">{d.ipQualityError}</p>}
-      <p className="ov-diagnostic-note">WebRTC 检测仅限本应用。STUN 防护按内核运行规则检查。</p>
-      {d.leakRows.map(row => <div className="ov-check-row" key={row.id}><span>{row.label}</span><strong className={`diagnostic-status-${row.status === 'info' ? 'warn' : row.status}`}>{row.text}</strong></div>)}
-      <button type="button" className="link-action" onClick={() => navigate('security')}>安全设置<IconChevronRight size={12} /></button>
+      <section className="ov-evidence-services" aria-label="服务检测结果">
+        <div className="ov-section-heading"><h3>服务连通</h3><span className="ov-diagnostic-note">仅检测连接，不代表账号权限或地区可用性</span></div>
+        <div className="ov-diagnostic-detail-grid" role="list">{services.map(([id, name, icon]) => {
+          const row = d.serviceMap[id];
+          const tone = row ? row.ok ? 'ok' : row.status === 'error' ? 'warn' : 'bad' : 'pending';
+          return <div className="ov-evidence-service-row" role="listitem" key={id}>
+            <span className="ov-evidence-service-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d={icon.path} fill="currentColor" /></svg></span>
+            <div className="ov-evidence-service-name"><strong>{name}</strong>{id === 'github' && githubNode && <span className="ov-evidence-service-route"><NodeName name={githubNode} /></span>}</div>
+            <span className={`ov-evidence-service-value diagnostic-status-${tone}`}>{row ? row.ok ? `${row.latency_ms ?? '—'} ms` : row.status === 'error' ? '检测异常' : '不可达' : busy ? '检测中…' : '尚未检测'}</span>
+            {row?.detail && <p className="ov-evidence-service-detail">{row.detail}</p>}
+          </div>;
+        })}</div>
+      </section>
+      <footer className="ov-evidence-scope"><span>IP 评分依据公开信息估算；WebRTC 仅检测本应用，STUN 依据内核运行规则检查。</span></footer>
     </div>}
-  </div>;
+  </>;
 }

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { EmptyState, MiniSwitch, ReadError, Select, Spinner } from '../components/ui';
-import { IconChevronDown, IconInfo, IconPlus, IconRefresh, IconRules, IconSearch, IconTrash, IconX } from '../components/icons';
-import { getLifecycleToken, isLifecycleCurrent, useApp, type CustomRule } from '../store/app';
+import { VirtualList } from '../components/VirtualList';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { EmptyState, MiniSwitch, ReadError, Segmented, Select, Spinner } from '../components/ui';
+import { IconChevronDown, IconEdit, IconInfo, IconPlus, IconRefresh, IconRules, IconSearch, IconTrash, IconX } from '../components/icons';
+import { getLifecycleToken, isLifecycleCurrent, useApp } from '../store/app';
+import type { CustomRule } from '../domain/app';
 import { parseSubscriptionRules } from '../core/subscription';
 import type { RuleEditState } from '../core/generator';
 import { api } from '../core/api';
@@ -49,6 +51,7 @@ export function RulesPage() {
   const kernelReading = useRef(false);
   const mutationBusy = useRef(false);
   const [query, setQuery] = useState('');
+  const [ruleView, setRuleView] = useState<'custom' | 'subscription' | 'effective'>('custom');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [type, setType] = useState('DOMAIN-SUFFIX');
@@ -60,6 +63,8 @@ export function RulesPage() {
   const [showIO, setShowIO] = useState(false);
   const [ioText, setIoText] = useState('');
   const [subQuery, setSubQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
+  const deferredSubQuery = useDeferredValue(subQuery);
   const [ruleSaving, setRuleSaving] = useState(false);
   const busy = saving || ruleSaving;
 
@@ -106,12 +111,12 @@ export function RulesPage() {
   );
 
   const filteredSubscriptionRules = useMemo(() => {
-    const q = subQuery.trim().toLowerCase();
+    const q = deferredSubQuery.trim().toLowerCase();
     if (!q) return orderedSubscriptionRules;
     return orderedSubscriptionRules.filter((r) =>
       `${r.type} ${r.payload} ${r.target}`.toLowerCase().includes(q)
     );
-  }, [orderedSubscriptionRules, subQuery]);
+  }, [orderedSubscriptionRules, deferredSubQuery]);
 
   const ruleTargetOptions = (current: string) => {
     const base = [
@@ -268,7 +273,7 @@ export function RulesPage() {
     const next = editingId
       ? rules.map((r) => (r.id === editingId ? rule : r))
       : [...rules, rule];
-    if (await persist(next, editingId ? '规则已更新' : '规则已添加')) resetEditor();
+    if (await persist(next, editingId ? '规则已更新' : '规则已添加')) { resetEditor(); setRuleView('custom'); }
   };
 
   const toggleRule = async (id: string, on: boolean) => {
@@ -324,6 +329,7 @@ export function RulesPage() {
       if (await persist(next, `已合并 ${added} 条新规则`)) {
         setShowIO(false);
         setIoText('');
+        setRuleView('custom');
       }
     } catch (e) {
       notify('error', `导入失败：${(e as Error).message}`);
@@ -331,12 +337,12 @@ export function RulesPage() {
   };
 
   const filteredKernel = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     if (!q) return kernelRules;
     return kernelRules.filter((r) =>
       `${r.type} ${r.payload} ${r.proxy}`.toLowerCase().includes(q)
     );
-  }, [kernelRules, query]);
+  }, [kernelRules, deferredQuery]);
 
   return (
     <>
@@ -422,7 +428,7 @@ export function RulesPage() {
                 </button>
               )}
             </div>
-            <div className="rule-hint">MATCH 匹配其余流量</div>
+            {type === 'MATCH' && <div className="rule-hint">MATCH 匹配其余流量</div>}
           </section>
 
           {showIO && (
@@ -454,7 +460,15 @@ export function RulesPage() {
             </section>
           )}
 
-          <section className="dp-rule-section dp-rule-custom">
+          <div className="dp-rule-navigation">
+            <Segmented ariaLabel="规则视图" value={ruleView} onChange={setRuleView} options={[
+              { value: 'custom', label: <>自定义 <span>{rules.length}</span></> },
+              { value: 'subscription', label: <>订阅 <span>{orderedSubscriptionRules.length}</span></> },
+              { value: 'effective', label: <>生效 <span>{kernelRules.length}</span></> },
+            ]} />
+          </div>
+
+          <section className="dp-rule-section dp-rule-custom" aria-label="自定义规则" hidden={ruleView !== 'custom'}>
             <div className="dp-section-heading">
               <div className="dp-section-title"><h2 className="section-title">自定义规则</h2><p>手动维护的匹配内容与目标</p></div>
               <div className="spacer" />
@@ -463,16 +477,19 @@ export function RulesPage() {
             {rules.length === 0 ? (
               <div className="rule-empty">暂无自定义规则</div>
             ) : (
-              <div className="custom-rule-list">
-                {rules.map((r) => (
+              <>
+              <div className="dp-rule-columns" aria-hidden="true"><span>类型</span><span>内容</span><span>目标</span><span>操作</span></div>
+              <VirtualList className="custom-rule-list" label="自定义规则列表" items={rules} rowHeight={44}
+                itemKey={r => r.id} renderItem={r => (
                   <div key={r.id} className="custom-rule-row">
-                    <span className="tag">{r.type}</span>
+                    <span className="dp-rule-type" title={r.type}>{r.type}</span>
                     <span className="custom-rule-payload" title={r.payload}>
                       {r.type === 'MATCH' ? '默认兜底' : r.payload}
                     </span>
                     <span className="custom-rule-target" title={r.target}>
                       {r.target === '__CURRENT__' ? '当前节点' : r.target}
                     </span>
+                    <div className="dp-rule-actions">
                     <MiniSwitch
                       on={r.enabled}
                       onChange={(v) => void toggleRule(r.id, v)}
@@ -481,7 +498,9 @@ export function RulesPage() {
                     />
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm"
+                      className="icon-btn"
+                      title="编辑规则"
+                      aria-label="编辑规则"
                       disabled={busy}
                       onClick={() => {
                         setEditingId(r.id);
@@ -491,7 +510,7 @@ export function RulesPage() {
                         setEnabled(r.enabled);
                       }}
                     >
-                      编辑
+                      <IconEdit size={13} />
                     </button>
                     <button
                       type="button"
@@ -503,13 +522,14 @@ export function RulesPage() {
                     >
                       <IconTrash size={13} />
                     </button>
+                    </div>
                   </div>
-                ))}
-              </div>
+                )} />
+              </>
             )}
           </section>
 
-          <section className="dp-rule-section dp-rule-subscription">
+          <section className="dp-rule-section dp-rule-subscription" aria-label="订阅规则" hidden={ruleView !== 'subscription'}>
             <div className="dp-section-heading">
               <div className="dp-section-title"><h2 className="section-title">订阅规则</h2><p>{activeProfile ? `来自 ${activeProfile.name}` : '来自活动订阅'}</p></div>
               <div className="spacer" />
@@ -560,20 +580,15 @@ export function RulesPage() {
                     显示 {filteredSubscriptionRules.length} / {orderedSubscriptionRules.length}
                   </span>
                 </div>
-                <div className="sub-rule-list">
-                  {filteredSubscriptionRules.map((r) => {
+                <div className="dp-rule-columns" aria-hidden="true"><span>类型</span><span>内容</span><span>目标</span><span>操作</span></div>
+                <VirtualList className="sub-rule-list" label="订阅规则列表" items={filteredSubscriptionRules} rowHeight={44}
+                  resetKey={`${activeId}:${deferredSubQuery}`} itemKey={r => r.index} renderItem={r => {
                     const edit = activeProfile.ruleEdits?.edits[r.index];
                     const on = edit?.enabled !== false;
                     const target = edit?.target || r.target;
                     return (
                       <div key={r.index} className={`sub-rule-row${on ? '' : ' is-off'}`}>
-                        <MiniSwitch
-                          on={on}
-                          onChange={(v) => void saveRuleEdit(r.index, { enabled: v })}
-                          label="启用订阅规则"
-                          disabled={busy}
-                        />
-                        <span className="tag">{r.type}</span>
+                        <span className="dp-rule-type" title={r.type}>{r.type}</span>
                         <span className="sub-rule-payload" title={r.raw}>
                           {r.type === 'MATCH' ? '默认兜底' : r.payload}
                         </span>
@@ -585,10 +600,18 @@ export function RulesPage() {
                           disabled={busy}
                           className="sub-rule-target"
                         />
-                        <div className="sub-rule-move">
+                        <div className="dp-rule-actions">
+                          <MiniSwitch
+                            on={on}
+                            onChange={(v) => void saveRuleEdit(r.index, { enabled: v })}
+                            label="启用订阅规则"
+                            disabled={busy}
+                          />
+                          <div className="sub-rule-move">
                           <button
                             type="button"
                             className="icon-btn"
+                            title="上移订阅规则"
                             aria-label="上移订阅规则"
                             disabled={busy}
                             onClick={() => void moveSubscriptionRule(r.index, -1)}
@@ -598,22 +621,23 @@ export function RulesPage() {
                           <button
                             type="button"
                             className="icon-btn"
+                            title="下移订阅规则"
                             aria-label="下移订阅规则"
                             disabled={busy}
                             onClick={() => void moveSubscriptionRule(r.index, 1)}
                           >
                             <IconChevronDown size={13} />
                           </button>
+                          </div>
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  }} />
               </>
             )}
           </section>
 
-          <section className="dp-rule-section dp-rule-effective">
+          <section className="dp-rule-section dp-rule-effective" aria-label="当前生效规则" hidden={ruleView !== 'effective'}>
             <div className="dp-section-heading">
               <div className="dp-section-title"><h2 className="section-title">当前生效规则</h2><p>内核当前返回的规则，只读</p></div>
               <div className="spacer" />
@@ -651,14 +675,15 @@ export function RulesPage() {
                   </span>
                 </div>
                 <div className="kernel-rule-list">
-                  <div className="rule-row rule-head">
+                  <div className="dp-rule-columns" aria-hidden="true">
                     <span>类型</span>
                     <span>内容</span>
                     <span>目标</span>
                   </div>
-                  {filteredKernel.map((r, i) => (
-                    <div key={`${i}-${r.type}-${r.payload}`} className="rule-row">
-                      <span className="tag">{r.type}</span>
+                  <VirtualList label="生效规则列表" items={filteredKernel} rowHeight={40} resetKey={deferredQuery}
+                    maxHeight={340} itemKey={(r,i) => `${i}-${r.type}-${r.payload}`} renderItem={r => (
+                    <div className="rule-row">
+                      <span className="dp-rule-type" title={r.type}>{r.type}</span>
                       <span className="rule-payload" title={r.payload}>
                         {r.payload}
                       </span>
@@ -666,7 +691,7 @@ export function RulesPage() {
                         {r.proxy}
                       </span>
                     </div>
-                  ))}
+                  )} />
                   {filteredKernel.length === 0 && <EmptyState icon={<IconSearch size={19} />} title="没有匹配的规则" action={<button type="button" className="btn btn-sm" onClick={() => setQuery('')}>清空筛选</button>} />}
                 </div>
               </>

@@ -73,7 +73,7 @@ it('选择器互斥，键盘打开第二个时第一个立即退出可访问树'
 
 it('共享控件、数据行和内容卡从令牌获得标准与紧凑尺度', async () => {
   const style = document.createElement('style');
-  style.textContent = ['tokens', 'theme', 'desktop', 'motion'].map(name =>
+  style.textContent = ['tokens', 'theme', 'legacy-components', 'legacy-pages', 'legacy-platform', 'legacy-compatibility', 'desktop', 'segmented', 'motion'].map(name =>
     readFileSync(`src/styles/${name}.css`, 'utf8')).join('\n');
   document.head.append(style);
   document.documentElement.dataset.theme = 'light';

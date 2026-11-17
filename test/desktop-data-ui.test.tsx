@@ -10,7 +10,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 const mock = vi.hoisted(() => ({ mihomo: vi.fn(), readKernelLog: vi.fn(), notify: vi.fn(), resolveProcessIcon: vi.fn(), exportLogFile: vi.fn() }));
 vi.mock('../src/core/api', () => ({ isTauri: true, api: mock }));
 vi.mock('../src/store/app', () => {
-  const state = { kernelPhase: 'running', notify: mock.notify };
+  const state = { kernelPhase: 'running', notify: mock.notify, settings: { textSize: 'standard' } };
   return { useApp: Object.assign((selector: (value: typeof state) => unknown) => selector(state), { getState: () => state }) };
 });
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn() }));

@@ -1,32 +1,43 @@
-/* PP Clash 设计变量：颜色与排版的唯一数值来源。组件按语义引用，详见 DESIGN.md。 */
+/* PP Clash 设计变量：颜色与排版的唯一数值来源。组件按语义引用。 */
 
 :root[data-theme='light'] {
-  --bg: #f6f7fa;
-  --sidebar-bg: #ebeff8;
+  --bg: #f7f8fa;
+  --workspace-bg: #e9edf2;
+  --card-surface: color-mix(in srgb, var(--surface) 80%, transparent);
+  --card-surface-hover: color-mix(in srgb, var(--surface) 92%, transparent);
+  /* 外框比主体低一档明度，让主体轮廓在浅色模式中也清楚。 */
+  --window-frame: #d6dfe9;
+  --sidebar-bg: #f3f6f9;
   --surface: #ffffff;
-  --surface-2: #f1f3f7;
-  --surface-3: #e6e8ee;
+  --surface-2: #f1f3f6;
+  --surface-3: #e9eaed;
 
-  --border: #e6e8ee;
-  --border-soft: #e6e8ee;
-  --border-strong: #c9ced9;
+  --border: #e9edf1;
+  --border-soft: #e9edf1;
+  --border-strong: #d5dbe2;
 
-  --text-primary: #242833;
-  --text-secondary: #626978;
-  --text-muted: #626978;
+  /* 浅色底轨需比灰蓝窗口底更深，避免未选中区域融入背景。 */
+  --segment-track: color-mix(in srgb, var(--border-strong) 86%, transparent);
+  --segment-track-shadow: inset 0 1px 2px color-mix(in srgb, var(--text-primary) 7%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--surface) 42%, transparent);
 
-  --accent: #3768db;
-  --accent-text: #2455c0;
-  --accent-hover: #2858c6;
+  --text-primary: #22252d;
+  --text-secondary: #626773;
+  --text-muted: #656b77;
+
+  --accent: #3568e8;
+  --accent-text: #2457d3;
+  --accent-hover: #2457d3;
   --accent-contrast: #ffffff;
 
   /* 主题语义前景独立定义，上传沿用橙色语义。 */
-  --success: #26734b;
-  --warning: #906014;
-  --danger: #b0413a;
+  --success: #24805d;
+  --warning: #8b590e;
+  --danger: #ba4c4c;
 
   --up: #906014;
+  --up-chart: #c28323;
   --down: #3768db;
+  --down-chart: #4478ec;
 
   --brand: var(--accent);
   --brand-soft: var(--accent-soft);
@@ -36,6 +47,10 @@
   --sidebar-material: linear-gradient(145deg, #ffffffa6, #e1e8f680);
   --shadow-raise: 0 2px 6px rgb(16 24 40 / 0.06), 0 16px 36px -22px rgb(16 24 40 / 0.28);
   --shadow-pop: 0 24px 64px -28px rgb(16 24 40 / 0.3);
+  --tray-surface: #f7f8fa;
+  --tray-control: #e7ebf1;
+  --tray-list: #ffffffc9;
+  --tray-selected: #dce6fd;
   --tray-border: rgb(16 24 40 / 0.18);
   --tray-shadow: 0 2px 5px rgb(16 24 40 / 0.1), 0 8px 20px -6px rgb(16 24 40 / 0.28);
   --shadow-primary: none;
@@ -43,7 +58,7 @@
 
   color-scheme: light;
 
-  --accent-soft: #ecf1ff;
+  --accent-soft: #edf2ff;
 
   /* 概览状态卡：整块品牌色实底，正文用同族白。 */
   --hero-fill: linear-gradient(168deg, #3464d5, #2f5ed0);
@@ -53,41 +68,48 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #24262d;
-  --sidebar-bg: #292c38;
-  --surface: #2e313a;
-  --surface-2: #252832;
-  --surface-3: #414550;
+  --bg: #21252b;
+  --window-frame: #10151c;
+  --sidebar-bg: #242c35;
+  --surface: #2d333b;
+  --surface-2: #292f37;
+  --surface-3: #36383f;
 
-  --border: #414550;
-  --border-soft: #414550;
-  --border-strong: #5e6575;
+  --border: #39414b;
+  --border-soft: #39414b;
+  --border-strong: #485460;
 
-  --text-primary: #f0f1f5;
-  --text-secondary: #afb5c4;
-  --text-muted: #afb5c4;
+  --text-primary: #edeef1;
+  --text-secondary: #b2b6c0;
+  --text-muted: #a1a6b2;
 
-  --accent: #8dabff;
-  --accent-text: #b6caff;
-  --accent-hover: #a3bcff;
-  --accent-contrast: #142341;
+  --accent: #78a0ff;
+  --accent-text: #91b0ff;
+  --accent-hover: #91b0ff;
+  --accent-contrast: #17233d;
 
   /* 深色语义前景不继承浅色主题的计算值。 */
-  --success: #91cda9;
-  --warning: #e7c082;
-  --danger: #ffa398;
+  --success: #81c7a4;
+  --warning: #e2b56e;
+  --danger: #f69b98;
 
-  --up: #e7c082;
-  --down: #8dabff;
+  --up: #e2b56e;
+  --up-chart: #d9ab65;
+  --down: #8bacff;
+  --down-chart: #8bacff;
 
   --brand: var(--accent);
   --brand-soft: var(--accent-soft);
 
   --shadow-card: 0 2px 5px #00000012, 0 12px 32px #00000012;
   --shadow-control: 0 1px 3px #0004;
-  --sidebar-material: linear-gradient(145deg, #53586c59, #292c3866);
+  --sidebar-material: linear-gradient(145deg, #394a5570, #242c35a8);
   --shadow-raise: 0 2px 8px rgb(0 0 0 / 0.3), 0 18px 40px -24px rgb(0 0 0 / 0.8);
   --shadow-pop: 0 26px 68px -30px rgb(0 0 0 / 0.9);
+  --tray-surface: #20262e;
+  --tray-control: #333d49;
+  --tray-list: #151c24b8;
+  --tray-selected: #354b71;
   --tray-border: rgb(255 255 255 / 0.2);
   --tray-shadow: 0 2px 5px rgb(0 0 0 / 0.3), 0 8px 20px -6px rgb(0 0 0 / 0.65);
   --shadow-primary: none;
@@ -95,7 +117,7 @@
 
   color-scheme: dark;
 
-  --accent-soft: #364364;
+  --accent-soft: #35435f;
 
   /* 深色下品牌色明度偏高，实底改深一档保证白字对比。 */
   --hero-fill: linear-gradient(168deg, #2f56cc, #234099);
@@ -105,10 +127,24 @@
 }
 
 :root {
-  --sidebar-w: 174px;
+  /* 内容材质仅透明背景，不降低文字透明度，也不为每张卡片新增模糊层。 */
+  --workspace-bg: var(--bg);
+  --card-surface: color-mix(in srgb, var(--surface) 64%, transparent);
+  --card-surface-hover: color-mix(in srgb, var(--surface) 76%, transparent);
+  --card-surface-selected: color-mix(in srgb, var(--accent) 9%, var(--card-surface));
+  --sidebar-w: 180px;
+  --workspace-inset: 12px;
   --titlebar-h: 40px;
   --control-height: 32px;
   --control-height-compact: 28px;
+  /* 分段胶囊以资源管理页为基准，跨页面与小面板共享。 */
+  --segment-height: 32px;
+  --segment-item-height: 24px;
+  --segment-inset: 2px;
+  --segment-padding-inline: 14px;
+  --segment-gap: 6px;
+  --segment-track: color-mix(in srgb, var(--surface-3) 65%, transparent);
+  --segment-track-shadow: inset 0 1px 2px color-mix(in srgb, var(--text-primary) 4%, transparent);
   --row-height: 48px;
   --nav-row-height: 36px;
   --switch-width: 40px;
@@ -118,21 +154,22 @@
   --radius-card: 16px;
   --radius-control: 10px;
   --radius-pill: 999px;
+  --radius-field: var(--radius-pill);
   --page-pad: 24px;
   --gap: 12px;
   --switch-thumb: #ffffff;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
   --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', ui-monospace, monospace;
   /* 标准桌面角色；辅助与功能标签不小于元信息字号。 */
-  --type-page: 21px;
+  --type-page: 23px;
   --type-section: 13px;
-  --type-body: 13px;
+  --type-body: 12.5px;
   --type-label: 12px;
-  --type-control: 12px;
+  --type-control: 11.5px;
   --type-meta: 11px;
   --type-hint: var(--type-meta);
   --type-micro: var(--type-meta);
-  --type-metric: 22px;
+  --type-metric: 27px;
   --type-gauge: 20px;
   --type-subtitle: 16px;
   --weight-regular: 400;
@@ -150,29 +187,37 @@
 
 /* 只改变语义尺度，不缩放整个窗口；布局与控件使用这些变量适配。 */
 :root[data-text-size='larger'] {
-  --type-page: 22px;
+  --type-page: 24px;
   --type-section: 14px;
+  --type-body: 13px;
+  --type-label: 12.5px;
+  --type-control: 12px;
+  --type-meta: 11.5px;
+  --type-hint: var(--type-meta);
+  --type-micro: var(--type-meta);
+  --type-metric: 28px;
+  --type-gauge: 21px;
+  --type-subtitle: 17px;
+}
+
+:root[data-text-size='large'] {
+  --type-page: 25px;
+  --type-section: 15px;
   --type-body: 14px;
   --type-label: 13px;
   --type-control: 13px;
   --type-meta: 12px;
   --type-hint: var(--type-meta);
   --type-micro: var(--type-meta);
-  --type-metric: 23px;
-  --type-gauge: 21px;
-  --type-subtitle: 17px;
-}
-
-:root[data-text-size='large'] {
-  --type-page: 23px;
-  --type-section: 15px;
-  --type-body: 15px;
-  --type-label: 14px;
-  --type-control: 14px;
-  --type-meta: 13px;
-  --type-hint: var(--type-meta);
-  --type-micro: var(--type-meta);
-  --type-metric: 24px;
+  --type-metric: 29px;
   --type-gauge: 22px;
   --type-subtitle: 18px;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --card-surface: var(--surface);
+    --card-surface-hover: var(--surface);
+    --card-surface-selected: var(--accent-soft);
+  }
 }

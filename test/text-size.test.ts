@@ -141,9 +141,9 @@ it('共享桌面令牌提供统一控件、行、图标、开关和圆角尺寸'
 });
 
 it.each([
-  ['standard', 21, 13, 12, 11],
-  ['larger', 22, 14, 13, 12],
-  ['large', 23, 15, 14, 13],
+  ['standard', 23, 12.5, 12, 11],
+  ['larger', 24, 13, 12.5, 11.5],
+  ['large', 25, 14, 13, 12],
 ] as const)('%s 字号提供完整角色，功能文字不小于元信息字号', (mode, page, body, label, meta) => {
   expect(tokensCss).toMatch(/--type-page:/);
   expect(tokensCss).toMatch(/--type-body:/);

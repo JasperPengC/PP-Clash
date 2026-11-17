@@ -21,6 +21,65 @@ const RUNTIME = {
 };
 
 describe('运行参数与覆写', () => {
+  it.each(['db', 'dat'] as const)('GEOIP %s 模式写入内核，GeoSite 与 ASN 来源独立保留', async geoDataMode => {
+    const geoUrls = {
+      geoip: 'https://example.com/geoip.dat', geosite: 'https://example.com/geosite.dat',
+      mmdb: 'https://example.com/geoip.metadb', asn: 'https://example.com/ASN.mmdb',
+      country: 'https://example.com/country.mmdb',
+    };
+    const cfg = JSON.parse((await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, geoDataMode, geoUrls })).config);
+    expect(cfg['geodata-mode']).toBe(geoDataMode === 'dat');
+    expect(cfg['geox-url']).toEqual({ geoip: geoUrls.geoip, geosite: geoUrls.geosite, mmdb: geoUrls.mmdb, asn: geoUrls.asn });
+    expect(Object.keys(cfg.dns['nameserver-policy'])).toContain('geosite:cn,private');
+  });
+
+  it('忽略旧版本的 GitHub 固定出口参数，保留订阅原有 GitHub 规则', async () => {
+    const raw = RAW.replace('  - DOMAIN-SUFFIX,example.com,DIRECT', '  - DOMAIN-SUFFIX,github.com,G');
+    const out = await generateConfig(raw, DEFAULT_POLICY, {
+      ...RUNTIME,
+      stableEgress: { enabled: true, node: 'NodeA', domains: ['github.com'] },
+    } as unknown as Parameters<typeof generateConfig>[2]);
+    const cfg = JSON.parse(out.config);
+    expect(cfg.rules).toContain('DOMAIN-SUFFIX,github.com,G');
+    expect(cfg['proxy-groups'].map((group: { name: string }) => group.name)).toEqual(['G']);
+  });
+
+  it('不会因分组名称包含开发而额外管理其自动测速策略', async () => {
+    const raw = RAW.replace('rules:', '  - {name: 开发, type: url-test, proxies: [NodeA], interval: 30}\nrules:');
+    const generated = await generateConfig(raw, DEFAULT_POLICY, { ...RUNTIME, stableRouting: false });
+    expect(JSON.parse(generated.config)['proxy-groups'].find((g: any) => g.name === '开发').type).toBe('url-test');
+    expect(generated.routing.managed).not.toContain('开发');
+  });
+  it('主路由元数据来自最终覆写，供概览、后台与托盘共用', async () => {
+    const generated = await generateConfig(RAW, DEFAULT_POLICY, { ...RUNTIME, stableRouting: true }, [{ mode: 'yaml', text: `proxy-groups:
+  - {name: NewMain, type: select, proxies: [NewAuto]}
+  - {name: NewAuto, type: fallback, proxies: [NodeA], url: https://example.com}
+rules: ["MATCH,NewMain"]` }]);
+    expect(generated.routing).toEqual({ primary: 'NewMain', managed: ['NewMain', 'NewAuto'], roots: ['NewMain'] });
+  });
+  it('稳定出口模式不会因延迟差异自动换节点，同时保留分组与手动选择', async () => {
+    const raw = RAW.replace('type: select', 'type: url-test, url: https://example.com, interval: 30');
+    const stable = JSON.parse((await generateConfig(raw, DEFAULT_POLICY, { ...RUNTIME, stableRouting: true })).config);
+    expect(stable['proxy-groups'][0]).toMatchObject({ name: 'G', type: 'select', proxies: ['NodeA'] });
+    expect(stable['proxy-groups'][0].interval).toBeUndefined();
+    const original = JSON.parse((await generateConfig(raw, DEFAULT_POLICY, { ...RUNTIME, stableRouting: false })).config);
+    expect(original['proxy-groups'][0].type).toBe('url-test');
+  });
+  it('独立 fallback 和负载均衡仍保留内核恢复以及 provider 健康检查', async () => {
+    const raw = `${RAW}\nproxy-providers:\n  P: {type: http, url: https://example.com/nodes, health-check: {enable: true, url: https://example.com, interval: 300}}\n`;
+    const override = { mode: 'yaml' as const, text: `proxy-groups:
+  - {name: G, type: select, proxies: [Auto]}
+  - {name: Auto, type: url-test, proxies: [NodeA]}
+  - {name: Media, type: fallback, use: [P], url: https://example.com, interval: 60}
+  - {name: Balance, type: load-balance, use: [P]}
+rules: [MATCH,G]` };
+    // MATCH 规则必须是一条字符串，不能误写成两个 YAML 列表成员。
+    override.text = override.text.replace('rules: [MATCH,G]', 'rules: ["MATCH,G"]');
+    const cfg = JSON.parse((await generateConfig(raw, DEFAULT_POLICY, { ...RUNTIME, stableRouting: true }, [override])).config);
+    expect(cfg['proxy-groups'].find((g: any) => g.name === 'Auto').type).toBe('select');
+    expect(cfg['proxy-groups'].find((g: any) => g.name === 'Media').type).toBe('fallback');
+    expect(cfg['proxy-providers'].P['health-check'].enable).toBe(true);
+  });
   it('DNS 监听端口可配置', async () => {
     const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME);
     const cfg = JSON.parse(out.config);
@@ -217,7 +276,7 @@ rules:
   });
 });
 
-describe('GitHub 固定出口', () => {
+describe.skip('已移除的 GitHub 固定出口', () => {
   it('启用后给 GitHub 域名加固定节点组，并排在规则最前面', async () => {
     const out = await generateConfig(RAW, DEFAULT_POLICY, {
       ...RUNTIME,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { EmptyState, ReadError } from '../components/ui';
+import { EmptyState, ReadError, Segmented } from '../components/ui';
 import { IconDownload, IconSearch, IconX } from '../components/icons';
 import { IconLog } from '../components/icons';
 import { useApp } from '../store/app';
@@ -121,26 +121,10 @@ export function LogsPage({ active = true }: { active?: boolean }) {
         <div className="page-inner dp-log-workspace">
           {readError && <ReadError message={`${readError}${loadedAt ? '；当前为上次读取的日志' : ''}`} onRetry={() => { if (paused) setPaused(false); else void load(); }} busy={loading || !active} />}
             <div className="row log-toolbar dp-table-toolbar">
-              <div className="seg" role="group" aria-label="日志级别">
-                {(
-                  [
-                    ['all', '全部'],
-                    ['info', '信息'],
-                    ['warn', '警告'],
-                    ['error', '错误'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={`seg-btn${level === value ? ' active' : ''}`}
-                    aria-pressed={level === value}
-                    onClick={() => setLevel(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Segmented ariaLabel="日志级别" value={level} onChange={setLevel} options={[
+                { value: 'all', label: '全部' }, { value: 'info', label: '信息' },
+                { value: 'warn', label: '警告' }, { value: 'error', label: '错误' },
+              ]} />
               <div className="node-search">
                 <IconSearch size={12} />
                 <input

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # 72 小时稳定性采样：每小时记录一次内存/CPU/内核存活。
 # 用法：
-#   ./scripts/bench-72h.sh                 # 输出 docs/soak-<timestamp>.csv
+#   ./scripts/bench-72h.sh                 # 输出 observability/soak-<timestamp>.csv
 #   HOURS=72 INTERVAL=3600 ./scripts/bench-72h.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 HOURS="${HOURS:-72}"
 INTERVAL="${INTERVAL:-3600}"
-OUT="${OUT:-docs/soak-$(date +%Y%m%d-%H%M%S).csv}"
+OUT="${OUT:-observability/soak-$(date +%Y%m%d-%H%M%S).csv}"
+mkdir -p "$(dirname "$OUT")"
 
 if [ ! -f "$OUT" ]; then
   echo "timestamp,ppclash_rss_mb,mihomo_rss_mb,ppclash_pid,mihomo_pid,kernel_alive" > "$OUT"

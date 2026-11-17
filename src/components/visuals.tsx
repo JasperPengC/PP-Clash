@@ -7,88 +7,36 @@ export function BreathingDot({ color, active = true }: { color: string; active?:
   return (
     <span
       className={`dot${active ? ' dot-breathing' : ''}`}
-      style={{ background: active ? color : 'var(--text-3)', color: active ? color : undefined }}
+      style={{ background: active ? color : 'var(--text-muted)', color: active ? color : undefined }}
     />
   );
 }
 
 /** 延迟环：一圈进度弧 + 中心读数。 */
-export function LatencyRing({ ms, size = 84 }: { ms: number | null; size?: number }) {
-  const gid = useId().replace(/[:]/g, '');
-  const r = size / 2 - 4;
-  const c = 2 * Math.PI * r;
-  const has = ms != null && ms > 0;
-  const progress = has ? Math.min(Math.max(1 - ms / 500, 0.08), 1) : 0;
-
-  const color = !has
-    ? 'var(--text-3)'
-    : ms < 100
-      ? 'var(--success)'
-      : ms < 200
-        ? 'var(--accent)'
-        : ms < 400
-          ? 'var(--warning)'
-          : 'var(--danger)';
-
-  return (
-    <div style={{ position: 'relative', width: size, height: size, flex: 'none' }}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <defs>
-          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.45" />
-            <stop offset="100%" stopColor={color} stopOpacity="1" />
-          </linearGradient>
-        </defs>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="var(--border-soft)"
-          strokeWidth={4}
-        />
-        {has && (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={`url(#${gid})`}
-            strokeWidth={4}
-            strokeLinecap="round"
-            strokeDasharray={`${c * progress} ${c}`}
-            style={{ transition: 'stroke-dasharray 0.6s ease' }}
-          />
-        )}
-      </svg>
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <span
-          className="t-num"
-          style={{ fontSize: size >= 80 ? 17 : 14, fontWeight: 650, color, letterSpacing: -0.3 }}
-        >
-          {has ? ms : '—'}
-        </span>
-        <span className="t-micro t-tertiary" style={{ fontSize: 9.5 }}>
-          ms
-        </span>
-      </div>
-    </div>
-  );
+export function LatencyRing({ ms, reading, busy = false, size = 72 }: {
+  ms: number | null; reading?: string; busy?: boolean; size?: number;
+}) {
+  const radius = 32;
+  const circumference = 2 * Math.PI * radius;
+  const progress = ms != null && ms > 0 ? Math.max(.08, 1 - ms / 500) : 0;
+  const text = reading ?? (ms != null && ms > 0 ? `${ms} ms` : '未测');
+  const numeric = text.match(/^(\d+(?:\.\d+)?) ms$/);
+  return <span className="latency-ring" style={{ width: size, height: size }}>
+    <svg viewBox="0 0 72 72" aria-hidden="true">
+      <circle className="latency-ring-track" cx="36" cy="36" r={radius} />
+      {progress > 0 && <circle className="latency-ring-value" cx="36" cy="36" r={radius}
+        strokeDasharray={`${circumference * progress} ${circumference}`} />}
+    </svg>
+    <span className="latency-ring-reading">{busy ? <Spinner small /> : numeric
+      ? <><strong className={numeric[1].length > 3 ? 'is-long' : undefined}>{numeric[1]}</strong>{' '}<small>ms</small></>
+      : <span className="latency-ring-status">{text}</span>}</span>
+  </span>;
 }
 
 const CHART_W = 600;
 const CHART_H = 110;
 
-function linePath(points: number[], max: number): string {
+function linePath(points: number[], max: number, linear = false): string {
   if (points.length < 2) return '';
   const dx = CHART_W / (points.length - 1);
   const y = (v: number) => CHART_H - 3 - (v / max) * (CHART_H - 13);
@@ -97,6 +45,7 @@ function linePath(points: number[], max: number): string {
   for (let i = 0; i < pts.length - 1; i++) {
     const [x0, y0] = pts[i];
     const [x1, y1] = pts[i + 1];
+    if (linear) { d += ` L ${x1.toFixed(2)},${y1.toFixed(2)}`; continue; }
     const cx = (x0 + x1) / 2;
     d += ` C ${cx.toFixed(2)},${y0.toFixed(2)} ${cx.toFixed(2)},${y1.toFixed(2)} ${x1.toFixed(2)},${y1.toFixed(2)}`;
   }
@@ -119,8 +68,8 @@ export function TrafficChart({
   const hasData = [...up, ...down].some((v) => v > 0.5);
   const max = Math.max(1, ...up, ...down);
 
-  const upLine = linePath(up, max);
-  const downLine = linePath(down, max);
+  const upLine = linePath(up, max, true);
+  const downLine = linePath(down, max, true);
   const area = (line: string) => `${line} L ${CHART_W},${CHART_H} L 0,${CHART_H} Z`;
 
   return (
@@ -262,6 +211,43 @@ export function MiniSparkline({
         )}
       </svg>
     </div>
+  );
+}
+
+/** 单方向速率曲线：代理为实线带面积，直连为虚线，两者共用纵轴。 */
+export function SplitSparkline({ proxy, direct, color }: { proxy: number[]; direct: number[]; color: string }) {
+  const uid = useId().replace(/[:]/g, '');
+  const W = 240;
+  const H = 40;
+  const max = Math.max(1, ...proxy, ...direct);
+  const has = proxy.some(v => v > 0.5) || direct.some(v => v > 0.5);
+  const path = (points: number[]) => {
+    const dx = W / Math.max(points.length - 1, 1);
+    const pts = points.map((v, i) => [dx * i, H - 2 - (v / max) * (H - 8)] as const);
+    let d = `M ${pts[0][0].toFixed(2)},${pts[0][1].toFixed(2)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[i + 1];
+      const cx = (x0 + x1) / 2;
+      d += ` C ${cx.toFixed(2)},${y0.toFixed(2)} ${cx.toFixed(2)},${y1.toFixed(2)} ${x1.toFixed(2)},${y1.toFixed(2)}`;
+    }
+    return d;
+  };
+  const proxyLine = path(proxy);
+  return (
+    <svg className="split-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={`split-${uid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {has ? <>
+        <path d={`${proxyLine} L ${W},${H} L 0,${H} Z`} fill={`url(#split-${uid})`} />
+        <path d={proxyLine} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d={path(direct)} fill="none" stroke={color} strokeWidth={1.2} strokeOpacity={0.55} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+      </> : <line x1="0" y1={H - 2} x2={W} y2={H - 2} stroke="var(--border-strong)" strokeWidth={1} strokeDasharray="2 5" vectorEffect="non-scaling-stroke" />}
+    </svg>
   );
 }
 
