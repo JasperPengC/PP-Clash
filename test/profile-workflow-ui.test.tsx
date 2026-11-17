@@ -152,6 +152,48 @@ it('更新失败时主卡继续显示旧节点、时间与配额，失败原因�
   expect(card('one').textContent).toContain('剩余');
 });
 
+it('单个订阅更新只禁用自身，其他订阅仍可发起更新', async () => {
+  await act(async () => useApp.setState({ refreshingIds: ['one'] }));
+  const updating = button('更新订阅 Example Air');
+  expect(updating.disabled).toBe(true);
+  expect(updating.getAttribute('aria-busy')).toBe('true');
+  expect(updating.querySelector('svg.spin')).not.toBeNull();
+  expect(button('更新订阅 Backup').disabled).toBe(false);
+  expect(button('更新订阅 Home Lab').disabled).toBe(false);
+  await click('更新订阅 Example Air');
+  expect(refresh).not.toHaveBeenCalled();
+  await click('更新订阅 Backup');
+  expect(refresh).toHaveBeenCalledWith('two');
+});
+
+it.each([true, false])('并行更新独立恢复按钮，完成结果为 %s 时不清除另一张卡片的忙碌状态', async success => {
+  await act(async () => useApp.setState({ refreshingIds: ['one', 'two'] }));
+  expect(button('更新订阅 Example Air').disabled).toBe(true);
+  expect(button('更新订阅 Backup').disabled).toBe(true);
+  await act(async () => useApp.setState({ refreshingIds: ['two'],
+    profileRefreshErrors: success ? {} : { one: '下载失败，已保留原订阅内容' } }));
+  const finished = button('更新订阅 Example Air');
+  expect(finished.disabled).toBe(false);
+  expect(finished.getAttribute('aria-busy')).toBe('false');
+  expect(finished.querySelector('svg.spin')).toBeNull();
+  expect(button('更新订阅 Backup').disabled).toBe(true);
+  expect(button('更新订阅 Backup').querySelector('svg.spin')).not.toBeNull();
+  await click('更新订阅 Example Air');
+  expect(refresh).toHaveBeenCalledWith('one');
+});
+
+it('编辑弹窗中的更新按钮也随该订阅旋转和禁用', async () => {
+  await click(editLabel('two'), card('two'));
+  await act(async () => useApp.setState({ refreshingIds: ['two'] }));
+  const updateButton = button('更新订阅');
+  expect(updateButton.disabled).toBe(true);
+  expect(updateButton.getAttribute('aria-busy')).toBe('true');
+  expect(updateButton.querySelector('svg.spin')).not.toBeNull();
+  await act(async () => useApp.setState({ refreshingIds: [] }));
+  expect(updateButton.disabled).toBe(false);
+  expect(updateButton.querySelector('svg.spin')).toBeNull();
+});
+
 it('删除在编辑详情中二次确认，第一次不会移除订阅', async () => {
   await click(editLabel('two'), card('two'));
   await click('删除订阅', card('two'));

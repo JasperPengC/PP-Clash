@@ -193,6 +193,33 @@ it('订阅更新等待真实结果，失败可重试且不触发切换', async (
   expect(vi.mocked(api.trayAction).mock.calls.every(([action]) => action === 'refresh-profile')).toBe(true);
 });
 
+it('小面板多个订阅可独立更新，一项失败不停止另一项的旋转和禁用状态', async () => {
+  snapshot.profiles = [{ id: 'p1', name: '主订阅' }, { id: 'p2', name: '备用订阅' }];
+  await act(async () => root.render(createElement(TrayPanel)));
+  await act(async () => host.querySelector<HTMLButtonElement>('.tp-profile-trigger')!.click());
+  const first = host.querySelector<HTMLButtonElement>('[aria-label="更新订阅 主订阅"]')!;
+  const second = host.querySelector<HTMLButtonElement>('[aria-label="更新订阅 备用订阅"]')!;
+  let reject!: (error: Error) => void;
+  const pending = deferred<void>();
+  vi.mocked(api.trayAction).mockImplementation(async (_action, id) => {
+    if (id === 'p1') return new Promise((_, no) => { reject = no; });
+    return pending.promise;
+  });
+  await act(async () => first.click());
+  expect(first.disabled).toBe(true);
+  expect(first.querySelector('svg.spin')).not.toBeNull();
+  expect(second.disabled).toBe(false);
+  await act(async () => second.click());
+  await act(async () => reject(new Error('更新失败')));
+  expect(first.disabled).toBe(false);
+  expect(first.querySelector('svg.spin')).toBeNull();
+  expect(second.disabled).toBe(true);
+  expect(second.querySelector('svg.spin')).not.toBeNull();
+  await act(async () => pending.resolve());
+  expect(second.disabled).toBe(false);
+  expect(second.querySelector('svg.spin')).toBeNull();
+});
+
 it('策略读取失败与内核停止显示准确空态，原有主窗口入口仍可用', async () => {
   snapshot.groups = []; snapshot.group = null; snapshot.groupsError = '策略读取失败，等待下次刷新';
   await act(async () => root.render(createElement(TrayPanel)));

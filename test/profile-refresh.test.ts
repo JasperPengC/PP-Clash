@@ -124,6 +124,27 @@ it('有效非活动订阅也生成并校验候选，但不替换活动配置或�
   expect(api.stopKernel).not.toHaveBeenCalled();
 });
 
+it('不同订阅可同时更新，同一订阅去重，失败与成功各自清理更新状态', async () => {
+  const first = deferred<ReturnType<typeof payload>>();
+  const second = deferred<ReturnType<typeof payload>>();
+  vi.mocked(api.fetchSubscription).mockImplementation(url => url.includes('inactive') ? second.promise : first.promise);
+  const updating = useApp.getState().refreshProfile('active');
+  const duplicate = useApp.getState().refreshProfile('active');
+  const other = useApp.getState().refreshProfile('inactive');
+  expect(duplicate).toBe(updating);
+  expect(useApp.getState().refreshingIds).toEqual(['active', 'inactive']);
+  first.resolve(payload('invalid subscription'));
+  expect(await updating).toBe(false);
+  expect(useApp.getState().refreshingIds).toEqual(['inactive']);
+  expect(current()!.raw).toBe(oldRaw);
+  second.resolve(payload());
+  expect(await other).toBe(true);
+  expect(useApp.getState().refreshingIds).toEqual([]);
+  expect(current('inactive')!.raw).toBe(newRaw);
+  expect(useApp.getState().profileRefreshErrors.active).toBeTruthy();
+  expect(useApp.getState().profileRefreshErrors.inactive).toBeUndefined();
+});
+
 it.each(['download', 'generate', 'validate', 'commit'])('%s 失败保持原订阅、时间、元信息与运行配置', async stage => {
   useApp.setState({ kernelPhase: 'running', connectedAt: 55 });
   const before = current(); const originalDisk = disk;

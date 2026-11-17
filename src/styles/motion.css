@@ -10,6 +10,9 @@
 .page-anim { animation: workspace-enter var(--motion-state) ease-out; }
 @keyframes workspace-enter { from { opacity: .65; } to { opacity: 1; } }
 
+.spin { animation: icon-spin .8s linear infinite; transform-box: view-box; transform-origin: center; }
+@keyframes icon-spin { to { transform: rotate(360deg); } }
+
 /* 等宽分段共享一个选择面，文字与 aria 状态随操作立即更新。 */
 .seg-motion::before { transition: transform var(--motion-view) var(--ease-arrive); }
 .seg-btn { transition: color var(--motion-quick) ease-out; }

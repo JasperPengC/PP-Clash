@@ -1,6 +1,6 @@
 import { Dialog } from '../components/Dialog';
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { MiniSwitch, Pill, Select, Spinner } from '../components/ui';
+import { MiniSwitch, Pill, Select } from '../components/ui';
 import { IconAlert, IconCheck, IconChevronRight, IconEdit, IconFolder, IconProfiles, IconRefresh, IconSort, IconTrash, IconX } from '../components/icons';
 import { useApp } from '../store/app';
 import type { Profile } from '../domain/app';
@@ -54,8 +54,8 @@ function QuotaCell({ info }: { info: TrafficInfo | null }) {
   );
 }
 
-function ProfileEditor({ profile, busy, confirming, index, total, onUpdate, onMove, onDelete, onClose, onRefresh, returnFocus }: {
-  profile: Profile; busy: boolean; confirming: boolean; index: number; total: number;
+function ProfileEditor({ profile, busy, refreshing, confirming, index, total, onUpdate, onMove, onDelete, onClose, onRefresh, returnFocus }: {
+  profile: Profile; busy: boolean; refreshing: boolean; confirming: boolean; index: number; total: number;
   onUpdate: (patch: Partial<Profile>) => void; onMove: (dir: -1 | 1) => void;
   onDelete: () => void; onClose: () => void; onRefresh: () => void; returnFocus: HTMLElement | null;
 }) {
@@ -123,7 +123,7 @@ function ProfileEditor({ profile, busy, confirming, index, total, onUpdate, onMo
     {confirming && <p className="sub-delete-warning" role="status">{profile.id === useApp.getState().activeId ? '删除当前订阅会断开连接，再次点击删除按钮确认。' : '再次点击删除按钮确认删除。'}</p>}
     <div className="sub-editor-footer">
       <div className="sub-editor-tools">
-        <button type="button" className="icon-btn" aria-label="更新订阅" title={changed ? '先保存修改，再更新订阅' : '更新订阅'} disabled={busy || picking || changed} onClick={onRefresh}><IconRefresh size={16} /></button>
+        <button type="button" className="icon-btn" aria-label="更新订阅" aria-busy={refreshing} title={changed ? '先保存修改，再更新订阅' : '更新订阅'} disabled={busy || picking || changed} onClick={onRefresh}><IconRefresh size={16} className={refreshing ? 'spin' : undefined} /></button>
         <button type="button" className={`icon-btn danger${confirming ? ' confirming' : ''}`} aria-label={confirming ? '确认删除订阅' : '删除订阅'} title={confirming ? '确认删除订阅' : '删除订阅'} disabled={busy || picking} onClick={onDelete}>
           {confirming ? <IconCheck size={16} /> : <IconTrash size={16} />}
         </button>
@@ -174,14 +174,14 @@ function ProfileCard({ profile, active, busy, confirming, nodeCount, refreshing,
     {refreshError && <div className="sub-update-error" role="status"><IconAlert size={14} /><span>{refreshError}</span></div>}
     <div className="sub-card-actions">
       <span className="sub-card-updated">{refreshing ? '正在更新…' : `更新于 ${formatTime(profile.updatedAt)}`}</span>
-      <button type="button" className="icon-btn" aria-label={`更新订阅 ${profile.name}`} title="更新订阅" disabled={busy} onClick={onRefresh}>
-        {refreshing ? <Spinner small /> : <IconRefresh size={14} />}
+      <button type="button" className="icon-btn" aria-label={`更新订阅 ${profile.name}`} aria-busy={refreshing} title="更新订阅" disabled={busy || refreshing} onClick={onRefresh}>
+        <IconRefresh size={14} className={refreshing ? 'spin' : undefined} />
       </button>
       <button ref={editButton} type="button" className="icon-btn" aria-label={`编辑订阅 ${profile.name}`} title="编辑订阅" aria-haspopup="dialog" aria-expanded={editing} aria-controls={`profile-edit-${profile.id}`}
         disabled={busy} onClick={onEdit}><IconEdit size={14} /></button>
       {!active && <button type="button" className="icon-btn sub-switch" disabled={busy} aria-label={`使用订阅 ${profile.name}`} title="使用订阅" onClick={onActivate}><IconCheck size={14} /></button>}
     </div>
-    {editing && <ProfileEditor profile={profile} busy={busy}
+    {editing && <ProfileEditor profile={profile} busy={busy} refreshing={refreshing}
       confirming={confirming} index={index} total={total} onUpdate={onUpdate} onMove={onMove} onDelete={onDelete}
       onRefresh={onRefresh} returnFocus={editButton.current} onClose={onClose} />}
   </section>;
@@ -271,7 +271,7 @@ export function ProfilesPage() {
   }, [profiles]);
 
   const askDelete = (id: string) => {
-    if (manageBusy) return;
+    if (globalBusy || refreshingIds.includes(id)) return;
     if (confirmId === id) {
       setConfirmId(null);
       void removeProfile(id);
@@ -296,13 +296,13 @@ export function ProfilesPage() {
   };
 
   const renderProfile = (profile: Profile) => <ProfileCard key={profile.id} profile={profile}
-    active={profile.id === activeId} busy={manageBusy} confirming={confirmId === profile.id}
+    active={profile.id === activeId} busy={globalBusy || refreshingIds.includes(profile.id)} confirming={confirmId === profile.id}
     nodeCount={nodeCounts[profile.id] ?? 0} refreshing={refreshingIds.includes(profile.id)} refreshError={refreshErrors[profile.id]}
     editing={editingId === profile.id} editMode={ordering} index={profiles.indexOf(profile)} total={profiles.length}
-    status={status} statusTone={statusTone} onActivate={() => { if (!manageBusy) void activate(profile.id); }}
-    onRefresh={() => { if (!manageBusy) void refreshProfile(profile.id); }} onDelete={() => askDelete(profile.id)}
-    onUpdate={patch => { if (!manageBusy) updateProfile(profile.id, patch); }}
-    onMove={dir => { if (!manageBusy) moveProfile(profile.id, dir); }} onEdit={() => {
+    status={status} statusTone={statusTone} onActivate={() => { if (!globalBusy && !refreshingIds.includes(profile.id)) void activate(profile.id); }}
+    onRefresh={() => { if (!globalBusy && !refreshingIds.includes(profile.id)) void refreshProfile(profile.id); }} onDelete={() => askDelete(profile.id)}
+    onUpdate={patch => { if (!globalBusy && !refreshingIds.includes(profile.id)) updateProfile(profile.id, patch); }}
+    onMove={dir => { if (!globalBusy && !refreshingIds.includes(profile.id)) moveProfile(profile.id, dir); }} onEdit={() => {
       setEditingId(editingId === profile.id ? null : profile.id); setConfirmId(null); setAdding(false); setOrdering(false);
     }} onClose={() => { setEditingId(null); setConfirmId(null); }} dragging={dragId === profile.id}
     dropTarget={dragOverId === profile.id && dragId !== profile.id} onDragHandle={event => {
@@ -325,10 +325,11 @@ export function ProfilesPage() {
             <button
               type="button"
               className="btn"
+              aria-busy={refreshingAll}
               disabled={manageBusy || refreshingAll}
               onClick={refreshAll}
             >
-              {refreshingAll ? <Spinner small /> : <IconRefresh size={13} />}
+              <IconRefresh size={13} className={refreshingAll ? 'spin' : undefined} />
               全部更新
             </button>
           )}

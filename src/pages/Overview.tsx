@@ -581,7 +581,7 @@ function OverviewSubscriptionCard() {
 
   return <section className="ov-panel quota-card" aria-label="当前订阅">
     <div className="ov-panel-head"><h2>当前订阅</h2>
-      {activeId && <button type="button" className="icon-btn icon-btn-sm" title="更新当前订阅" aria-label="更新当前订阅" disabled={refreshingIds.includes(activeId)} onClick={() => void refreshProfile(activeId)}>{refreshingIds.includes(activeId) ? <Spinner small /> : <IconRefresh size={13} />}</button>}
+      {activeId && <button type="button" className="icon-btn icon-btn-sm" title="更新当前订阅" aria-label="更新当前订阅" aria-busy={refreshingIds.includes(activeId)} disabled={refreshingIds.includes(activeId)} onClick={() => void refreshProfile(activeId)}><IconRefresh size={13} className={refreshingIds.includes(activeId) ? 'spin' : undefined} /></button>}
       <PageLink page="profiles" label={activeProfile ? '管理订阅' : '导入订阅'} />
     </div>
     <div className="ov-subscription-summary">
