@@ -43,8 +43,8 @@ describe('GitHub 分组测速目标', () => {
   - {name: 开发, type: fallback, proxies: [A], url: https://other.test, interval: 900}
   - {name: 视频, type: url-test, proxies: [A], url: https://video.test, interval: 1200}
 ` }])).config);
-    expect(config['proxy-groups'][0]).toMatchObject({ url: 'https://other.test', interval: 900 });
-    expect(config['proxy-groups'][1]).toMatchObject({ url: 'https://video.test', interval: 1200 });
+    expect(config['proxy-groups'].find((group: any) => group.name === '开发')).toMatchObject({ type: 'fallback', url: 'https://other.test', interval: 900 });
+    expect(config['proxy-groups'].find((group: any) => group.name === '视频')).toMatchObject({ url: 'https://video.test', interval: 1200 });
   });
 
   it('同节点的分组和目标结果分别存储，GitHub 未测和失败不使用通用历史', () => {

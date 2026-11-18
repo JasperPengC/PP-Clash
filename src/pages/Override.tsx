@@ -6,8 +6,8 @@ import { IconChevronDown, IconCode, IconPlus, IconTrash } from '../components/ic
 import { getLifecycleToken, isLifecycleCurrent, useApp } from '../store/app';
 import type { OverrideFile } from '../domain/app';
 
-const PLACEHOLDER_YAML = `# YAML / JSON 片段，深合并到生成的配置
-# 对象按 key 合并，数组整体替换
+const PLACEHOLDER_YAML = `# YAML / JSON 片段，合并到生成的配置
+# 对象按 key 合并；数组按条目追加，同一规则或同名对象会替换对应项
 #
 # rules:
 #   - DOMAIN-SUFFIX,example.com,DIRECT

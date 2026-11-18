@@ -54,7 +54,8 @@ it('覆写后的安全冲突必须反映在审计结果中', async () => {
 dns: {respect-rules: false, nameserver: [223.5.5.5], fallback: [114.114.114.114], enhanced-mode: redir-host}
 tun: {strict-route: false}
 rules: ["MATCH,DIRECT"]` }]);
-  expect(out.audit.map(f => f.code)).toEqual(expect.arrayContaining(['FINAL_IPV6', 'FINAL_DNS', 'FINAL_FAKE_IP', 'FINAL_TUN', 'FINAL_STUN', 'FINAL_QUIC']));
+  expect(out.audit.map(f => f.code)).toEqual(expect.arrayContaining(['FINAL_IPV6', 'FINAL_DNS', 'FINAL_FAKE_IP', 'FINAL_TUN']));
+  expect(out.audit.map(f => f.code)).not.toEqual(expect.arrayContaining(['FINAL_STUN', 'FINAL_QUIC']));
 });
 it.each([
   'external-controller: "0.0.0.0:9090"\nsecret: ""',
@@ -71,11 +72,12 @@ it('保留订阅自带的Github规则，开关仅控制应用额外添加的规�
   const out = await generateConfig(source, DEFAULT_POLICY, { ...runtime, stableEgress: { enabled: false, node: 'N', domains: ['github.com'] } });
   expect(JSON.parse(out.config).rules.filter((rule: string) => rule === 'DOMAIN-SUFFIX,github.com,GitHub')).toHaveLength(1);
 });
-it('阻断规则被前置MATCH遮挡时不能仅凭存在判定配置一致', async () => {
-  const baseline = JSON.parse((await generateConfig(raw, DEFAULT_POLICY, runtime)).config);
-  const patch = JSON.stringify({ rules: ['MATCH,DIRECT', ...baseline.rules] });
-  const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: patch }]);
-  expect(out.audit.some(f => f.code === 'FINAL_STUN')).toBe(true);
+it('覆写替换 MATCH 目标时仍将应用防护规则保留在兜底之前', async () => {
+  const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: 'rules: ["MATCH,DIRECT"]' }]);
+  const rules: string[] = JSON.parse(out.config).rules;
+  expect(rules.at(-1)).toBe('MATCH,DIRECT');
+  expect(rules.findIndex(rule => rule.includes('stun'))).toBeLessThan(rules.findIndex(rule => rule.startsWith('MATCH,')));
+  expect(out.audit.some(f => f.code === 'FINAL_STUN')).toBe(false);
 });
 it('明文直连解析器必须报告最终 DNS 配置不一致', async () => {
   const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: 'dns: {direct-nameserver: [192.0.2.53]}' }]);
@@ -85,9 +87,17 @@ it('加密直连解析器不会误报最终 DNS 冲突', async () => {
   const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: 'dns: {direct-nameserver: [https://example.test/dns-query]}' }]);
   expect(out.audit.map(f => f.code)).not.toContain('FINAL_DNS');
 });
-it.each(['[]', 'null', '[192.0.2.53:53]'])('缺少全局 TUN DNS 劫持时报告接管配置不一致：%s', async hijack => {
-  const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: `tun: {dns-hijack: ${hijack}}` }]);
+it('显式清空全局 TUN DNS 劫持时报告接管配置不一致', async () => {
+  const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: 'tun: {dns-hijack: null}' }]);
   expect(out.audit.map(f => f.code)).toContain('FINAL_TUN');
+});
+it('空覆写数组不会清空应用默认配置', async () => {
+  const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: 'tun: {dns-hijack: []}' }]);
+  expect(out.audit.map(f => f.code)).not.toContain('FINAL_TUN');
+});
+it('覆写 TUN DNS 劫持列表时追加地址并保留应用默认接管地址', async () => {
+  const out = await generateConfig(raw, DEFAULT_POLICY, runtime, [{ mode: 'yaml', text: 'tun: {dns-hijack: [192.0.2.53:53]}' }]);
+  expect(out.audit.map(f => f.code)).not.toContain('FINAL_TUN');
 });
 it('移除固定出口后 GitHub 规则不会绕过 QUIC 阻断', async () => {
   const out = await generateConfig(raw, { ...DEFAULT_POLICY, blockQuic: true }, {

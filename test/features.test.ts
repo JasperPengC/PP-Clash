@@ -92,18 +92,43 @@ rules: [MATCH,G]` };
     expect(cfg['allow-lan']).toBe(true);
   });
 
-  it('覆写对象深合并、数组整体替换', async () => {
-    const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [
+  it('YAML 覆写追加规则，并把新增规则放在 MATCH 兜底之前', async () => {
+    const rawWithFallback = `${RAW}  - MATCH,G\n`;
+    const out = await generateConfig(rawWithFallback, DEFAULT_POLICY, RUNTIME, [
       {
         mode: 'yaml',
         text: `rules:\n  - DOMAIN-SUFFIX,override.test,DIRECT\ndns:\n  listen: "127.0.0.1:10531"\n`,
       },
     ]);
     const cfg = JSON.parse(out.config);
-    expect(cfg.rules).toEqual(['DOMAIN-SUFFIX,override.test,DIRECT']);
+    expect(cfg.rules).toContain('DOMAIN-SUFFIX,example.com,DIRECT');
+    expect(cfg.rules).toContain('DOMAIN-SUFFIX,override.test,DIRECT');
+    expect(cfg.rules.at(-1)).toBe('MATCH,G');
+    expect(cfg.rules.indexOf('DOMAIN-SUFFIX,override.test,DIRECT')).toBeLessThan(cfg.rules.indexOf('MATCH,G'));
     expect(cfg.dns.listen).toBe('127.0.0.1:10531');
     // 未覆写的键保留
     expect(cfg['mixed-port']).toBe(17890);
+  });
+
+  it('YAML 覆写用相同匹配条件替换原规则而不制造重复项', async () => {
+    const out = await generateConfig(RAW, DEFAULT_POLICY, RUNTIME, [{
+      mode: 'yaml',
+      text: 'rules:\n  - DOMAIN-SUFFIX,example.com,G\n',
+    }]);
+    const rules: string[] = JSON.parse(out.config).rules;
+    expect(rules.filter(rule => rule.startsWith('DOMAIN-SUFFIX,example.com,')).map(rule => rule.split(',')[2])).toEqual(['G']);
+  });
+
+  it('JS 覆写按相同规则合并并追加新规则', async () => {
+    const rawWithFallback = `${RAW}  - MATCH,G\n`;
+    const out = await generateConfig(rawWithFallback, DEFAULT_POLICY, RUNTIME, [{
+      mode: 'js',
+      text: `config.rules.push('DOMAIN-SUFFIX,hybgzs.com,DIRECT');\nconfig.rules = config.rules.map(rule => rule.startsWith('DOMAIN-SUFFIX,example.com,') ? 'DOMAIN-SUFFIX,example.com,G' : rule);`,
+    }]);
+    const rules: string[] = JSON.parse(out.config).rules;
+    expect(rules).toContain('DOMAIN-SUFFIX,hybgzs.com,DIRECT');
+    expect(rules.filter(rule => rule.startsWith('DOMAIN-SUFFIX,example.com,')).map(rule => rule.split(',')[2])).toEqual(['G']);
+    expect(rules.at(-1)).toBe('MATCH,G');
   });
 
   it('覆写里的出站模式生效', async () => {

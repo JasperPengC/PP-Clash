@@ -128,8 +128,56 @@ export interface GeneratedConfig {
 
 type Dict = Record<string, unknown>;
 
-function deepMerge<T>(base: T, patch: unknown): T {
-  if (Array.isArray(patch)) return patch as unknown as T;
+function ruleIdentity(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  if (!text) return undefined;
+  const separator = text.indexOf(',');
+  const type = (separator < 0 ? text : text.slice(0, separator)).trim().toUpperCase();
+  if (type === 'MATCH' || type === 'FINAL') return 'MATCH';
+  if (separator < 0) return type;
+  const signature = text.slice(0, text.lastIndexOf(',')).trim();
+  return type.startsWith('DOMAIN') ? signature.toLowerCase() : signature;
+}
+
+function arrayIdentity(value: unknown, key: string): string | undefined {
+  if (key === 'rules') return ruleIdentity(value);
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const name = (value as Dict).name;
+    if (typeof name === 'string' && name.trim()) return `name:${name}`;
+  }
+  if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+    return `value:${JSON.stringify(value)}`;
+  }
+  return undefined;
+}
+
+function mergeArray(base: unknown[], patch: unknown[], key: string): unknown[] {
+  const out = [...base];
+  for (const item of patch) {
+    const identity = arrayIdentity(item, key);
+    const index = identity === undefined
+      ? -1
+      : out.findIndex(existing => arrayIdentity(existing, key) === identity);
+    if (index >= 0) {
+      out[index] = item;
+      continue;
+    }
+    if (identity === undefined && out.some(existing => JSON.stringify(existing) === JSON.stringify(item))) continue;
+    if (key === 'rules' && typeof item === 'string') {
+      const fallback = out.findIndex(rule => typeof rule === 'string' && /^(MATCH|FINAL)\s*,/i.test(rule.trim()));
+      out.splice(fallback < 0 ? out.length : fallback, 0, item);
+    } else {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function deepMerge<T>(base: T, patch: unknown, key = ''): T {
+  if (Array.isArray(patch)) {
+    return mergeArray(Array.isArray(base) ? base : [], patch, key) as unknown as T;
+  }
   if (patch && typeof patch === 'object') {
     const out: Dict = {
       ...(base && typeof base === 'object' && !Array.isArray(base)
@@ -137,11 +185,19 @@ function deepMerge<T>(base: T, patch: unknown): T {
         : {}),
     };
     for (const [key, value] of Object.entries(patch as Dict)) {
-      out[key] = deepMerge(out[key], value);
+      out[key] = deepMerge(out[key], value, key);
     }
     return out as T;
   }
   return (patch === undefined ? base : patch) as T;
+}
+
+function mergeJsResult(base: Dict, result: Dict): Dict {
+  const merged = deepMerge(base, result);
+  for (const key of Object.keys(base)) {
+    if (!Object.prototype.hasOwnProperty.call(result, key)) delete merged[key];
+  }
+  return merged;
 }
 
 function asDict(v: unknown): Dict {
@@ -266,7 +322,7 @@ export async function generateConfig(
     };
   }
 
-  // 进阶覆写：按顺序应用多份 YAML/JSON 深合并或 JS 脚本
+  // 进阶覆写：对象按键合并，数组按条目身份追加或替换冲突项。
   for (const override of overrides ?? []) {
     if (!override.text.trim()) continue;
     const text = override.text.replace(
@@ -275,7 +331,9 @@ export async function generateConfig(
     );
     if (override.mode === 'js') {
       try {
-        config = await runJsOverride(config, text);
+        const previous = JSON.parse(JSON.stringify(config)) as Dict;
+        const result = await runJsOverride(config, text);
+        config = mergeJsResult(previous, result);
       } catch (e) {
         const name = override.name || '未命名';
         throw new Error(`JS 覆写「${name}」失败：${(e as Error).message}`);
