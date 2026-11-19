@@ -72,9 +72,26 @@ it('当前订阅主卡呈现来源、节点、配额和连接状态，每卡有�
   expect(button('更新订阅 Example Air', hero!)).toBeDefined();
   for (const id of ['one', 'two', 'file']) expect(button(editLabel(id), card(id))).toBeDefined();
   expect(card('two').textContent).toContain('暂无配额信息');
-  expect(host.querySelector('[aria-label="删除订阅"]')).toBeNull();
+  expect(host.querySelectorAll('.sub-profile-symbol')).toHaveLength(0);
+  for (const profile of fixtures) {
+    expect(card(profile.id).querySelectorAll('.sub-card-actions')).toHaveLength(1);
+    expect(card(profile.id).querySelectorAll('.sub-profile-symbol')).toHaveLength(0);
+  }
+  for (const profile of fixtures) expect(button(`删除订阅 ${profile.name}`, card(profile.id))).toBeDefined();
+  expect(button('添加订阅').getAttribute('aria-label')).toBe('添加订阅');
   expect(host.querySelector('[aria-label="上移订阅"]')).toBeNull();
   expect(host.querySelector('.drag-handle')).toBeNull();
+});
+
+it('订阅卡操作保持一组纯图标按钮，并为每个动作提供可访问名称', () => {
+  for (const profile of fixtures) {
+    const actions = card(profile.id).querySelector('.sub-card-actions')!;
+    for (const action of actions.querySelectorAll('button')) {
+      expect(action.getAttribute('aria-label')).toBeTruthy();
+      expect(action.textContent).toBe('');
+      expect(action.querySelector('svg')).not.toBeNull();
+    }
+  }
 });
 
 it('备用订阅更新时间与卡片操作按钮同行', () => {
@@ -194,14 +211,27 @@ it('编辑弹窗中的更新按钮也随该订阅旋转和禁用', async () => {
   expect(updateButton.querySelector('svg.spin')).toBeNull();
 });
 
-it('删除在编辑详情中二次确认，第一次不会移除订阅', async () => {
-  await click(editLabel('two'), card('two'));
-  await click('删除订阅', card('two'));
+it('每张订阅卡直接提供删除入口，确认文案明确且第一次不会移除', async () => {
+  await click('删除订阅 Backup', card('two'));
   expect(remove).not.toHaveBeenCalled();
   expect(useApp.getState().profiles).toHaveLength(3);
-  await click('确认删除订阅', card('two'));
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  expect(dialog?.textContent).toContain('Backup');
+  await click('取消删除订阅', dialog!);
+  expect(remove).not.toHaveBeenCalled();
+  await click('删除订阅 Backup', card('two'));
+  await click('确认删除订阅 Backup', document.querySelector<HTMLElement>('[role="dialog"]')!);
   expect(remove).toHaveBeenCalledWith('two');
   expect(useApp.getState().profiles).toHaveLength(2);
+});
+
+it('删除当前订阅也必须先进入确认态，再次确认才执行删除', async () => {
+  await click('删除订阅 Example Air', card('one'));
+  expect(remove).not.toHaveBeenCalled();
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  expect(dialog?.textContent).toContain('会断开连接');
+  await click('确认删除订阅 Example Air', dialog!);
+  expect(remove).toHaveBeenCalledWith('one');
 });
 
 it('拖拽排序独立于编辑弹窗，箭头排序保持当前使用', async () => {
@@ -214,7 +244,7 @@ it('拖拽排序独立于编辑弹窗，箭头排序保持当前使用', async (
   expect(useApp.getState().activeId).toBe('one');
   await click('取消编辑', card('two'));
   expect(host.querySelector('.drag-handle')).toBeNull();
-  expect(host.querySelector('[aria-label="删除订阅"]')).toBeNull();
+  expect(button('删除订阅 Backup', card('two'))).toBeDefined();
 });
 
 it('配置切换期间切换、更新和编辑提交入口都禁用', async () => {
@@ -238,10 +268,25 @@ it('统一新增入口的导入失败保留URL与代理输入', async () => {
   expect(importUrl).toHaveBeenCalledWith('https://import.test/sub', true);
 });
 
+it('订阅请求失败时把具体原因留在导入弹层内，便于当场修正重试', async () => {
+  importUrl.mockImplementationOnce(async () => {
+    useApp.getState().notify('error', '导入失败：订阅服务返回 HTTP 503');
+    return false;
+  });
+  await click('添加订阅');
+  await input('订阅链接', 'https://import.test/sub');
+  await click('导入');
+  expect(document.querySelector('.import-error')?.textContent).toContain('HTTP 503');
+  expect(document.querySelector<HTMLInputElement>('[aria-label="订阅链接"]')!.value).toBe('https://import.test/sub');
+  expect(document.querySelector('.subscription-import')?.getAttribute('aria-busy')).toBe('false');
+});
+
 it('添加订阅后直接聚焦链接，非法链接和重复链接不提交', async () => {
   await click('添加订阅');
   const field = document.querySelector<HTMLInputElement>('[aria-label="订阅链接"]')!;
   expect(document.activeElement).toBe(field);
+  expect(field.inputMode).toBe('url');
+  expect(field.type).toBe('text');
   await input('订阅链接', 'not-a-url');
   await click('导入');
   expect(importUrl).not.toHaveBeenCalled();

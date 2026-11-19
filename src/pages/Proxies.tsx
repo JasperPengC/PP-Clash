@@ -1,6 +1,8 @@
+import { PageHeader } from '../components/PageHeader';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Dialog } from '../components/Dialog';
 import { NodeName } from '../components/NodeName';
+import { SelectionIndicator } from '../components/SelectionIndicator';
 import { EmptyState, ReadError, PageLink, Segmented, Spinner, Toggle } from '../components/ui';
 import {
   IconAlert,
@@ -14,6 +16,7 @@ import {
   IconX,
 } from '../components/icons';
 import { isGroupNode, useApp } from '../store/app';
+import { isAndroid } from '../core/platform';
 import type { ProxyNode } from '../domain/app';
 import { buildProxyDomain, proxyGroupKind, resolveProxyRoute, type ProxyRoute } from '../core/proxy-domain';
 import { GITHUB_LATENCY_URL, groupLatencyTarget, latencyKey, readGroupLatency } from '../core/latency';
@@ -441,12 +444,7 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
         <Spinner small /><span>正在测速 <b>{progress.completed} / {progress.total}</b></span>
         <button type="button" className="btn btn-ghost btn-sm" aria-label="取消测速" onClick={() => batch.current?.cancel()}>取消</button>
       </div>}
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">策略节点</h1>
-          <div className="page-sub">{subTitle}</div>
-        </div>
-        <div className="page-actions">
+      <PageHeader title="策略节点" mobileTitle="节点" subtitle={subTitle}>
           <button
             type="button"
             className="icon-btn"
@@ -457,8 +455,8 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
           >
             <IconRefresh size={15} />
           </button>
-        </div>
-      </header>
+
+      </PageHeader>
 
       <div className="page-scroll proxy-page">
         <div className="page-inner">
@@ -466,7 +464,7 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
           {displayGroups.length > 0 && <>
                 <div className="proxy-group-pane">
                   <div className="proxy-group-rail seg">
-                    <nav ref={groupRail} className="proxy-group-sidebar" aria-label="策略分组"
+                    <nav ref={groupRail} className="proxy-group-sidebar selection-track" aria-label="策略分组"
                       onKeyDown={event => {
                         const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
                         if (!keys.includes(event.key)) return;
@@ -478,6 +476,7 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                           : Math.max(0, Math.min(buttons.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)));
                         buttons[next]?.click(); buttons[next]?.focus({ preventScroll: true });
                       }}>
+                      <SelectionIndicator value={currentGroupName} />
                       {displayGroups.map(g => <button type="button" key={g.name}
                         className={`proxy-group-nav seg-btn${g.name === currentGroupName ? ' active' : ''}`}
                         tabIndex={g.name === currentGroupName ? 0 : -1}
@@ -599,7 +598,7 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                                   <span className="proxy-node-meta">{nestedGroup ? `策略 · ${proxyGroupKind(node.type)}` : node.type || '未知引用'}{object?.providers.length ? ` · ${object.providers.join(' / ')}` : ''}{object?.dialerProxy ? ' · 含前置' : ''}{!canSelect ? ' · 只读' : ''}</span>
                                 </span>
                                 </button>
-                                <button
+                                {!isAndroid && <button
                                     type="button"
                                     className={`node-pin${fixed ? ' pinned' : ''}`}
                                     aria-label={fixed ? `取消固定 ${node.name}` : `固定使用 ${node.name}`}
@@ -615,7 +614,7 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                                       size={11}
                                       filled={fixed}
                                     />
-                                  </button>
+                                  </button>}
                                 <button type="button" className="proxy-node-details-btn" aria-label={`查看路径 ${node.name}`}
                                   aria-expanded={inspected} onClick={event => {event.stopPropagation(); setInspectedNode(inspected ? null : {scope:domain.identity,name:node.name});}} title="查看节点路径"><IconNodes size={13} /></button>
                                 {busy ? (
@@ -630,6 +629,11 @@ export function ProxiesPage({ active = true }: { active?: boolean } = {}) {
                                 {inspected && <div className="proxy-node-detail" onClick={event=>event.stopPropagation()}>
                                   <RouteDetails route={resolveProxyRoute(domain,node.name)} />
                                   {nestedGroup && <button type="button" className="btn btn-sm" onClick={() => inspectGroup(node.name)}>查看此策略成员</button>}
+                                  {isAndroid && !nestedGroup && <button type="button" className="btn btn-sm"
+                                    disabled={fixedDisabled} aria-pressed={fixed} title={fixedTitle}
+                                    onClick={() => void choose(g.name, node.name, true)}>
+                                    <IconFlag size={16} filled={fixed} />{fixed ? '取消固定' : '固定使用此节点'}
+                                  </button>}
                                   <p>固定范围：{nestedGroup ? '先进入对应分组，再固定具体节点。' : '仅固定此组中的节点选择；前置策略仍可变化，实际链路未确认。'}</p>
                                 </div>}
                               </div>

@@ -1,0 +1,135 @@
+/* Android 的共享控件和内容密度；桌面继续使用桌面尺度。 */
+.android-window :is(.input, .select-btn, .node-search, .search-field) {
+  min-height: var(--android-control-height);
+  font-size: var(--type-control);
+  line-height: 1.4;
+  border-radius: var(--radius-pill);
+}
+.android-window :is(.input, .select-btn) { padding-inline: 12px; }
+.android-window .node-search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--border-soft); }
+.android-window .node-search > svg { position: static; flex: none; }
+.android-window .node-search input,
+.android-window .node-search input:focus { flex: 1; min-width: 0; width: 100%; height: 38px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: var(--type-control); }
+.android-window .node-search-clear { position: static; transform: none; margin-right: -8px; }
+.android-window .select-btn { display: flex; flex-wrap: nowrap; align-items: center; max-width: 100%; }
+.android-window .select-btn > svg { flex: none; align-self: center; }
+.android-window .select-menu { font-size: var(--type-control); }
+.android-window .select-option { min-height: 40px; padding: 8px 12px; }
+.android-window :is(.btn, .btn-sm) { min-height: var(--android-control-height); font-size: var(--type-control); }
+.android-window :is(.icon-btn, .icon-btn-sm) { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; min-width: 40px; min-height: 40px; padding: 0; border-radius: 50%; }
+.android-main > .page-head .page-actions :is(.btn, .icon-btn) { width: 40px; height: 40px; min-width: 40px; min-height: 40px; padding: 0; }
+.android-main > .page-head .page-actions .icon-btn[aria-pressed='true'] { color: var(--accent-text); background: var(--accent-soft); }
+.android-main > .page-head .page-actions svg { width: 18px; height: 18px; }
+.android-window .seg-btn::after { content: ''; position: absolute; inset: -6px 0; }
+
+/* 两种开关使用同一轨道和触控范围。 */
+.android-window .mini-switch, .android-window .mini-switch.on { position: relative; width: 48px; height: 48px; padding: 0; background: transparent; }
+.android-window .mini-switch::before { content: ''; position: absolute; width: var(--switch-width); height: var(--switch-height); left: 50%; top: 50%; transform: translate(-50%, -50%); border-radius: var(--radius-pill); background: var(--surface-3); transition: background var(--motion-state) var(--ease-state); }
+.android-window .mini-switch.on::before { background: var(--accent); }
+.android-window .mini-switch > span { position: absolute; top: calc((48px - var(--switch-thumb-size)) / 2); left: calc((48px - var(--switch-width) + var(--switch-height) - var(--switch-thumb-size)) / 2); }
+.android-window .mini-switch.on > span { transform: translateX(calc(var(--switch-width) - var(--switch-height))); }
+
+.android-shell .android-settings-group > h2 { font-size: var(--type-meta); line-height: 1.4; }
+.android-shell .android-settings-card { border-radius: 18px; }
+.android-shell .android-list button { gap: 12px; padding-inline: var(--android-card-inset); }
+.android-shell .android-setting-row { padding-inline: var(--android-card-inset); }
+.android-shell .android-theme-setting .seg { width: 100%; }
+.android-shell .android-setting-action { color: var(--text-secondary); background: var(--segment-track); }
+.android-shell .android-node-info strong { font-size: var(--type-body); line-height: 1.4; }
+.android-shell .android-connection-card { padding: var(--android-card-inset); }
+.android-shell .profiles-scroll .profiles-page { gap: var(--android-section-gap); }
+.android-shell .profiles-scroll .sub-card { padding: var(--android-card-inset); border-radius: 18px; }
+.android-shell .profiles-scroll .sub-card-flow .sub-card { padding: 12px; border-radius: 16px; }
+.android-shell .profiles-scroll .sub-name { font-size: var(--type-body); line-height: 1.4; }
+.android-shell .profiles-scroll .sub-quota-remaining b { font-size: var(--type-metric); }
+.android-shell .profiles-scroll .sub-card-flow .sub-quota-remaining b { font-size: var(--type-subtitle); }
+.android-shell .profiles-scroll .sub-card-actions { padding-top: 4px; min-height: 40px; }
+.android-shell .profiles-scroll .sub-card-updated { font-size: var(--type-micro); line-height: 1.4; }
+.android-shell .profiles-scroll .sub-list-heading { padding-bottom: 8px; }
+.android-shell .profiles-stats { gap: 4px 12px; font-size: var(--type-micro); }
+.android-shell .configuration-page { gap: var(--android-section-gap); }
+.android-shell .configuration-section { padding: var(--android-card-inset); }
+.android-shell .configuration-page .field-row { padding-block: 10px; gap: 8px; }
+.android-shell .configuration-page .field-label { font-size: var(--type-body); }
+.android-shell .configuration-page .field-hint { font-size: var(--type-meta); line-height: 1.45; margin-top: 3px; }
+.android-shell .configuration-page .field-control .select { width: 100%; }
+.android-shell .configuration-page .field-control .select-btn { width: 100%; }
+.android-shell .dp-rule-navigation { order: -1; padding-top: 12px; }
+.android-shell .dp-rule-subscription > .dp-section-heading { flex-wrap: nowrap; align-items: center; gap: 8px; }
+.android-shell .dp-rule-subscription > .dp-section-heading > .card-hint { display: none; }
+.android-shell .dp-rule-subscription .dp-section-title { display: grid; flex: 1; gap: 2px; }
+.android-shell .dp-rule-subscription .dp-section-title p { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.android-shell .dp-rule-subscription > .dp-section-heading > .spacer { display: none; }
+.android-shell .proxy-node-select:disabled { opacity: 1; }
+.android-shell .proxy-node-detail { overflow-wrap: anywhere; }
+.android-shell .proxy-node-detail .btn { margin-top: 8px; }
+.android-shell .proxy-group-picker-head { display: flex; align-items: center; gap: 8px; }
+.android-shell .proxy-group-picker-head h2 { min-width: 0; flex: 1; font-size: var(--type-subtitle); }
+.android-shell .proxy-group-picker-search { min-height: var(--android-control-height); }
+.android-shell .proxy-group-option-title { min-width: 0; }
+.android-shell .proxy-group-option-title strong { white-space: normal; overflow-wrap: anywhere; }
+.android-shell .proxy-group-option-current { max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+
+/* 弹窗与正文使用同一套文字、控件和间距。 */
+.android-window .modal-card { padding-inline: var(--android-inset); font-size: var(--type-body); }
+.android-window .modal-card .modal-title,
+.android-window .subscription-import .import-head h2 { font-size: var(--type-subtitle); line-height: 1.3; }
+.android-window .modal-card :is(.modal-desc, .import-help, .sub-editor-hint) { font-size: var(--type-meta); line-height: 1.45; }
+.android-window .modal-card .sub-editor { gap: 12px; }
+.android-window .modal-card .sub-editor-field { gap: 6px; font-size: var(--type-control); }
+.android-window .modal-card .sub-editor-setting { min-height: 44px; font-size: var(--type-control); }
+.android-window .modal-card .sub-editor-setting .select { flex: 0 1 50%; }
+
+@media (max-width: 599px) {
+  .android-shell .proxy-group-pane { min-height: 44px; }
+  .android-shell .proxy-all-groups { min-height: var(--segment-height); font-size: var(--type-control); }
+  .android-shell .proxy-group-nav { font-size: var(--type-control); }
+  .android-shell .proxy-node .node-name { font-size: var(--type-body); line-height: 1.4; }
+
+  .android-shell .dp-session-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 0; }
+  .android-shell .dp-session-summary .traffic-stat { display: block; min-width: 0; padding: 0 10px; }
+  .android-shell .dp-session-summary .traffic-stat > .icon-tile { display: none; }
+  .android-shell .dp-session-summary .traffic-stat-label { font-size: var(--type-micro); margin-bottom: 4px; }
+  .android-shell .dp-session-summary .traffic-stat + .traffic-stat { border-top: 0; border-left: 1px solid var(--border-soft); }
+  .android-shell .dp-session-summary .traffic-stat-value { font-size: var(--type-subtitle); }
+  .android-shell .dp-traffic-table { padding: 12px; }
+  .android-shell .dp-traffic-table .traffic-row { grid-template-columns: minmax(0, 1fr) 30px 58px 58px; gap: 6px; font-size: var(--type-meta); }
+  .android-shell .dp-traffic-table .section-title { font-size: var(--type-control); }
+
+  .android-shell .dp-logs .log-toolbar { gap: 8px; padding: 0 0 8px; }
+  .android-shell .dp-logs .log-toolbar .seg { width: 100%; }
+  .android-shell .dp-logs .log-toolbar .node-search { flex: 1 1 100%; width: 100%; }
+  .android-shell .dp-logs .log-view { padding: 0 12px; }
+  .android-shell .dp-logs .log-entry { grid-template-columns: auto 1fr; gap: 3px 8px; padding-block: 10px; }
+  .android-shell .dp-logs .log-content { grid-column: 1 / -1; font-size: var(--type-meta); line-height: 1.5; overflow-wrap: anywhere; }
+
+  .android-shell .dp-rules .dp-rule-workspace { border-radius: 18px; gap: 0; }
+  .android-shell .dp-rule-section { padding: 12px; }
+  .android-shell .dp-rule-editor { flex: none; }
+  .android-shell .dp-rule-editor .dp-section-heading { min-height: 32px; align-items: center; flex-wrap: nowrap; gap: 8px; }
+  .android-shell .dp-traffic-panels { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .android-shell .dp-rule-editor .mini-switch { margin-block: -8px; }
+  .android-shell .dp-rule-editor .rule-builder { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
+  .android-shell .rule-builder :is(.rule-type-select, .rule-payload) { grid-column: 1 / -1; width: 100%; min-width: 0; }
+  .android-shell .rule-builder .select-btn { width: 100%; min-width: 0; }
+  .android-shell .dp-rule-navigation { padding: 12px 12px 8px; }
+  .android-shell .dp-rule-navigation .seg { width: 100%; }
+  .android-shell .dp-rule-navigation .seg-btn { gap: 4px; padding-inline: 4px; }
+  .android-shell .dp-rule-navigation .seg-btn span { font-size: var(--type-micro); color: var(--text-secondary); }
+  .android-shell .dp-rule-columns { display: none; }
+  .android-shell .dp-rule-filter { margin-top: 8px; gap: 4px; }
+  .android-shell .dp-rule-filter .node-search { width: 100%; }
+  .android-shell .dp-rule-section .dp-section-title p { font-size: var(--type-meta); }
+  .android-shell .dp-rule-note { padding: 10px 12px; font-size: var(--type-micro); }
+  .android-shell .dp-rules :is(.custom-rule-row, .sub-rule-row) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 20px 16px 48px; gap: 2px 8px; padding-block: 4px; }
+  .android-shell .dp-rules :is(.custom-rule-payload, .sub-rule-payload) { grid-area: 1 / 1 / 2 / -1; font-size: var(--type-control); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .android-shell .dp-rules :is(.custom-rule-row, .sub-rule-row) .dp-rule-type { grid-area: 2 / 1 / 3 / -1; font-size: var(--type-micro); }
+  .android-shell .dp-rules :is(.custom-rule-target, .sub-rule-target) { grid-area: 3 / 1; min-width: 0; text-align: left; font-size: var(--type-meta); }
+  .android-shell .dp-rule-actions { grid-area: 3 / 2; gap: 0; }
+  .android-shell .dp-rule-actions .mini-switch { width: 48px; margin: 0; }
+  .android-shell .dp-rule-actions .sub-rule-move { gap: 0; }
+  .android-shell .dp-rules .rule-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 24px 20px; gap: 2px 8px; }
+  .android-shell .dp-rules .rule-row .rule-payload { grid-area: 1 / 1 / 2 / -1; font-size: var(--type-control); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .android-shell .dp-rules .rule-row .dp-rule-type { grid-area: 2 / 1; }
+  .android-shell .dp-rules .rule-row > :last-child { grid-area: 2 / 2; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

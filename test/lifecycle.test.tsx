@@ -8,6 +8,8 @@ import { api } from '../src/core/api';
 import { checkWebRtc } from '../src/core/selfcheck';
 
 const native = vi.hoisted(() => ({ listen: vi.fn(), invoke: vi.fn() }));
+const platform = vi.hoisted(() => ({ android: false }));
+vi.mock('../src/core/platform', () => ({ get isAndroid() { return platform.android; }, isWindows: false, isLinux: false }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: native.listen }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: native.invoke }));
 vi.mock('../src/core/api', () => ({ isTauri: true, api: {
@@ -16,6 +18,7 @@ vi.mock('../src/core/api', () => ({ isTauri: true, api: {
 vi.mock('../src/core/selfcheck', async original => ({ ...await original<typeof import('../src/core/selfcheck')>(), checkWebRtc: vi.fn(async () => { throw new Error('unavailable'); }) }));
 let root: Root;
 beforeEach(() => {
+  platform.android = false;
   vi.useFakeTimers();
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   root = createRoot(document.createElement('div'));
@@ -25,6 +28,28 @@ beforeEach(() => {
   vi.mocked(api.leakCheckDns).mockResolvedValue({ kernel_alive: true } as any);
 });
 afterEach(async () => { await act(async () => root.unmount()); vi.useRealTimers(); vi.clearAllMocks(); });
+
+it('Android 只跟随文档前后台状态，不探测桌面窗口命令', async () => {
+  platform.android = true;
+  native.listen.mockResolvedValue(() => {});
+  native.invoke.mockResolvedValue(true);
+  let hidden = false;
+  const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+  let visible = false;
+  function View() { visible = useWindowVisible(); return null; }
+  try {
+    await act(async () => root.render(createElement(View)));
+    expect(visible).toBe(true);
+    expect(native.listen).not.toHaveBeenCalled();
+    expect(native.invoke).not.toHaveBeenCalled();
+    hidden = true;
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(visible).toBe(false);
+    hidden = false;
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(visible).toBe(true);
+  } finally { visibility.mockRestore(); }
+});
 
 it('隐藏事件优先于过期的初始查询，卸载只取消订阅一次', async () => {
   let event!: (e: { payload: boolean }) => void;

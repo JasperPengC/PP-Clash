@@ -1,7 +1,9 @@
+import { PageHeader } from '../components/PageHeader';
 import { VirtualList } from '../components/VirtualList';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState, MiniSwitch, ReadError, Segmented, Select, Spinner } from '../components/ui';
-import { IconChevronDown, IconEdit, IconInfo, IconPlus, IconRefresh, IconRules, IconSearch, IconTrash, IconX } from '../components/icons';
+import { IconChevronDown, IconDownload, IconEdit, IconImport, IconInfo, IconPlus, IconRefresh, IconRules, IconSearch, IconTrash, IconX } from '../components/icons';
+import { isAndroid } from '../core/platform';
 import { getLifecycleToken, isLifecycleCurrent, useApp } from '../store/app';
 import type { CustomRule } from '../domain/app';
 import { parseSubscriptionRules } from '../core/subscription';
@@ -43,6 +45,15 @@ export function RulesPage() {
   const notify = useApp((s) => s.notify);
 
   const rules = settings.customRules;
+  const [compactLayout, setCompactLayout] = useState(() => isAndroid && window.matchMedia('(max-width: 599px)').matches);
+  useEffect(() => {
+    if (!isAndroid) return;
+    const query = window.matchMedia('(max-width: 599px)');
+    const update = () => setCompactLayout(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
 
   const [kernelRules, setKernelRules] = useState<KernelRule[]>([]);
   const [kernelLoading, setKernelLoading] = useState(connected);
@@ -346,19 +357,12 @@ export function RulesPage() {
 
   return (
     <>
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">规则</h1>
-          <div className="page-sub">
-            {rules.length > 0 ? `${rules.length} 条自定义规则` : '自定义规则'}
-          </div>
-        </div>
-        <div className="page-actions">
-          <button type="button" className="btn" onClick={exportRules} disabled={busy || rules.length === 0}>
-            导出
+      <PageHeader title="规则" subtitle={rules.length > 0 ? `${rules.length} 条自定义规则` : '自定义规则'} mobileSubtitle={null}>
+          <button type="button" className={isAndroid ? 'icon-btn' : 'btn'} aria-label="导出规则" title="导出规则" onClick={exportRules} disabled={busy || rules.length === 0}>
+            {isAndroid ? <IconDownload size={18} /> : '导出'}
           </button>
-          <button type="button" className="btn" disabled={busy} onClick={() => setShowIO((v) => !v)}>
-            导入
+          <button type="button" className={isAndroid ? 'icon-btn' : 'btn'} aria-label="导入规则" title="导入规则" disabled={busy} onClick={() => setShowIO((v) => !v)}>
+            {isAndroid ? <IconImport size={18} /> : '导入'}
           </button>
           <button
             type="button"
@@ -370,12 +374,12 @@ export function RulesPage() {
           >
             <IconRefresh size={15} />
           </button>
-        </div>
-      </header>
+
+      </PageHeader>
 
       <div className="page-scroll dp-page dp-rules">
         <div className="page-inner dp-rule-workspace">
-          <section className="dp-rule-section dp-rule-editor">
+          <section className="dp-rule-section dp-rule-editor" hidden={isAndroid && ruleView !== 'custom'}>
             <div className="dp-section-heading">
               <span className="section-title">{editingId ? '编辑规则' : '添加规则'}</span>
               <div className="spacer" />
@@ -479,7 +483,7 @@ export function RulesPage() {
             ) : (
               <>
               <div className="dp-rule-columns" aria-hidden="true"><span>类型</span><span>内容</span><span>目标</span><span>操作</span></div>
-              <VirtualList className="custom-rule-list" label="自定义规则列表" items={rules} rowHeight={44}
+              <VirtualList className="custom-rule-list" label="自定义规则列表" items={rules} rowHeight={compactLayout ? 96 : isAndroid ? 56 : 44}
                 itemKey={r => r.id} renderItem={r => (
                   <div key={r.id} className="custom-rule-row">
                     <span className="dp-rule-type" title={r.type}>{r.type}</span>
@@ -541,11 +545,12 @@ export function RulesPage() {
               {activeProfile && orderedSubscriptionRules.length > 0 && (
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
+                  className={isAndroid ? 'icon-btn' : 'btn btn-ghost btn-sm'}
+                  aria-label="重置订阅规则" title="重置订阅规则"
                   disabled={busy}
                   onClick={() => void resetSubscriptionRules()}
                 >
-                  重置
+                  {isAndroid ? <IconRefresh size={18} /> : '重置'}
                 </button>
               )}
             </div>
@@ -581,7 +586,7 @@ export function RulesPage() {
                   </span>
                 </div>
                 <div className="dp-rule-columns" aria-hidden="true"><span>类型</span><span>内容</span><span>目标</span><span>操作</span></div>
-                <VirtualList className="sub-rule-list" label="订阅规则列表" items={filteredSubscriptionRules} rowHeight={44}
+                <VirtualList className="sub-rule-list" label="订阅规则列表" items={filteredSubscriptionRules} rowHeight={compactLayout ? 96 : isAndroid ? 56 : 44}
                   resetKey={`${activeId}:${deferredSubQuery}`} itemKey={r => r.index} renderItem={r => {
                     const edit = activeProfile.ruleEdits?.edits[r.index];
                     const on = edit?.enabled !== false;
@@ -680,7 +685,7 @@ export function RulesPage() {
                     <span>内容</span>
                     <span>目标</span>
                   </div>
-                  <VirtualList label="生效规则列表" items={filteredKernel} rowHeight={40} resetKey={deferredQuery}
+                  <VirtualList label="生效规则列表" items={filteredKernel} rowHeight={compactLayout ? 64 : 40} resetKey={deferredQuery}
                     maxHeight={340} itemKey={(r,i) => `${i}-${r.type}-${r.payload}`} renderItem={r => (
                     <div className="rule-row">
                       <span className="dp-rule-type" title={r.type}>{r.type}</span>
@@ -706,7 +711,7 @@ export function RulesPage() {
 
           <div className="banner dp-rule-note">
             <IconInfo size={13} />
-            <span>安全规则只读；其他配置请在覆写页修改。</span>
+            <span>{isAndroid ? '安全防护规则只读。' : '安全规则只读；其他配置请在覆写页修改。'}</span>
           </div>
         </div>
       </div>

@@ -41,7 +41,7 @@
 .seg-btn:disabled { cursor: default; opacity: .5; }
 .seg-btn > svg { flex: none; }
 
-/* 等宽切换使用滑动选择面；变宽的导航保留自身宽度和横向浏览能力。 */
+/* 等宽切换使用 CSS 滑动选择面；变宽导航根据真实按钮位置移动。 */
 .seg-motion { position: relative; isolation: isolate; display: grid; grid-template-columns: repeat(var(--seg-count), minmax(0, 1fr)); }
 .seg-motion::before,
 .seg:not(.seg-motion) .seg-btn.active::before {
@@ -63,7 +63,23 @@
 .seg-motion[data-has-value='false']::before { visibility: hidden; }
 .seg:not(.seg-motion) .seg-btn.active::before { inset: -1px 0; }
 
+.selection-track { position: relative; isolation: isolate; }
+.selection-indicator {
+  position: absolute;
+  pointer-events: none;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--radius-pill);
+  background: var(--glass-bright);
+  box-shadow: var(--shadow-control);
+}
+.selection-indicator[hidden] { display: none; }
+.selection-track > button { z-index: 1; }
+.seg .selection-track .seg-btn.active::before { content: none; }
+
 @media (prefers-reduced-transparency: reduce) {
   .seg, .segmented { background: var(--surface-2); box-shadow: none; }
-  .seg-motion::before, .seg:not(.seg-motion) .seg-btn.active::before { background: var(--surface); }
+  .seg-motion::before, .seg:not(.seg-motion) .seg-btn.active::before, .selection-indicator { background: var(--surface); }
 }

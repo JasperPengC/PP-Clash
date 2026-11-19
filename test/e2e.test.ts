@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { generateConfig } from '../src/core/generator';
 import { DEFAULT_POLICY } from '../src/core/security';
 
@@ -20,6 +20,11 @@ const CORE_CANDIDATES = [
 ];
 
 const core = CORE_CANDIDATES.find((p) => fs.existsSync(p));
+const geoDir = core ? path.dirname(path.dirname(core)) : '';
+const temporaryDirectories: string[] = [];
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+});
 const profiles = fs.existsSync(PROFILE_DIR)
   ? fs
       .readdirSync(PROFILE_DIR)
@@ -42,13 +47,14 @@ describe.skipIf(!available)('端到端：真实订阅 → 生成配置 → 内�
       });
 
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppclash-e2e-'));
+      temporaryDirectories.push(dir);
       const cfgPath = path.join(dir, 'config.yaml');
       fs.writeFileSync(cfgPath, config, 'utf-8');
 
-      // 内核需要 geo 数据，从 /tmp/mtest 复制过来
+      // 使用已安装的数据，避免配置校验隐式下载 Geo 数据。
       for (const geo of ['geosite.dat', 'geoip.metadb', 'geoip.dat', 'country.mmdb', 'ASN.mmdb']) {
-        const src = path.join('/tmp/mtest', geo);
-        if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dir, geo));
+        const src = [path.join('/tmp/mtest', geo), path.join(geoDir, geo)].find(p => fs.existsSync(p));
+        if (src) fs.copyFileSync(src, path.join(dir, geo));
       }
 
       let out = '';
@@ -66,7 +72,7 @@ describe.skipIf(!available)('端到端：真实订阅 → 生成配置 → 内�
       expect(ok, `内核校验失败：\n${out.slice(-800)}`).toBe(true);
       expect(stats.proxyCount).toBeGreaterThan(0);
       expect(stats.guardRuleCount).toBeGreaterThan(0);
-    });
+    }, 40_000);
   }
 
   it('自定义 DNS + 嗅探配置能被内核接受', async () => {
@@ -91,11 +97,12 @@ describe.skipIf(!available)('端到端：真实订阅 → 生成配置 → 内�
     });
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppclash-e2e-dns-'));
+    temporaryDirectories.push(dir);
     const cfgPath = path.join(dir, 'config.yaml');
     fs.writeFileSync(cfgPath, config, 'utf-8');
     for (const geo of ['geosite.dat', 'geoip.metadb', 'geoip.dat', 'country.mmdb', 'ASN.mmdb']) {
-      const src = path.join('/tmp/mtest', geo);
-      if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dir, geo));
+      const src = [path.join('/tmp/mtest', geo), path.join(geoDir, geo)].find(p => fs.existsSync(p));
+      if (src) fs.copyFileSync(src, path.join(dir, geo));
     }
 
     let out = '';
@@ -110,5 +117,5 @@ describe.skipIf(!available)('端到端：真实订阅 → 生成配置 → 内�
       out = String(e.stdout ?? '') + String(e.stderr ?? '') + String(e.message ?? '');
     }
     expect(ok, `内核校验失败：\n${out.slice(-800)}`).toBe(true);
-  });
+  }, 40_000);
 });

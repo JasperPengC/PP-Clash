@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/PageHeader';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ReadError, Select, Toggle } from '../components/ui';
@@ -95,12 +96,7 @@ export function DnsPage() {
 
   return (
     <>
-      <header className="page-head page-head-wide">
-        <div className="page-heading">
-          <h1 className="page-title">DNS 与嗅探</h1>
-          <div className="page-sub">解析与域名识别</div>
-        </div>
-      </header>
+      <PageHeader title="DNS 与嗅探" mobileTitle="DNS 配置" className="page-head-wide" subtitle="解析与域名识别" mobileSubtitle={null} />
 
       <div className="page-scroll">
         <div className="page-inner configuration-page dns-page">

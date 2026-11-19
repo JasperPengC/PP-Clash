@@ -10,6 +10,7 @@ import { api } from '../src/core/api';
 
 const platform = vi.hoisted(() => ({ isLinux: false }));
 vi.mock('../src/core/platform', () => ({
+  isAndroid: false,
   isWindows: false,
   get isLinux() { return platform.isLinux; },
 }));

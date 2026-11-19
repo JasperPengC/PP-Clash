@@ -451,6 +451,8 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 }
 
 export const api = {
+  androidAppInfo: () => call<{ version: string; build: number; abi: string; kernelVersion: string; debug: boolean }>('android_app_info'),
+  androidSystemTheme: (light: boolean) => call<void>('android_system_theme', { light }),
   fetchSubscription: (url: string, proxyPort?: number) =>
     call<SubscriptionPayload>('fetch_subscription', { url, proxyPort }),
 
@@ -582,7 +584,7 @@ export const api = {
   cleanupStaleKernel: () => call<void>('cleanup_stale_kernel'),
 
   kernelStatus: (controllerSecret = '') =>
-    call<KernelStatus>('kernel_status', { secret: controllerSecret }),
+    call<KernelStatus>('kernel_status', { secret: controllerSecret, port: Number(new URL(mihomoBase).port) }),
 
   /** 重新解压内置内核与 Geo 数据。 */
   reinstallResources: () => call<string>('reinstall_bundled_resources'),

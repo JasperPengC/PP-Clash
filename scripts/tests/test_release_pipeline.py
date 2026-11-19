@@ -58,6 +58,21 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertEqual(self.run_gate("files", "--version", "0.2.1",
                                           "--directory", tmp).returncode, 0)
 
+    def test_android_release_requires_both_abis_and_bundle(self):
+        android = ["ppclash-android-arm64-v8a-v0.2.1.apk",
+                   "ppclash-android-x86_64-v0.2.1.apk", "ppclash-android-v0.2.1.aab"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in PACKAGES + android:
+                (root / name).write_bytes(b"release fixture")
+            result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp, "--android")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len((root / "SHA256SUMS").read_text().splitlines()), 13)
+            (root / android[1]).unlink()
+            result = self.run_gate("files", "--version", "0.2.1", "--directory", tmp, "--android", "--verify-checksums")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(android[1], result.stderr)
+
     def test_complete_package_set_from_nested_workflow_artifacts_is_flattened(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

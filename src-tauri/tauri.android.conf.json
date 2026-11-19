@@ -1,0 +1,13 @@
+{
+  "app": {
+    "windows": [{ "label": "main", "title": "PP Clash" }],
+    "security": {
+      "capabilities": ["android-main"]
+    }
+  },
+  "bundle": {
+    "targets": "all",
+    "resources": [],
+    "android": { "minSdkVersion": 24 }
+  }
+}

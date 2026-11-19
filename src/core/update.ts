@@ -6,4 +6,4 @@ export const APP_VERSION = __APP_VERSION__;
  */
 export const UPDATE_REPO =
   (import.meta.env.VITE_UPDATE_REPO as string | undefined)?.trim() ||
-  'JasperPengC/PP-Clash';
+  'JasperPengC/pp-clash';

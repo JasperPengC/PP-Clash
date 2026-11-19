@@ -1,6 +1,8 @@
+import { PageHeader } from '../components/PageHeader';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState, ReadError, Segmented } from '../components/ui';
-import { IconDownload, IconSearch, IconX } from '../components/icons';
+import { IconCode, IconDownload, IconPause, IconRefresh, IconSearch, IconX } from '../components/icons';
+import { isAndroid } from '../core/platform';
 import { IconLog } from '../components/icons';
 import { useApp } from '../store/app';
 import { api, isTauri } from '../core/api';
@@ -91,31 +93,25 @@ export function LogsPage({ active = true }: { active?: boolean }) {
 
   return (
     <>
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">日志</h1>
-          <div className="page-sub">
-            {connected ? '内核日志 · 最近 400 行' : '内核未运行'}
-          </div>
-        </div>
-        <div className="page-actions">
-          <button type="button" className="btn" aria-pressed={rawView} onClick={() => setRawView(value => !value)}>原始日志</button>
+      <PageHeader title="日志" subtitle={connected ? '内核日志 · 最近 400 行' : '内核未运行'} mobileSubtitle={null}>
+          <button type="button" className={isAndroid ? 'icon-btn' : 'btn'} aria-label="原始日志" title="原始日志" aria-pressed={rawView} onClick={() => setRawView(value => !value)}>{isAndroid ? <IconCode size={18} /> : '原始日志'}</button>
           {isTauri && (
             <button
               type="button"
-              className="btn"
+              className={isAndroid ? 'icon-btn' : 'btn'}
+              aria-label="导出日志" title="导出日志"
               disabled={exporting || shown.length === 0}
               onClick={() => void exportLogs()}
             >
-              <IconDownload size={13} />
-              {exporting ? '导出中' : '导出'}
+              <IconDownload size={isAndroid ? 18 : 13} />
+              {!isAndroid && (exporting ? '导出中' : '导出')}
             </button>
           )}
-          <button type="button" className="btn" aria-pressed={paused} onClick={() => setPaused((v) => !v)}>
-            {paused ? '继续刷新' : '暂停'}
+          <button type="button" className={isAndroid ? 'icon-btn' : 'btn'} aria-label={paused ? '继续刷新' : '暂停'} title={paused ? '继续刷新' : '暂停'} aria-pressed={paused} onClick={() => setPaused((v) => !v)}>
+            {isAndroid ? paused ? <IconRefresh size={18} /> : <IconPause size={18} /> : paused ? '继续刷新' : '暂停'}
           </button>
-        </div>
-      </header>
+
+      </PageHeader>
 
       <div className="page-scroll page-fixed dp-page dp-logs">
         <div className="page-inner dp-log-workspace">

@@ -5,6 +5,8 @@
   --motion-view: 220ms;
   --ease-arrive: cubic-bezier(.16, 1, .3, 1);
   --ease-state: cubic-bezier(.2, .8, .2, 1);
+  --motion-select: 320ms;
+  --ease-select: cubic-bezier(.22, 1.12, .36, 1);
 }
 
 .page-anim { animation: workspace-enter var(--motion-state) ease-out; }
@@ -14,11 +16,12 @@
 @keyframes icon-spin { to { transform: rotate(360deg); } }
 
 /* 等宽分段共享一个选择面，文字与 aria 状态随操作立即更新。 */
-.seg-motion::before { transition: transform var(--motion-view) var(--ease-arrive); }
+.seg-motion::before { transition: transform var(--motion-select) var(--ease-select); }
+.selection-indicator[data-animated='true'] { transition: transform var(--motion-select) var(--ease-select), width var(--motion-select) var(--ease-select), height var(--motion-select) var(--ease-select); }
 .seg-btn { transition: color var(--motion-quick) ease-out; }
 
 .toggle, .mini-switch { transition: background var(--motion-state) var(--ease-state); }
-.toggle::after, .mini-switch > span { transition: transform var(--motion-view) var(--ease-arrive); }
+.toggle::after, .mini-switch > span { transition: transform var(--motion-select) var(--ease-select); }
 .nav-item, .settings-category { transition: background var(--motion-quick) ease-out, color var(--motion-quick) ease-out; }
 .btn, .icon-btn, .tp-icon { transition: background var(--motion-quick) ease-out, color var(--motion-quick) ease-out, border-color var(--motion-quick) ease-out, transform var(--motion-quick) ease-out; }
 .input, .select-btn, .search-field > .input, .node-search > input { transition: background var(--motion-quick) ease-out, border-color var(--motion-quick) ease-out, box-shadow var(--motion-quick) ease-out; }

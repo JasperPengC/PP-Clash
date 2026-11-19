@@ -13,7 +13,7 @@ const native = vi.hoisted(() => {
 });
 vi.mock('@tauri-apps/api/core', () => ({ invoke: native.invoke }));
 const platform = vi.hoisted(() => ({ linux: false }));
-vi.mock('../src/core/platform', () => ({ isWindows: false, get isLinux() { return platform.linux; } }));
+vi.mock('../src/core/platform', () => ({ isAndroid: false, isWindows: false, get isLinux() { return platform.linux; } }));
 vi.mock('../src/core/api', async original => {
   const actual = await original<typeof import('../src/core/api')>();
   return { ...actual, isTauri: true, api: Object.fromEntries(Object.keys(actual.api).map(key => [key, vi.fn().mockResolvedValue(undefined)])) };

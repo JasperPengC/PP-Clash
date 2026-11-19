@@ -6,6 +6,7 @@ import { installLogger } from './core/logger';
 import { initTextSize } from './store/text-size';
 import { installOverlayScrollbars } from './core/overlay-scrollbars';
 import { api, DATA_DIR, isTauri } from './core/api';
+import { isAndroid } from './core/platform';
 import 'flag-icons/css/flag-icons.min.css';
 import './styles/index.css';
 
@@ -17,7 +18,8 @@ initTheme();
 installLogger();
 
 const params = new URLSearchParams(window.location.search);
-const isTrayPanel = params.get('panel') === 'tray';
+const isTrayPanel = !isAndroid && params.get('panel') === 'tray';
+if (isAndroid) document.documentElement.classList.add('android-window');
 const stopTextSize = initTextSize(isTrayPanel && isTauri ? async () => {
   const raw = await api.loadAppState(DATA_DIR);
   return raw ? JSON.parse(raw).settings?.textSize : undefined;
@@ -33,7 +35,9 @@ if (isTrayPanel) {
 
 const WindowView = isTrayPanel
   ? asyncView(() => import('./components/TrayPanel').then(module => ({ default: module.TrayPanel })))
-  : asyncView(() => import('./bootstrap/main-window'));
+  : isAndroid
+    ? asyncView(() => import('./bootstrap/android-window'))
+    : asyncView(() => import('./bootstrap/main-window'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

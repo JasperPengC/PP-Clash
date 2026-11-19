@@ -1,0 +1,7 @@
+{
+  "identifier": "android-main",
+  "description": "Android 主界面权限",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}

@@ -6,15 +6,29 @@ import { TrafficPage } from '../src/pages/Traffic';
 import { useApp } from '../src/store/app';
 import { api } from '../src/core/api';
 
+const platform = vi.hoisted(() => ({ android: false }));
+vi.mock('../src/core/platform', () => ({ get isAndroid() { return platform.android; }, isWindows: false, isLinux: false }));
 vi.mock('../src/core/api', async original => {
   const actual = await original<typeof import('../src/core/api')>();
   return { ...actual, api: { ...actual.api, mihomo: vi.fn() } };
 });
 let host: HTMLDivElement; let root: Root;
 beforeEach(() => {
+  platform.android = false;
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   useApp.setState({ ...useApp.getInitialState(), kernelPhase: 'running' });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+});
+
+it('Android 没有进程归属信息时只显示有效的节点流量统计', async () => {
+  platform.android = true;
+  vi.mocked(api.mihomo).mockResolvedValue({ connections: [{
+    id: 'mobile', upload: 123, download: 456, chains: ['Tokyo'], metadata: {},
+  }], uploadTotal: 123, downloadTotal: 456 });
+  await act(async () => root.render(createElement(TrafficPage)));
+  expect(host.querySelector('[aria-label="节点流量列表"]')?.textContent).toContain('Tokyo');
+  expect(host.querySelector('[aria-label="按进程统计"]')).toBeNull();
+  expect(host.textContent).not.toContain('未知');
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.clearAllMocks(); });
 

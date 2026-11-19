@@ -1,6 +1,6 @@
 //! 应用更新检查。
 //!
-//! 只读取一个 JSON feed 并比较版本，不做下载/静默安装：
+//! 读取发布源、比较版本并匹配安装包；安装必须经过系统确认。
 //! { "version": "0.2.0", "notes": "...", "url": "https://.../PP-Clash.dmg" }
 
 use std::time::Duration;
@@ -12,6 +12,16 @@ pub struct UpdateInfo {
     pub notes: Option<String>,
     pub url: String,
     pub sha256: Option<String>,
+}
+
+fn android_asset_matches(name: &str, arch: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    if !name.ends_with(".apk") || !name.contains("android-") { return false; }
+    name.contains("android-universal-") || match arch {
+        "aarch64" => name.contains("android-arm64-v8a-") || name.contains("android-aarch64-"),
+        "x86_64" => name.contains("android-x86_64-"),
+        _ => false,
+    }
 }
 
 fn numeric_version(v: &str) -> Vec<u64> {
@@ -100,7 +110,17 @@ pub async fn check_app_update(
 
 #[cfg(test)]
 mod tests {
-    use super::is_newer;
+    use super::{is_newer, android_asset_matches};
+
+    #[test]
+    fn android_release_matches_device_abi() {
+        assert!(android_asset_matches("ppclash-android-arm64-v8a-v0.2.3.apk", "aarch64"));
+        assert!(android_asset_matches("ppclash-android-x86_64-v0.2.3.apk", "x86_64"));
+        assert!(android_asset_matches("ppclash-android-universal-v0.2.3.apk", "aarch64"));
+        assert!(!android_asset_matches("ppclash-android-x86_64-v0.2.3.apk", "aarch64"));
+        assert!(!android_asset_matches("ppclash-windows-arm64-setup.exe", "aarch64"));
+        assert!(!android_asset_matches("ppclash-android-arm64-v8a-v0.2.3.apk.sha256", "aarch64"));
+    }
 
     #[test]
     fn compares_versions() {
@@ -113,6 +133,7 @@ mod tests {
 }
 
 /// 下载更新包到临时目录；有 sha256 时做校验。返回本地路径。
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn download_app_update(
     url: String,
@@ -173,6 +194,7 @@ pub async fn download_app_update(
 }
 
 /// 打开刚下载的更新包；限制在临时目录且扩展名受支持。
+#[cfg(desktop)]
 #[tauri::command]
 pub fn open_downloaded_update(path: String) -> Result<(), String> {
     let p = std::path::PathBuf::from(&path);
@@ -250,7 +272,7 @@ pub async fn check_github_update(
         .get("tag_name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "Release 缺少 tag_name".to_string())?;
-    if !is_newer(tag, &current_version) {
+    if !cfg!(target_os = "android") && !is_newer(tag, &current_version) {
         return Ok(None);
     }
     let notes = release
@@ -262,7 +284,9 @@ pub async fn check_github_update(
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
-    let target = if cfg!(target_os = "macos") {
+    let target = if cfg!(target_os = "android") {
+        ".apk"
+    } else if cfg!(target_os = "macos") {
         ".dmg"
     } else if cfg!(target_os = "windows") {
         ".exe"
@@ -277,6 +301,7 @@ pub async fn check_github_update(
             Some((name, url, a))
         })
         .filter(|(name, _, _)| name.to_ascii_lowercase().ends_with(&target.to_ascii_lowercase()))
+        .filter(|(name, _, _)| target != ".apk" || android_asset_matches(name, std::env::consts::ARCH))
         .find(|(name, _, _)| {
             !name.to_ascii_lowercase().contains("sha256")
                 && (target != ".exe" || name.to_ascii_lowercase().contains("setup"))
@@ -289,11 +314,14 @@ pub async fn check_github_update(
                     let url = a.get("browser_download_url")?.as_str()?;
                     Some((name, url, a))
                 })
-                .find(|(name, _, _)| name.to_ascii_lowercase().ends_with(&target.to_ascii_lowercase()))
+                .find(|(name, _, _)| name.to_ascii_lowercase().ends_with(&target.to_ascii_lowercase())
+                    && (target != ".apk" || android_asset_matches(name, std::env::consts::ARCH)))
         });
     let Some((asset_name, url, asset)) = asset else {
+        if target == ".apk" { return Err("正式发布中暂无适配本机的 Android 安装包".into()); }
         return Err(format!("Release 里没有找到 {target} 安装包"));
     };
+    if !is_newer(tag, &current_version) { return Ok(None); }
     let mut sha256 = asset
         .get("digest")
         .and_then(|v| v.as_str())

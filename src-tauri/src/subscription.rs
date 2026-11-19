@@ -37,6 +37,8 @@ pub(crate) fn mark_config_validated(path: &Path, digest: &[u8]) -> Result<(), St
 /// 候选文件唯一且不覆盖当前可启动配置。
 #[tauri::command]
 pub fn prepare_config(content: String, data_dir: String) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    let content = crate::android::kernel::mobile_config(&content)?;
     let dir = resolve_data_dir(&data_dir)?.canonicalize().map_err(|e| e.to_string())?;
     let sequence = CANDIDATE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();

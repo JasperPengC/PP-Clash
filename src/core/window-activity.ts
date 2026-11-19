@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from './api';
+import { isAndroid } from './platform';
 
 /** 失焦仍可见的窗口继续刷新；仅隐藏/最小化暂停展示工作。 */
 export function useWindowVisible(): boolean {
@@ -13,7 +14,7 @@ export function useWindowVisible(): boolean {
     let dispose: (() => void) | undefined;
     const changed = () => setDocumentVisible(!document.hidden);
     document.addEventListener('visibilitychange', changed);
-    if (isTauri) void listen<boolean>('window://visible', ({ payload }) => {
+    if (isTauri && !isAndroid) void listen<boolean>('window://visible', ({ payload }) => {
       revision++;
       if (alive) setNativeVisible(payload);
     }).then(async unlisten => {

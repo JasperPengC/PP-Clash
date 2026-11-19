@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/PageHeader';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState, ReadError } from '../components/ui';
 import { IconActivity, IconDownload, IconRefresh, IconUpload } from '../components/icons';
@@ -6,6 +7,7 @@ import { formatBytes } from '../core/format';
 import { useApp } from '../store/app';
 import { startPolling } from '../core/polling';
 import { VirtualList } from '../components/VirtualList';
+import { isAndroid } from '../core/platform';
 
 interface RawConn {
   id: string;
@@ -89,6 +91,7 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
   );
   const processPaths = useMemo(() => {
     const map: Record<string, string> = {};
+    if (isAndroid) return map;
     for (const c of conns) {
       const path = c.metadata?.processPath;
       if (!path) continue;
@@ -100,7 +103,7 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
   }, [conns]);
 
   const byProcess = useMemo(
-    () =>
+    () => isAndroid ? [] :
       aggregate(conns, (c) => {
         if (c.metadata?.process) return c.metadata.process;
         const path = c.metadata?.processPath;
@@ -128,15 +131,9 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
 
   return (
     <>
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">流量</h1>
-          <div className="page-sub">
-            {connected ? `本会话 ${formatBytes(totals.up + totals.down)}` : '内核未运行'}
-          </div>
-        </div>
-        <div className="page-actions"><button type="button" className="icon-btn" aria-label="刷新流量" aria-busy={loading} disabled={!active || !connected || loading} onClick={() => void load()}><IconRefresh size={15} /></button></div>
-      </header>
+      <PageHeader title="流量" subtitle={connected ? `本会话 ${formatBytes(totals.up + totals.down)}` : '内核未运行'} mobileSubtitle={null}>
+<button type="button" className="icon-btn" aria-label="刷新流量" aria-busy={loading} disabled={!active || !connected || loading} onClick={() => void load()}><IconRefresh size={15} /></button>
+      </PageHeader>
 
       <div className="page-scroll page-fixed dp-page dp-traffic">
         <div className="page-inner">
@@ -210,7 +207,7 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
                 )}
               </section>
 
-              <section className="card dp-traffic-table" aria-label="按进程统计">
+              {!isAndroid && <section className="card dp-traffic-table" aria-label="按进程统计">
                 <div className="dp-section-heading"><h2 className="section-title">活动连接 · 按进程</h2><span className="dp-table-count">{byProcess.length} 个进程</span></div>
                 {byProcess.length === 0 ? (
                   <div className="rule-empty">暂无活动连接</div>
@@ -239,7 +236,7 @@ export function TrafficPage({ active = true }: { active?: boolean }) {
                     )} />
                   </div>
                 )}
-              </section>
+              </section>}
               </div>
             </>
           )}

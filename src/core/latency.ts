@@ -25,6 +25,15 @@ export function normalizeLatency(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/** 概览页统一使用的延迟状态阈值：与桌面端连接主卡保持一致。 */
+export function latencyTone(value: number | null | undefined): 'good' | 'warn' | 'bad' | 'idle' {
+  const delay = normalizeLatency(value);
+  if (delay === null) return 'idle';
+  if (delay < 120) return 'good';
+  if (delay < 260) return 'warn';
+  return 'bad';
+}
+
 /** mihomo adapter/adapter.go ExtraDelayHistories + constant/adapters.go ProxyState。
  * extra 的键就是测速 URL；通用 history 没有来源信息，不能用于目标专属延迟。
  */

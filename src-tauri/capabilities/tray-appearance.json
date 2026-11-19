@@ -1,6 +1,7 @@
 {
   "identifier": "tray-appearance",
   "description": "托盘外观和运行状态显示事件，不授予窗口控制权限",
+  "platforms": ["macOS", "windows", "linux"],
   "windows": ["tray-panel"],
   "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "core:event:allow-emit"]
 }

@@ -24,7 +24,7 @@ import { buildProxyDomain, proxyGroupKind, resolveProxyRoute } from '../core/pro
 import { useRouteDiagnostics } from '../core/use-diagnostics';
 import { startPolling } from '../core/polling';
 import { formatBytes, formatDuration, formatExpire, formatSpeed, formatTime } from '../core/format';
-import { GITHUB_LATENCY_URL, groupLatencyTarget, latencyKey, normalizeLatency, readGroupLatency } from '../core/latency';
+import { GITHUB_LATENCY_URL, groupLatencyTarget, latencyKey, latencyTone, normalizeLatency, readGroupLatency } from '../core/latency';
 
 const EMPTY = Array.from({ length: 32 }, () => 0);
 const OVERVIEW_NODE_HEIGHT = 34;
@@ -402,7 +402,7 @@ export function OverviewPage({ active = true }: { active?: boolean }) {
       : terminalName ? `${terminalName} · ${terminalReading}，不测速代理候选`
       : !canTestConnection ? '当前连接不支持单节点测速'
       : `${connectionTarget === GITHUB_LATENCY_URL ? 'GitHub' : 'Google'} HTTPS 延迟 · 点击重测`,
-    tone: connectionRoute?.kind === 'reject' ? 'bad' : connectionDelay == null ? 'idle' : connectionDelay < 120 ? 'good' : connectionDelay < 260 ? 'warn' : 'bad',
+    tone: connectionRoute?.kind === 'reject' ? 'bad' : latencyTone(connectionDelay),
     canTest: canTestConnection,
     key: connectionKey,
     testing: testingCurrentNode && currentLatencyRequestKey.current === connectionKey,

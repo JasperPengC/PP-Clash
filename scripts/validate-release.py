@@ -13,11 +13,14 @@ def validate_ref(version, ref, publish):
         raise ValueError(f"发布标签必须与应用版本一致：需要 {expected}，实际 {ref}")
 
 
-def validate_files(version, directory, verify_checksums=False):
+def validate_files(version, directory, verify_checksums=False, android=False):
     names = {f"PP_Clash-{version}-macos-{arch}.dmg" for arch in ("x86_64", "aarch64")}
     names.update(f"PP_Clash-{version}-windows-{arch}-setup.exe" for arch in ("amd64", "arm64"))
     names.update(f"PP_Clash-{version}-linux-{arch}.{ext}"
                  for arch in ("amd64", "arm64") for ext in ("deb", "rpm", "AppImage"))
+    if android:
+        names.update(f"ppclash-android-{abi}-v{version}.apk" for abi in ("arm64-v8a", "x86_64"))
+        names.add(f"ppclash-android-v{version}.aab")
     found = {}
     unexpected = []
     for path in directory.rglob("*"):
@@ -83,6 +86,7 @@ def main():
     files.add_argument("--directory", type=Path, required=True)
     files.add_argument("--verify-checksums", action="store_true",
                        help="校验已有 SHA256SUMS；缺失或不匹配时禁止发布")
+    files.add_argument("--android", action="store_true", help="同时要求 Android 两种 ABI 的 APK 和 AAB")
     args = parser.parse_args()
     try:
         if not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", args.version):
@@ -90,7 +94,7 @@ def main():
         if args.command == "ref":
             validate_ref(args.version, args.ref, args.publish == "true")
         else:
-            validate_files(args.version, args.directory, args.verify_checksums)
+            validate_files(args.version, args.directory, args.verify_checksums, args.android)
     except (ValueError, OSError) as error:
         parser.exit(1, f"发布校验失败：{error}\n")
     print("发布校验通过")

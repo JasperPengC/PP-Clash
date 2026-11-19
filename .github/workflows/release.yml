@@ -36,6 +36,17 @@ jobs:
           node scripts/check-version.mjs
           VERSION="$(node -p "require('./package.json').version")"
           python3 scripts/validate-release.py ref --version "$VERSION" --ref "$RELEASE_REF" --publish "$PUBLISH_RELEASE"
+      - name: Check Android signing configuration before starting builders
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+        run: |
+          for field in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_CERT_SHA256; do
+            if [[ -z "${!field}" ]]; then echo "Missing Android signing secret: $field" >&2; exit 1; fi
+          done
 
   checks:
     needs: preflight
@@ -183,8 +194,20 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/rpm/PP_Clash-*.rpm
             src-tauri/target/${{ matrix.target }}/release/bundle/appimage/PP_Clash-*.AppImage
 
+  android:
+    needs: checks
+    uses: ./.github/workflows/android.yml
+    with:
+      release: true
+    secrets:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+
   verify-artifacts:
-    needs: [desktop, linux]
+    needs: [desktop, linux, android]
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -202,7 +225,7 @@ jobs:
       - name: Verify complete matching package set
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts
+          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts --android
       - uses: actions/upload-artifact@v4
         with:
           name: release-checksums
@@ -236,6 +259,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts --verify-checksums
+          python3 scripts/validate-release.py files --version "$VERSION" --directory artifacts --android --verify-checksums
           (cd artifacts && sha256sum --check SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag --title "PP Clash $GITHUB_REF_NAME" --notes-file scripts/release-notes.md

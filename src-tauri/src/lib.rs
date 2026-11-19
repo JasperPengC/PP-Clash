@@ -1,34 +1,60 @@
-mod icons;
-mod kernel;
-mod leakcheck;
-mod platform;
-mod diagnostics;
-mod services;
-mod update;
-mod watchdog;
-mod mihomo;
-mod prefs;
-mod resources;
-mod subscription;
-mod backup_state;
-mod sysproxy;
-#[cfg(any(target_os = "linux", test))]
-mod linux;
-mod tray;
-mod traffic;
-
+#[cfg(desktop)]
 use kernel::KernelState;
+#[cfg(desktop)]
 use prefs::AppFlags;
+#[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(desktop)]
 use std::time::Duration;
 
+#[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
+#[cfg(desktop)]
 use tauri::{Emitter, Manager, WindowEvent};
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 
+mod backup_state;
+mod mihomo;
+mod platform;
+mod subscription;
+mod traffic;
+
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(target_os = "android")]
+pub use android::run;
+#[cfg(target_os = "android")]
+use android::kernel;
+
+#[cfg(desktop)]
+mod diagnostics;
+#[cfg(desktop)]
+mod icons;
+#[cfg(desktop)]
+mod kernel;
+#[cfg(desktop)]
+mod leakcheck;
+#[cfg(all(desktop, any(target_os = "linux", test)))]
+mod linux;
+#[cfg(desktop)]
+mod prefs;
+#[cfg(desktop)]
+mod resources;
+#[cfg(desktop)]
+mod services;
+#[cfg(desktop)]
+mod sysproxy;
+#[cfg(desktop)]
+mod tray;
+mod update;
+#[cfg(desktop)]
+mod watchdog;
+
+#[cfg(desktop)]
 static HIDDEN_TO_TRAY: AtomicBool = AtomicBool::new(false);
 
+#[cfg(desktop)]
 #[tauri::command]
 fn main_window_visible(app: tauri::AppHandle) -> bool {
     app.get_webview_window("main")
@@ -44,10 +70,11 @@ fn disable_automatic_termination() {
         .disableAutomaticTermination(ns_string!("PP Clash menu bar resident"));
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(desktop, not(target_os = "macos")))]
 fn disable_automatic_termination() {}
 
 /// 把主窗口叫到前台。托盘点击和菜单项都走这里。
+#[cfg(desktop)]
 pub fn focus_main(app: &tauri::AppHandle) {
     // 从托盘/面板唤回主窗口时恢复 Dock 图标
     HIDDEN_TO_TRAY.store(false, Ordering::Relaxed);
@@ -67,7 +94,7 @@ pub fn is_elevated() -> bool {
     platform::is_elevated()
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(desktop)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

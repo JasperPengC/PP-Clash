@@ -17,7 +17,7 @@ import { DEFAULT_POLICY, type SecurityPolicy } from '../core/security';
 import { countRealNodes, parseSubscriptionMeta, validateSubscriptionCandidate } from '../core/subscription';
 import { useTheme } from './theme';
 import { currentTextSize, normalizeTextSize, restoreTextSize, setTextSize, textSizeRevision } from './text-size';
-import { isWindows } from '../core/platform';
+import { isAndroid, isWindows } from '../core/platform';
 import { logEvent } from '../core/logger';
 import { APP_VERSION, UPDATE_REPO } from '../core/update';
 import { routingPolicy, subscriptionRoutingPolicy, type RoutingPolicy } from '../core/routing-policy';
@@ -32,6 +32,8 @@ interface AppStore {
   updateInfo: AppUpdateInfo | null;
   checkingUpdate: boolean;
   downloadingUpdate: boolean;
+  updateError: string | null;
+  updateCheckedAt: number | null;
   /** Windows 是否以管理员权限运行。 */
   elevated: boolean;
   /** 是否显示「TUN 需要管理员」确认框。 */
@@ -123,6 +125,7 @@ interface AppStore {
   /** 托盘事件回写（只改状态并持久化，不再发系统调用）。 */
   setSysProxyEnabled: (on: boolean) => void;
   setTun: (on: boolean) => Promise<void>;
+  syncAndroidVpn: (active: () => boolean) => Promise<boolean>;
   setPolicy: (patch: Partial<SecurityPolicy>) => Promise<boolean>;
   updateSettings: (patch: Partial<AppSettings>) => void;
   applyRuntimeSettings: (patch: Partial<AppSettings>, options?: SettingsApplicationOptions) => Promise<SettingsApplicationResult>;
@@ -469,8 +472,8 @@ async function stopFor(token: number, quiet: boolean): Promise<void> {
   await lifecycle.serial(async () => {
     // 即便之后又请求连接，也要先收尾已经发出的启动和代理开启。
     const port = useApp.getState().settings.mixedPort;
-    const actual = await api.getSystemProxy().catch(() => null);
-    if (!actual || actual.port === port || useApp.getState().ownedProxyPorts.includes(actual.port)) {
+    const actual = isAndroid ? null : await api.getSystemProxy().catch(() => null);
+    if (!isAndroid && (!actual || actual.port === port || useApp.getState().ownedProxyPorts.includes(actual.port))) {
       try {
         await api.setSystemProxy(false, '127.0.0.1', actual?.port ?? port);
         useApp.setState({ ownedProxyPorts: [] });
@@ -562,7 +565,7 @@ async function validateImportedProfile(state: AppStore, profile: Profile, curren
 }
 
 const publishTray = createTrayPublisher({
-  enabled: () => isTauri,
+  enabled: () => isTauri && !isAndroid,
   primaryGroup: state => primaryRoutingGroup(state)?.name ?? '',
   write: (...flags) => api.setTrayFlags(...flags),
   report: error => console.error('[PPClash] 同步托盘失败', error),
@@ -577,6 +580,8 @@ export const useApp = create<AppStore>((set, get) => ({
   updateInfo: null,
   checkingUpdate: false,
   downloadingUpdate: false,
+  updateError: null,
+  updateCheckedAt: null,
   elevated: true,
   elevationPrompt: false,
   elevationBusy: false,
@@ -614,17 +619,17 @@ export const useApp = create<AppStore>((set, get) => ({
   dataDir: '',
 
   checkUpdate: async (silent = false) => {
-    if (!isTauri || get().checkingUpdate) return;
-    set({ checkingUpdate: true });
+    if (!isTauri || get().checkingUpdate || get().downloadingUpdate) return;
+    set({ checkingUpdate: true, updateError: null });
     try {
       const info = await api.checkGithubUpdate(UPDATE_REPO, APP_VERSION);
-      set({ updateInfo: info, checkingUpdate: false });
+      set({ updateInfo: info, checkingUpdate: false, updateCheckedAt: Date.now() });
       if (!silent) {
         if (info) get().notify('info', `发现新版本 ${info.version}`);
         else get().notify('success', '已是最新版本');
       }
     } catch (e) {
-      set({ checkingUpdate: false });
+      set({ checkingUpdate: false, updateInfo: null, updateError: errorText(e) });
       if (!silent) get().notify('error', `检查更新失败：${errorText(e)}`);
     }
   },
@@ -637,14 +642,16 @@ export const useApp = create<AppStore>((set, get) => ({
       return;
     }
     set({ downloadingUpdate: true });
+    let downloaded = false;
     try {
       const path = await api.downloadAppUpdate(info.url, info.sha256);
+      downloaded = true;
       await api.openDownloadedUpdate(path);
-      get().notify('success', `更新包已下载：${info.version}`);
+      get().notify('success', isAndroid ? '请在系统安装器中确认更新' : `更新包已下载：${info.version}`);
       set({ downloadingUpdate: false });
     } catch (e) {
       set({ downloadingUpdate: false });
-      get().notify('error', `下载更新失败：${errorText(e)}`);
+      get().notify('error', `${downloaded ? '无法安装更新' : '下载更新失败'}：${errorText(e)}`);
     }
   },
 
@@ -703,7 +710,7 @@ export const useApp = create<AppStore>((set, get) => ({
     const current = () => lifecycle.current(token) && request === hydrationRequest && revision === persistenceRevision;
     const appearanceRevision = textSizeRevision();
     try {
-      const elevated = await api.isElevated().catch(() => true);
+      const elevated = isAndroid || await api.isElevated().catch(() => true);
       if (!current()) return;
       set({ elevated });
       const raw = await api.loadAppState(DATA_DIR, session);
@@ -804,8 +811,8 @@ export const useApp = create<AppStore>((set, get) => ({
         activeId: saved.activeId ?? null,
         policy,
         settings,
-        tunEnabled: saved.tunEnabled ?? false,
-        sysProxyEnabled: saved.sysProxyEnabled ?? false,
+        tunEnabled: !isAndroid && (saved.tunEnabled ?? false),
+        sysProxyEnabled: !isAndroid && (saved.sysProxyEnabled ?? false),
         pinnedNodes: saved.pinnedNodes ?? {},
         fixedNodes: normalizeFixedNodes(saved.fixedNodes, profiles),
         selectedNodes: normalizeFixedNodes(saved.selectedNodes, profiles),
@@ -842,15 +849,15 @@ export const useApp = create<AppStore>((set, get) => ({
       const st = await api.kernelStatus(settings.controllerSecret).catch(() => null);
       if (!current()) return;
       if (st?.running) {
-        await adoptRunningKernelFor(token, desiredTun, desiredSysProxy && !desiredTun);
+        await adoptRunningKernelFor(token, isAndroid || desiredTun, !isAndroid && desiredSysProxy && !desiredTun);
         if (!current()) return;
-      } else if (st?.running === false) {
+      } else if (!isAndroid && st?.running === false) {
         // 上次崩溃/强退可能留下 TUN 内核：不清掉会把系统流量继续劫持走
         void api.cleanupStaleKernel().catch(() => null);
       }
 
       // 系统代理的真实状态以 networksetup 为准（用户可能在系统设置里改过）
-      const sp = st?.running ? null : await api.getSystemProxy().catch(() => null);
+      const sp = st?.running || isAndroid ? null : await api.getSystemProxy().catch(() => null);
       if (!current()) return;
       if (sp) {
         if (sp.enabled && sp.port === settings.mixedPort) rememberProxyPort(sp.port);
@@ -876,14 +883,14 @@ export const useApp = create<AppStore>((set, get) => ({
       }
 
       // 关窗行为/托盘网速/Dock 设置需要同步到 Rust，否则重启后首帧使用旧默认值
-      if (isTauri) {
+      if (isTauri && !isAndroid) {
         void api.setCloseToTray(settings.closeToTray).catch(() => null);
       }
 
       // 状态记忆：上次开启的系统代理/TUN，启动后自动恢复。
       const wantsTun = desiredTun;
       const wantsSysProxy = desiredSysProxy && !desiredTun;
-      if (st?.running === false && get().activeId) {
+      if (!isAndroid && st?.running === false && get().activeId) {
         if (wantsTun && isWindows && !elevated) {
           // Windows TUN 需要管理员：先弹确认框，确认后 UAC 重启应用再自动恢复。
           set({ tunEnabled: false, sysProxyEnabled: false, elevationPrompt: true });
@@ -1666,6 +1673,21 @@ export const useApp = create<AppStore>((set, get) => ({
     void pushTray(get());
   },
 
+  syncAndroidVpn: async (active) => {
+    const before = get();
+    if (!isAndroid || before.kernelPhase !== 'running' || before.runtimeConfigTransition) return false;
+    const token = lifecycle.token();
+    const session = proxySessionIdentity(before);
+    const status = await api.kernelStatus(before.settings.controllerSecret).catch(() => null);
+    if (!active() || status?.running !== false || !lifecycle.current(token)
+        || proxySessionIdentity(get()) !== session) return false;
+    lifecycle.begin();
+    set({ kernelPhase: 'stopped', connectedAt: null, groups: [], kernelError: null, tunEnabled: false });
+    void persist(get());
+    get().notify('info', 'VPN 已断开');
+    return true;
+  },
+
   setTun: async (on) => {
     if (!isTauri) {
       get().notify('error', '浏览器预览模式无法开启 TUN');
@@ -1693,7 +1715,8 @@ export const useApp = create<AppStore>((set, get) => ({
       const prepared = await get().applyConfig();
       if (!current()) return;
       get().notify(prepared ? 'info' : 'error', prepared
-        ? 'TUN 已关闭，内核已停止' : 'TUN 已关闭，内核已停止；配置生成失败，请修正后重新连接');
+        ? isAndroid ? 'VPN 已断开' : 'TUN 已关闭，内核已停止'
+        : isAndroid ? 'VPN 已断开；配置生成失败，请修正后重新连接' : 'TUN 已关闭，内核已停止；配置生成失败，请修正后重新连接');
       await pushTray(get());
       return;
     }

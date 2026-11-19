@@ -1,6 +1,7 @@
 {
   "identifier": "default",
   "description": "主窗口默认权限：托盘事件监听等核心 API",
+  "platforms": ["macOS", "windows", "linux"],
   "windows": [
     "main"
   ],

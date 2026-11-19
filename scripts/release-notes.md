@@ -12,10 +12,12 @@
 | Windows · ARM64 | arm64 | `-setup.exe` |
 | Linux · x64 | amd64 | `.deb`、`.rpm`、`.AppImage` |
 | Linux · ARM64 | arm64 | `.deb`、`.rpm`、`.AppImage` |
+| Android · ARM64 | arm64-v8a | `.apk` |
+| Android · x64 | x86_64 | `.apk` |
 
 每个安装包均内置对应架构的 mihomo 内核。`SHA256SUMS` 包含所有安装包的 SHA-256 校验值；`Source code` 为源码压缩包。
 
-已完成 macOS Intel 和 Windows x64 实机测试；Apple 芯片、Windows ARM64 和 Linux 构建仍待实机验证。
+已完成 macOS Intel、Windows x64 和 Android ARM64 实机测试；Apple 芯片、Windows ARM64、Linux 和 Android x86_64 构建仍待实机验证。
 
 ## macOS 首次打开
 
@@ -49,11 +51,17 @@ chmod +x PP_Clash-*.AppImage
 
 Linux 需要 WebKitGTK 4.1 和 Ayatana AppIndicator，具体软件包名称因发行版而异。AppImage 仍使用系统提供的 GTK 和 WebKitGTK 库，并非完全独立的运行环境。
 
+## Android 安装
+
+支持 Android 7.0 及以上的 64 位设备。大多数手机选择文件名带 `arm64-v8a` 的 `.apk`；x86_64 设备选择 `x86_64`。`.aab` 用于应用分发，不能直接点击安装。
+
+打开 APK，按系统提示允许本次安装。导入订阅后，点击概览页的连接按钮，并允许系统 VPN 请求。更新请使用相同签名渠道的安装包，以保留订阅和设置。
+
 ## 首次使用
 
 1. 导入自己的订阅链接或本地配置文件。
-2. 选择订阅与节点，按需开启系统代理或 TUN。
-3. 需要接管 UDP 流量时使用 TUN；仅开启系统代理不会接管 UDP。
+2. 选择订阅与节点。桌面端按需开启系统代理或 TUN；Android 点击连接并授权 VPN。
+3. 桌面端需要接管 UDP 流量时使用 TUN；仅开启系统代理不会接管 UDP。
 
 ## 文件校验
 

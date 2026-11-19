@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/PageHeader';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState, PageLink, ReadError, Segmented, Spinner } from '../components/ui';
 import {
@@ -13,6 +14,7 @@ import { api } from '../core/api';
 import { formatBytes } from '../core/format';
 import { startPolling } from '../core/polling';
 import { VirtualList } from '../components/VirtualList';
+import { isAndroid } from '../core/platform';
 
 interface RawConn {
   id: string;
@@ -43,7 +45,11 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
   const kernelPhase = useApp((s) => s.kernelPhase);
   const notify = useApp((s) => s.notify);
   const textSize = useApp(s => s.settings.textSize);
-  const rowHeight = textSize === 'large' ? 56 : textSize === 'larger' ? 54 : 52;
+  // Android 的页面根节点由 main.tsx 标记；测试与桌面预览不应仅因 user-agent 被误判为移动布局。
+  const androidLayout = isAndroid && typeof document !== 'undefined' && document.documentElement.classList.contains('android-window');
+  const rowHeight = androidLayout
+    ? textSize === 'large' ? 72 : textSize === 'larger' ? 68 : 64
+    : textSize === 'large' ? 56 : textSize === 'larger' ? 54 : 52;
   const connected = kernelPhase === 'running';
 
   const [conns, setConns] = useState<RawConn[]>([]);
@@ -118,6 +124,7 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
       setClosing(null);
     }
   };
+
 
   const visible = useMemo(() => {
     if (view !== 'conn') return [];
@@ -233,22 +240,16 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
 
   return (
     <>
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">连接</h1>
-          <div className="page-sub">
-            {connected ? `${conns.length} 个活动连接` : '内核未运行'}
-          </div>
-        </div>
-        <div className="page-actions">
+      <PageHeader title="连接" subtitle={connected ? `${conns.length} 个活动连接` : '内核未运行'} mobileSubtitle={connected ? `${conns.length} 个` : '未连接'}>
           <button
             type="button"
-            className="btn"
+            className={isAndroid ? 'icon-btn' : 'btn'}
+            aria-label={confirmCloseAll ? '确认关闭所有连接' : '关闭所有连接'}
+            title={confirmCloseAll ? '确认关闭所有连接' : '关闭所有连接'}
             disabled={!active || !connected || conns.length === 0 || mutating}
             onClick={() => void closeAll()}
           >
-            {closingAll ? <Spinner small /> : null}
-            {confirmCloseAll ? '确认关闭' : '关闭所有连接'}
+            {isAndroid ? closingAll ? <Spinner small /> : <IconX size={18} /> : <>{closingAll ? <Spinner small /> : null}{confirmCloseAll ? '确认关闭' : '关闭所有连接'}</>}
           </button>
           <button
             type="button"
@@ -261,8 +262,8 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
           >
             <IconRefresh size={15} />
           </button>
-        </div>
-      </header>
+
+      </PageHeader>
 
       <div className="page-scroll page-fixed dp-page dp-connections">
         <div className="page-inner dp-connections-content">
@@ -289,8 +290,8 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
           ) : (
             <>
               <div className="row conn-toolbar dp-table-toolbar">
-                <Segmented ariaLabel="连接视图" value={view} onChange={setView}
-                  options={[{ value: 'conn', label: '连接' }, { value: 'process', label: '按进程' }]} />
+                {!androidLayout && <Segmented ariaLabel="连接视图" value={view} onChange={setView}
+                  options={[{ value: 'conn', label: '连接' }, { value: 'process', label: '按进程' }]} />}
                 <span className="dp-tool-label">排序</span>
                 <Segmented ariaLabel="连接排序" value={sortBy} onChange={setSortBy}
                   options={[{ value: 'time', label: '时间' }, { value: 'down', label: '下载' }, { value: 'up', label: '上传' }]} />
@@ -346,7 +347,7 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
                         <span className="conn-traffic">
                           <span className="dp-conn-up">↑ {formatBytes(c.upload)}</span><span className="dp-conn-down">↓ {formatBytes(c.download)}</span>
                         </span>
-                        <button
+                        {!androidLayout && <button
                           type="button"
                           className="icon-btn danger"
                           title="断开此连接"
@@ -355,7 +356,7 @@ export function ConnectionsPage({ active = true }: { active?: boolean }) {
                           onClick={() => void close(c.id)}
                         >
                           {closing === c.id ? <Spinner small /> : <IconX size={12} />}
-                        </button>
+                        </button>}
                       </div>
                     )} />
                   </div>

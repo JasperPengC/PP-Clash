@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { isTauri } from '../core/api';
+import { useApp } from '../store/app';
 import { normalizeSubscriptionUrl, sameSubscriptionUrl } from '../core/subscription-source';
 import type { Profile } from '../domain/app';
 import { Dialog } from './Dialog';
@@ -20,6 +21,7 @@ export function SubscriptionImport({ visible, busy, profiles, running, onClose, 
   const [pending, setPending] = useState(false);
   const [picking, setPicking] = useState(false);
   const lock = useRef(false);
+  const clearToast = useApp(s => s.clearToast);
   const input = useRef<HTMLInputElement>(null);
   const disabled = busy || pending || picking;
   useEffect(() => { if (visible && source === 'url') input.current?.focus(); }, [visible, source]);
@@ -46,12 +48,12 @@ export function SubscriptionImport({ visible, busy, profiles, running, onClose, 
         if (profiles.some(p => p.sourceType === 'file' && p.url === path)) throw new Error('此配置已添加，请使用已有订阅');
       }
     } catch (e) { setError((e as Error).message); return; }
-    lock.current = true; setPending(true); setError('');
+    lock.current = true; setPending(true); setError(''); clearToast();
     try {
       const ok = source === 'url' ? await onImportUrl(normalized, proxy) : await onImportFile(path);
       if (ok) { setUrl(''); setPath(''); setProxy(false); onClose(); }
-      else setError('导入失败，请检查来源与配置后重试');
-    } catch { setError('导入失败，请检查来源与配置后重试'); }
+      else setError(useApp.getState().toast?.text?.replace(/^导入失败：/, '') || '导入失败，请检查来源与配置后重试');
+    } catch (error) { setError(error instanceof Error ? error.message : '导入失败，请检查来源与配置后重试'); }
     finally { lock.current = false; setPending(false); }
   };
   if (!visible) return null;
@@ -69,7 +71,7 @@ export function SubscriptionImport({ visible, busy, profiles, running, onClose, 
 
     <form className="import-row" onSubmit={e => { e.preventDefault(); void submit(); }}>
       {source === 'url' ? <>
-        <label className="import-field"><span>订阅链接</span><input ref={input} className="input" value={url} disabled={disabled} aria-label="订阅链接"
+        <label className="import-field"><span>订阅链接</span><input ref={input} className="input" inputMode="url" enterKeyHint="go" autoComplete="url" value={url} disabled={disabled} aria-label="订阅链接"
           aria-invalid={Boolean(error)} aria-describedby={error ? 'subscription-import-error' : undefined}
           placeholder="粘贴订阅链接（https://…）" spellCheck={false} autoCapitalize="off" autoCorrect="off"
           onChange={e => { setUrl(e.target.value); setError(''); }} /></label>

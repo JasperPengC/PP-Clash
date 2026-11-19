@@ -1,7 +1,8 @@
+import { PageHeader } from '../components/PageHeader';
 import { Dialog } from '../components/Dialog';
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { MiniSwitch, Pill, Select } from '../components/ui';
-import { IconAlert, IconCheck, IconChevronRight, IconEdit, IconFolder, IconProfiles, IconRefresh, IconSort, IconTrash, IconX } from '../components/icons';
+import { IconAlert, IconCheck, IconChevronRight, IconEdit, IconFolder, IconPlus, IconProfiles, IconRefresh, IconSort, IconTrash, IconX } from '../components/icons';
 import { useApp } from '../store/app';
 import type { Profile } from '../domain/app';
 import { isTauri, previewMode } from '../core/api';
@@ -54,10 +55,11 @@ function QuotaCell({ info }: { info: TrafficInfo | null }) {
   );
 }
 
-function ProfileEditor({ profile, busy, refreshing, confirming, index, total, onUpdate, onMove, onDelete, onClose, onRefresh, returnFocus }: {
-  profile: Profile; busy: boolean; refreshing: boolean; confirming: boolean; index: number; total: number;
+function ProfileEditor({ profile, busy, refreshing, index, total, onUpdate, onMove, onRefresh, onClose, returnFocus }: {
+  profile: Profile; busy: boolean; refreshing: boolean; index: number; total: number;
   onUpdate: (patch: Partial<Profile>) => void; onMove: (dir: -1 | 1) => void;
-  onDelete: () => void; onClose: () => void; onRefresh: () => void; returnFocus: HTMLElement | null;
+  onRefresh: () => void;
+  onClose: () => void; returnFocus: HTMLElement | null;
 }) {
   const headingId = useId();
   const [source, setSource] = useState(profile.url);
@@ -120,12 +122,11 @@ function ProfileEditor({ profile, busy, refreshing, confirming, index, total, on
       </div>
     </div>
     <p className={`sub-editor-hint${saved ? ' sub-editor-saved' : ''}`} role="status">{saved ? '修改已保存，可以更新订阅。' : '保存来源后再更新；更新失败时保留上次可用配置。'}</p>
-    {confirming && <p className="sub-delete-warning" role="status">{profile.id === useApp.getState().activeId ? '删除当前订阅会断开连接，再次点击删除按钮确认。' : '再次点击删除按钮确认删除。'}</p>}
     <div className="sub-editor-footer">
       <div className="sub-editor-tools">
-        <button type="button" className="icon-btn" aria-label="更新订阅" aria-busy={refreshing} title={changed ? '先保存修改，再更新订阅' : '更新订阅'} disabled={busy || picking || changed} onClick={onRefresh}><IconRefresh size={16} className={refreshing ? 'spin' : undefined} /></button>
-        <button type="button" className={`icon-btn danger${confirming ? ' confirming' : ''}`} aria-label={confirming ? '确认删除订阅' : '删除订阅'} title={confirming ? '确认删除订阅' : '删除订阅'} disabled={busy || picking} onClick={onDelete}>
-          {confirming ? <IconCheck size={16} /> : <IconTrash size={16} />}
+        <button type="button" className="icon-btn" aria-label="更新订阅" aria-busy={refreshing}
+          title={changed ? '先保存修改，再更新订阅' : '更新订阅'} disabled={busy || picking || changed || refreshing} onClick={onRefresh}>
+          <IconRefresh size={16} className={refreshing ? 'spin' : undefined} />
         </button>
       </div>
       <div className="sub-editor-controls">
@@ -137,10 +138,10 @@ function ProfileEditor({ profile, busy, refreshing, confirming, index, total, on
   </div></Dialog>;
 }
 
-function ProfileCard({ profile, active, busy, confirming, nodeCount, refreshing, refreshError,
+function ProfileCard({ profile, active, busy, nodeCount, refreshing, refreshError,
   editing, editMode, index, total, status, statusTone, onActivate, onRefresh, onDelete, onUpdate,
   onMove, onEdit, onClose, dragging, dropTarget, onDragHandle }: {
-  profile: Profile; active: boolean; busy: boolean; confirming: boolean; nodeCount: number;
+  profile: Profile; active: boolean; busy: boolean; nodeCount: number;
   refreshing: boolean; refreshError?: string; editing: boolean; editMode: boolean;
   index: number; total: number; status: string; statusTone: 'ok' | 'warn' | 'bad' | 'neutral';
   onActivate: () => void; onRefresh: () => void; onDelete: () => void;
@@ -158,7 +159,6 @@ function ProfileCard({ profile, active, busy, confirming, nodeCount, refreshing,
       </svg>
     </span>}
     <div className="sub-card-heading">
-      <span className="sub-profile-symbol" aria-hidden="true">{profile.sourceType === 'file' ? <IconFolder size={20} /> : <IconProfiles size={20} />}</span>
       <div className="sub-main">
         <h2 className="sub-name" title={profile.name}>{profile.name}</h2>
         <div className="sub-meta"><span className="sub-source" title={profileSource(profile)}>{profileSource(profile)}</span><span>{nodeCount} 个节点</span></div>
@@ -180,9 +180,11 @@ function ProfileCard({ profile, active, busy, confirming, nodeCount, refreshing,
       <button ref={editButton} type="button" className="icon-btn" aria-label={`编辑订阅 ${profile.name}`} title="编辑订阅" aria-haspopup="dialog" aria-expanded={editing} aria-controls={`profile-edit-${profile.id}`}
         disabled={busy} onClick={onEdit}><IconEdit size={14} /></button>
       {!active && <button type="button" className="icon-btn sub-switch" disabled={busy} aria-label={`使用订阅 ${profile.name}`} title="使用订阅" onClick={onActivate}><IconCheck size={14} /></button>}
+      <button type="button" className="icon-btn danger" aria-label={`删除订阅 ${profile.name}`}
+        title="删除订阅" disabled={busy} onClick={onDelete}><IconTrash size={14} /></button>
     </div>
-    {editing && <ProfileEditor profile={profile} busy={busy} refreshing={refreshing}
-      confirming={confirming} index={index} total={total} onUpdate={onUpdate} onMove={onMove} onDelete={onDelete}
+    {editing && <ProfileEditor profile={profile} busy={busy} refreshing={refreshing} index={index} total={total}
+      onUpdate={onUpdate} onMove={onMove}
       onRefresh={onRefresh} returnFocus={editButton.current} onClose={onClose} />}
   </section>;
 }
@@ -251,6 +253,7 @@ export function ProfilesPage() {
   const globalBusy = activating || importing || transition || kernelPhase === 'starting' || kernelPhase === 'stopping';
   const manageBusy = globalBusy || refreshingIds.length > 0;
   const activeProfile = profiles.find(profile => profile.id === activeId);
+  const confirmProfile = profiles.find(profile => profile.id === confirmId);
   const status = activating || transition ? '正在切换配置' : kernelPhase === 'failed' ? '连接失败'
     : kernelPhase === 'running' ? kernelError ? '运行状态未确认' : '运行中' : kernelPhase === 'starting' ? '启动中'
       : kernelPhase === 'stopping' ? '停止中' : '未连接';
@@ -272,15 +275,14 @@ export function ProfilesPage() {
 
   const askDelete = (id: string) => {
     if (globalBusy || refreshingIds.includes(id)) return;
-    if (confirmId === id) {
-      setConfirmId(null);
-      void removeProfile(id);
-      return;
-    }
     setConfirmId(id);
-    window.setTimeout(() => {
-      setConfirmId((cur) => (cur === id ? null : cur));
-    }, 3000);
+  };
+  const cancelDelete = () => setConfirmId(null);
+  const confirmDelete = () => {
+    if (!confirmId || globalBusy || refreshingIds.includes(confirmId)) return;
+    const id = confirmId;
+    setConfirmId(null);
+    void removeProfile(id);
   };
 
   const refreshAll = () => {
@@ -296,7 +298,7 @@ export function ProfilesPage() {
   };
 
   const renderProfile = (profile: Profile) => <ProfileCard key={profile.id} profile={profile}
-    active={profile.id === activeId} busy={globalBusy || refreshingIds.includes(profile.id)} confirming={confirmId === profile.id}
+    active={profile.id === activeId} busy={globalBusy || refreshingIds.includes(profile.id)}
     nodeCount={nodeCounts[profile.id] ?? 0} refreshing={refreshingIds.includes(profile.id)} refreshError={refreshErrors[profile.id]}
     editing={editingId === profile.id} editMode={ordering} index={profiles.indexOf(profile)} total={profiles.length}
     status={status} statusTone={statusTone} onActivate={() => { if (!globalBusy && !refreshingIds.includes(profile.id)) void activate(profile.id); }}
@@ -311,32 +313,29 @@ export function ProfilesPage() {
 
   return (
     <>
-      <header className="page-head">
-        <div className="page-heading">
-          <h1 className="page-title">订阅</h1>
-          <div className="page-sub">
-            {profiles.length > 0 ? `${profiles.length} 份订阅 · ${Object.values(nodeCounts).reduce((sum, count) => sum + count, 0)} 个节点` : '还没有订阅'}
-          </div>
-        </div>
-        <div className="page-actions">
+      <PageHeader title="订阅" className="profiles-page-header" subtitle={profiles.length > 0 ? `${profiles.length} 份订阅 · ${Object.values(nodeCounts).reduce((sum, count) => sum + count, 0)} 个节点` : '还没有订阅'} mobileSubtitle={`${profiles.length} 份`}>
           {profiles.length > 1 && <button type="button" className="icon-btn" aria-label="订阅排序" title={ordering ? '完成排序' : '排序订阅'}
             aria-pressed={ordering} disabled={manageBusy} onClick={() => { setOrdering(value => !value); setEditingId(null); setConfirmId(null); }}><IconSort size={16} /></button>}
           {profiles.length > 1 && (
             <button
               type="button"
               className="btn"
+              aria-label="全部更新"
+              title="全部更新"
               aria-busy={refreshingAll}
               disabled={manageBusy || refreshingAll}
               onClick={refreshAll}
             >
-              <IconRefresh size={13} className={refreshingAll ? 'spin' : undefined} />
-              全部更新
+              <IconRefresh size={16} className={refreshingAll ? 'spin' : undefined} />
+              <span className="profile-action-label">全部更新</span>
             </button>
           )}
-          {<button type="button" className="btn btn-primary" disabled={globalBusy}
-            onClick={() => { setAdding(true); setEditingId(null); setConfirmId(null); setOrdering(false); }}>添加订阅</button>}
-        </div>
-      </header>
+          {<button type="button" className="btn btn-primary" aria-label="添加订阅" title="添加订阅" disabled={globalBusy}
+            onClick={() => { setAdding(true); setEditingId(null); setConfirmId(null); setOrdering(false); }}>
+            <IconPlus size={17} /><span className="profile-action-label">添加订阅</span>
+          </button>}
+
+      </PageHeader>
 
       <div className="page-scroll profiles-scroll">
         <div className="page-inner profiles-page">
@@ -381,6 +380,20 @@ export function ProfilesPage() {
       <SubscriptionImport visible={adding} busy={globalBusy} profiles={profiles}
         running={kernelPhase === 'running'} onClose={() => setAdding(false)}
         onImportUrl={importProfile} onImportFile={importProfileFile} />
+      {confirmProfile && <Dialog labelledBy="profile-delete-title" describedBy="profile-delete-description"
+        busy={globalBusy} onDismiss={cancelDelete}>
+        <section className="profile-delete-dialog" aria-label={`确认删除订阅 ${confirmProfile.name}`}>
+          <div className="profile-delete-copy">
+            <h2 id="profile-delete-title">删除订阅</h2>
+            <p id="profile-delete-description">确认从此设备移除“{confirmProfile.name}”吗？{confirmProfile.id === activeId ? '当前正在使用，删除后会断开连接。' : ''}</p>
+          </div>
+          <div className="profile-delete-actions">
+            <button type="button" className="btn btn-ghost" aria-label="取消删除订阅" disabled={globalBusy} onClick={cancelDelete}>取消</button>
+            <button type="button" className="btn btn-danger" aria-label={`确认删除订阅 ${confirmProfile.name}`} disabled={globalBusy}
+              onClick={confirmDelete}><IconTrash size={14} />删除</button>
+          </div>
+        </section>
+      </Dialog>}
     </>
   );
 }

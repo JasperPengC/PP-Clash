@@ -5,8 +5,20 @@
 
 use std::path::PathBuf;
 
+#[cfg(target_os = "android")]
+static ANDROID_DATA_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "android")]
+pub fn set_android_data_dir(path: PathBuf) {
+    let _ = ANDROID_DATA_DIR.set(path);
+}
+
 /// 各平台放应用数据的父目录。
 pub fn base_data_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "android")]
+    {
+        ANDROID_DATA_DIR.get().cloned().ok_or_else(|| "应用数据目录尚未初始化".to_string())
+    }
     #[cfg(target_os = "macos")]
     {
         std::env::var("HOME")
@@ -19,7 +31,7 @@ pub fn base_data_dir() -> Result<PathBuf, String> {
             .map(PathBuf::from)
             .map_err(|_| "读不到 APPDATA".to_string())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "android", target_os = "macos", target_os = "windows")))]
     {
         std::env::var("XDG_DATA_HOME")
             .map(PathBuf::from)
@@ -37,6 +49,7 @@ pub fn data_dir() -> Result<PathBuf, String> {
 }
 
 /// 需要 root/admin 权限的系统内核目录。
+#[cfg(desktop)]
 pub fn system_bin_dir() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
@@ -54,6 +67,7 @@ pub fn system_bin_dir() -> PathBuf {
     }
 }
 
+#[cfg(desktop)]
 pub fn kernel_binary_name() -> &'static str {
     if cfg!(target_os = "windows") {
         "mihomo.exe"
@@ -63,12 +77,14 @@ pub fn kernel_binary_name() -> &'static str {
 }
 
 /// 系统内核副本路径。
+#[cfg(desktop)]
 pub fn system_bin() -> PathBuf {
     system_bin_dir().join(kernel_binary_name())
 }
 
 /// 用户数据目录里的内核路径。
 #[allow(dead_code)]
+#[cfg(desktop)]
 pub fn user_kernel_bin() -> Result<PathBuf, String> {
     Ok(data_dir()?.join("bin").join(kernel_binary_name()))
 }
@@ -98,6 +114,7 @@ fn windows_kernel_path(path: &str) -> String {
 
 /// 创建子进程命令；Windows 下隐藏控制台窗口，避免 reg/powershell/tasklist
 /// 这类控制台程序每调用一次就弹一个黑框。
+#[cfg(desktop)]
 pub fn command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
     #[allow(unused_mut)]
     let mut cmd = std::process::Command::new(program);
@@ -111,6 +128,7 @@ pub fn command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
 }
 
 /// 异步子进程命令；Windows 下同样隐藏控制台窗口。
+#[cfg(desktop)]
 pub fn async_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::Command {
     #[allow(unused_mut)]
     let mut cmd = tokio::process::Command::new(program);
