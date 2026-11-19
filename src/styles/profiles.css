@@ -30,7 +30,7 @@
 .profiles-page .sub-list-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; padding: 0 2px 8px; }
 .profiles-page .sub-list-heading h2 { margin: 0; }
 .profiles-page .sub-list-heading > span { color: var(--text-secondary); font-size: var(--type-meta); }
-.profiles-page .sub-card-flow { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; align-items: start; }
+.profiles-page .sub-card-flow { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; align-items: stretch; }
 .profiles-page .sub-card-flow .sub-card.editing { grid-column: 1 / -1; }
 .profiles-page .sub-card-flow .sub-card { gap: 8px; padding: 12px; background: var(--card-surface); }
 .profiles-page .sub-card-flow .sub-card-heading { min-height: 0; align-items: flex-start; }
@@ -43,7 +43,7 @@
 .profiles-page .sub-card-flow .sub-quota-line { grid-row: 3; flex-wrap: nowrap; white-space: nowrap; }
 .profiles-page .sub-card-flow .sub-meta { flex-wrap: nowrap; }
 .profiles-page .sub-card-flow .sub-source { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.profiles-page .sub-card-flow .sub-empty { min-height: calc(var(--type-subtitle) * var(--leading-tight) + var(--type-micro) * var(--leading-body) * 2 + 24px); }
+.profiles-page .sub-card-flow .sub-empty { min-height: calc(var(--type-subtitle) * var(--leading-tight) + var(--type-micro) * var(--leading-body) * 2 + 20px); }
 .profiles-page .sub-card-flow .sub-card:hover { background: var(--card-surface-hover); }
 .sub-others-empty { margin: 0; padding: 12px 2px; color: var(--text-muted); font-size: var(--type-control); }
 .profiles-page .sub-add-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-width: 0; min-height: 180px; border: 1px dashed var(--border-strong); border-radius: var(--radius-card); background: transparent; box-shadow: none; color: var(--text-secondary); font: inherit; font-size: var(--type-control); cursor: pointer; }
@@ -95,7 +95,7 @@
 .profiles-page .sub-hero .sub-card-status .pill { min-height: 22px; padding: 2px 8px; }
 .profiles-page .sub-hero .sub-quota, .profiles-page .sub-hero .sub-empty { grid-area: quota; align-self: center; }
 .profiles-page .sub-hero .sub-quota { gap: 10px; }
-.profiles-page .sub-hero .sub-card-actions { grid-area: actions; margin-top: 0; }
+.profiles-page .sub-hero .sub-card-actions { grid-area: actions; align-self: end; margin-top: 0; }
 .profiles-page .sub-hero .sub-update-error { grid-column: 1 / -1; }
 .profiles-page .sub-hero .sub-editor-wrap { grid-column: 1 / -1; max-height: 32vh; overflow-y: auto; }
 .sub-page-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); }

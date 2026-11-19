@@ -622,7 +622,7 @@
 .android-shell .profiles-scroll .sub-hero .sub-card-status { grid-column: 1; }
 .android-shell .profiles-scroll .sub-hero .sub-card-status,
 .android-shell .profiles-scroll .sub-hero .sub-chips { justify-content: flex-start; text-align: left; }
-.android-shell .profiles-scroll .sub-card-flow { align-items: start; gap: 8px; }
+.android-shell .profiles-scroll .sub-card-flow { align-items: stretch; gap: 8px; }
 .android-shell .profiles-scroll .sub-card-flow .sub-card { gap: 8px; padding: 12px; }
 .android-shell .profiles-scroll .sub-card-flow .sub-card-heading { min-height: 0; }
 .android-shell .profiles-scroll .sub-card-flow .sub-quota { gap: 6px; }
