@@ -39,10 +39,8 @@ fi
 node scripts/configure-android.mjs "$project" "$work/mihomo.aar"
 # Start APK assembly from clean outputs: incremental ZIP updates can retain large freed entries.
 # Cargo targets and the core AAR remain cached outside the generated app build directory.
-(
-  cd "$project"
-  ./gradlew :app:clean --console=plain
-)
+# Do not invoke Gradle yet: Cargo generates tauri.settings.gradle during Tauri's first build.
+rm -rf "$project/app/build"
 npm run tauri -- android build --ci --target aarch64 x86_64 --split-per-abi --apk ${build_flags[@]+"${build_flags[@]}"}
 if [[ "$mode" == release ]]; then
   npm run tauri -- android build --ci --target aarch64 x86_64 --aab
