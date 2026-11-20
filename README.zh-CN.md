@@ -14,7 +14,7 @@
   <a href="https://github.com/JasperPengC/pp-clash/releases/latest"><img src="https://img.shields.io/github/v/release/JasperPengC/pp-clash?display_name=tag&style=flat-square&label=最新版本" alt="最新版本"></a>
   <a href="https://github.com/JasperPengC/pp-clash/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/JasperPengC/pp-clash/release.yml?style=flat-square&label=Release%20构建" alt="Release 构建状态"></a>
   <img src="https://img.shields.io/badge/平台-macOS%20%7C%20Windows%20%7C%20Linux-46505f?style=flat-square" alt="支持 macOS、Windows 和 Linux">
-  <a href="#android"><img src="https://img.shields.io/badge/Android-预览版-3d806b?style=flat-square" alt="Android 预览版"></a>
+  <a href="#android"><img src="https://img.shields.io/badge/Android-7.0%2B-3d806b?style=flat-square" alt="Android 7.0 及以上"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/JasperPengC/pp-clash?style=flat-square" alt="AGPL-3.0-only 许可证"></a>
 </p>
 
@@ -41,13 +41,13 @@
 
 ## Android
 
-为手机重新安排操作：看一眼当前节点，点延迟圆环测速，用大按钮连接。实时流量始终可见，订阅的更新、编辑和切换也都放在顺手的位置。
+为手机重新安排操作：看一眼当前节点，点延迟圆环测速，用大按钮连接。实时流量始终可见，订阅的更新、编辑和切换也都放在顺手的位置。分流数据库随应用内置，首次导入订阅无需额外下载。
 
-**Android 目前为本地预览版，尚未包含在公开 Release 中。** 面向 Android 7.0 及以上的 64 位设备。ARM64 已在 Android 13 手机上验证；x86_64 已完成构建，尚未进行实机验证。
+**支持 Android 7.0 及以上的 64 位设备。** ARM64 已在 Android 13 手机上验证；x86_64 已完成构建，尚未进行实机验证。
 
 ## 下载安装
 
-桌面版从[最新 Release](https://github.com/JasperPengC/pp-clash/releases/latest) 下载，根据操作系统和处理器架构选择安装包：
+从[最新 Release](https://github.com/JasperPengC/pp-clash/releases/latest) 下载，根据操作系统和处理器架构选择安装包：
 
 | 平台 | 安装包 |
 | :--- | :--- |
@@ -56,7 +56,7 @@
 | Windows · x64 | 安装程序 · amd64 |
 | Windows · ARM64 | 安装程序 · ARM64 |
 | Linux · x64 / ARM64 | `.deb`、`.rpm` 或 `.AppImage` |
-| Android · ARM64 / x86_64 | APK · 预览阶段，尚未发布 |
+| Android · ARM64 / x86_64 | APK · arm64-v8a / x86_64 |
 
 目前已完成 macOS Intel 和 Windows x64 实机测试；Apple 芯片、Windows ARM64 和 Linux 构建仍待实机验证。
 
@@ -65,11 +65,11 @@ Linux 需要 WebKitGTK 4.1 和 Ayatana AppIndicator。AppImage 仍使用系统�
 <details>
 <summary>macOS 首次打开</summary>
 
-当前测试包使用本地签名，尚未完成 Apple 公证。如果系统阻止打开，请在“系统设置 → 隐私与安全性”中找到 PP Clash，选择**仍要打开**。
+当前 macOS 安装包使用本地签名，尚未完成 Apple 公证。如果系统阻止打开，请在“系统设置 → 隐私与安全性”中找到 PP Clash，选择**仍要打开**。
 
 </details>
 
-首次使用时，导入自己的订阅或本地配置并选择节点。桌面端按需开启系统代理或 TUN；Android 预览版点击连接按钮，并允许系统 VPN 授权。
+首次使用时，导入自己的订阅或本地配置并选择节点。桌面端按需开启系统代理或 TUN；Android 点击连接按钮，并允许系统 VPN 授权。
 
 ## 安全防护
 

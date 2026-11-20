@@ -14,7 +14,7 @@
   <a href="https://github.com/JasperPengC/pp-clash/releases/latest"><img src="https://img.shields.io/github/v/release/JasperPengC/pp-clash?display_name=tag&style=flat-square&label=latest%20release" alt="Latest release"></a>
   <a href="https://github.com/JasperPengC/pp-clash/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/JasperPengC/pp-clash/release.yml?style=flat-square&label=release%20build" alt="Release build status"></a>
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-46505f?style=flat-square" alt="macOS, Windows, and Linux">
-  <a href="#android"><img src="https://img.shields.io/badge/Android-preview-3d806b?style=flat-square" alt="Android preview"></a>
+  <a href="#android"><img src="https://img.shields.io/badge/Android-7.0%2B-3d806b?style=flat-square" alt="Android 7.0 and later"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/JasperPengC/pp-clash?style=flat-square" alt="AGPL-3.0-only license"></a>
 </p>
 
@@ -41,13 +41,13 @@
 
 ## Android
 
-A layout made for your phone: check your current node, tap the latency ring to test it, and connect with one large control. Live traffic stays in view; subscriptions have quick actions for updating, editing, and switching.
+A layout made for your phone: check your current node, tap the latency ring to test it, and connect with one large control. Live traffic stays in view; subscriptions have quick actions for updating, editing, and switching. Routing databases are bundled, so the first subscription import does not need to download them separately.
 
-**Android is currently a local preview and is not included in the public release.** It targets Android 7.0+ on 64-bit devices. ARM64 has been tested on an Android 13 phone; x86_64 builds have not yet been tested on a physical device.
+**Available for Android 7.0+ on 64-bit devices.** ARM64 has been tested on an Android 13 phone; x86_64 builds have not yet been tested on a physical device.
 
 ## Downloads
 
-Download desktop packages from the [latest release](https://github.com/JasperPengC/pp-clash/releases/latest). Choose the package that matches your operating system and processor:
+Download packages from the [latest release](https://github.com/JasperPengC/pp-clash/releases/latest). Choose the package that matches your operating system and processor:
 
 | Platform | Package |
 | :--- | :--- |
@@ -56,7 +56,7 @@ Download desktop packages from the [latest release](https://github.com/JasperPen
 | Windows · x64 | Setup · amd64 |
 | Windows · ARM64 | Setup · ARM64 |
 | Linux · x64 / ARM64 | `.deb`, `.rpm`, or `.AppImage` |
-| Android · ARM64 / x86_64 | APK · preview, not yet published |
+| Android · ARM64 / x86_64 | APK · arm64-v8a / x86_64 |
 
 macOS Intel and Windows x64 have been tested on physical devices. Apple silicon, Windows ARM64, and Linux builds still need device testing.
 
@@ -65,11 +65,11 @@ On Linux, PP Clash requires WebKitGTK 4.1 and Ayatana AppIndicator. AppImage pac
 <details>
 <summary>Opening on macOS for the first time</summary>
 
-Current test builds use a local signature and are not notarized by Apple. If macOS blocks the app, open System Settings → Privacy & Security and choose **Open Anyway** for PP Clash.
+Current macOS packages use a local signature and are not notarized by Apple. If macOS blocks the app, open System Settings → Privacy & Security and choose **Open Anyway** for PP Clash.
 
 </details>
 
-To get started, import your subscription or local config and choose a node. On desktop, enable System Proxy or TUN. In the Android preview, tap the connection button and allow the system VPN request.
+To get started, import your subscription or local config and choose a node. On desktop, enable System Proxy or TUN. On Android, tap the connection button and allow the system VPN request.
 
 ## Security
 
