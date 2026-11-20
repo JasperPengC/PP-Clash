@@ -78,6 +78,9 @@ jobs:
           toolchain: '1.100.0'
           targets: aarch64-linux-android,x86_64-linux-android
       - uses: android-actions/setup-android@v3
+        with:
+          # The action's default also requests the retired SDK "tools" package.
+          packages: platform-tools
       - name: Install native build dependencies
         run: |
           sudo apt-get update
