@@ -1,11 +1,12 @@
 import { PageHeader } from '../components/PageHeader';
 import { Dialog } from '../components/Dialog';
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { MiniSwitch, Pill, Select } from '../components/ui';
+import { MiniSwitch, Select } from '../components/ui';
 import { IconAlert, IconCheck, IconChevronRight, IconEdit, IconFolder, IconPlus, IconProfiles, IconRefresh, IconSort, IconTrash, IconX } from '../components/icons';
 import { useApp } from '../store/app';
 import type { Profile } from '../domain/app';
 import { isTauri, previewMode } from '../core/api';
+import { isAndroid } from '../core/platform';
 import { open } from '@tauri-apps/plugin-dialog';
 import { SubscriptionImport } from '../components/SubscriptionImport';
 import { countRealNodes, type TrafficInfo } from '../core/subscription';
@@ -26,12 +27,13 @@ function profileSource(profile: Profile): string {
 }
 
 function QuotaCell({ info }: { info: TrafficInfo | null }) {
-  if (!info) return <div className="sub-empty">暂无配额信息</div>;
+  if (!info) return <div className="sub-empty">未提供用量与到期信息</div>;
 
   const used = Math.max(info.upload + info.download, 0);
   const total = Math.max(info.total, 0);
   const ratio = total > 0 ? Math.min(used / total, 1) : 0;
   const remaining = Math.max(total - used, 0);
+  const [remainingValue, remainingUnit] = formatBytes(remaining).split(' ');
   const tone = ratio >= 0.9 ? 'bad' : ratio >= 0.7 ? 'warn' : 'ok';
   const days = daysUntil(info.expire);
   const expired = days != null && days < 0;
@@ -39,8 +41,8 @@ function QuotaCell({ info }: { info: TrafficInfo | null }) {
   return (
     <div className="sub-quota">
       <div className="sub-quota-summary">
-        {total > 0 && <strong className="sub-quota-remaining"><b>{formatBytes(remaining)}</b><span>剩余</span></strong>}
-        <span className="sub-quota-used" title={`已用 ${formatBytes(used)}${total > 0 ? ` / ${formatBytes(total)}` : ''}`}>已用 {formatBytes(used)}{total > 0 ? ` / ${formatBytes(total)}` : ''}</span>
+        {total > 0 && <strong className="sub-quota-remaining"><b>{remainingValue}<small> {remainingUnit}</small></b><span>剩余</span></strong>}
+        <span className="sub-quota-used" title={`已用 ${formatBytes(used)}${total > 0 ? ` / ${formatBytes(total)}` : ''}`}>{total <= 0 && '已用 '}{formatBytes(used)}{total > 0 ? ` / ${formatBytes(total)}` : ''}</span>
       </div>
       {total > 0 && (
         <div className="progress sub-progress" role="progressbar" aria-label="订阅用量" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(ratio * 100)}>
@@ -77,7 +79,7 @@ function ProfileEditor({ profile, busy, refreshing, index, total, onUpdate, onMo
     setPicking(true);
     try {
       const path = await open({ multiple: false, directory: false,
-        filters: [{ name: 'Clash / mihomo 配置', extensions: ['yaml', 'yml', 'json'] }] });
+        filters: isAndroid ? undefined : [{ name: 'Clash / mihomo 配置', extensions: ['yaml', 'yml', 'json'] }] });
       if (typeof path === 'string' && path) { setSource(path); setSaved(false); }
     } catch (error) {
       useApp.getState().notify('error', `选择文件失败：${String(error)}`);
@@ -159,29 +161,29 @@ function ProfileCard({ profile, active, busy, nodeCount, refreshing, refreshErro
       </svg>
     </span>}
     <div className="sub-card-heading">
-      <div className="sub-main">
+      <div className="sub-title">
         <h2 className="sub-name" title={profile.name}>{profile.name}</h2>
-        <div className="sub-meta"><span className="sub-source" title={profileSource(profile)}>{profileSource(profile)}</span><span>{nodeCount} 个节点</span></div>
+        {active && <span className={`sub-current ${statusTone}`} title={`当前订阅 · ${status}`}><IconCheck size={10} />使用中</span>}
       </div>
-      {active && <div className="sub-card-status">
-        <Pill tone={statusTone}>当前使用 · {status}</Pill>
-        <div className="sub-chips"><span>{interval === 0 ? '自动更新已关闭' : `每 ${interval} 小时更新`}</span>
-          {profile.sourceType !== 'file' && profile.useProxy && <span>经代理更新</span>}
-        </div>
-      </div>}
+      <div className="sub-meta"><span className="sub-source" title={profileSource(profile)}>{profileSource(profile)}</span><span aria-hidden="true">·</span><span>{nodeCount} 个节点</span></div>
     </div>
     <QuotaCell info={profile.userinfo} />
     {refreshError && <div className="sub-update-error" role="status"><IconAlert size={14} /><span>{refreshError}</span></div>}
     <div className="sub-card-actions">
-      <span className="sub-card-updated">{refreshing ? '正在更新…' : `更新于 ${formatTime(profile.updatedAt)}`}</span>
+      <div className="sub-card-updated">
+        <span className="sub-update-time" title={`更新于 ${formatTime(profile.updatedAt)}`}>{refreshing ? '正在更新…' : `${formatTime(profile.updatedAt)} 更新`}</span>
+        {active && <><span className="sub-update-separator" aria-hidden="true">·</span><span className="sub-update-interval" title={`${interval === 0 ? '自动更新已关闭' : `自动更新周期：每 ${interval} 小时`}${profile.sourceType !== 'file' && profile.useProxy ? ' · 经代理更新' : ''}`}>{interval === 0 ? '自动更新已关闭' : `每 ${interval} 小时`}</span></>}
+      </div>
+      <div className="sub-card-tools">
       <button type="button" className="icon-btn" aria-label={`更新订阅 ${profile.name}`} aria-busy={refreshing} title="更新订阅" disabled={busy || refreshing} onClick={onRefresh}>
-        <IconRefresh size={14} className={refreshing ? 'spin' : undefined} />
+        <IconRefresh size={16} className={refreshing ? 'spin' : undefined} />
       </button>
       <button ref={editButton} type="button" className="icon-btn" aria-label={`编辑订阅 ${profile.name}`} title="编辑订阅" aria-haspopup="dialog" aria-expanded={editing} aria-controls={`profile-edit-${profile.id}`}
-        disabled={busy} onClick={onEdit}><IconEdit size={14} /></button>
-      {!active && <button type="button" className="icon-btn sub-switch" disabled={busy} aria-label={`使用订阅 ${profile.name}`} title="使用订阅" onClick={onActivate}><IconCheck size={14} /></button>}
+        disabled={busy} onClick={onEdit}><IconEdit size={16} /></button>
+      {!active && <button type="button" className="icon-btn sub-switch" disabled={busy} aria-label={`使用订阅 ${profile.name}`} title="使用订阅" onClick={onActivate}><IconCheck size={16} /></button>}
       <button type="button" className="icon-btn danger" aria-label={`删除订阅 ${profile.name}`}
-        title="删除订阅" disabled={busy} onClick={onDelete}><IconTrash size={14} /></button>
+        title="删除订阅" disabled={busy} onClick={onDelete}><IconTrash size={16} /></button>
+      </div>
     </div>
     {editing && <ProfileEditor profile={profile} busy={busy} refreshing={refreshing} index={index} total={total}
       onUpdate={onUpdate} onMove={onMove}

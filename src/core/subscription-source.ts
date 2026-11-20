@@ -14,3 +14,13 @@ export function sameSubscriptionUrl(left: string, right: string): boolean {
   try { return normalizeSubscriptionUrl(left) === normalizeSubscriptionUrl(right); }
   catch { return false; }
 }
+
+/** Android 文档标识可能是编码路径，也可能是不透明 ID；不能把 ID 当文件名。 */
+export function subscriptionFileName(path: string): string {
+  if (!path.startsWith('content://')) return path.split(/[\\/]/).pop() || '';
+  try {
+    const segment = new URL(path).pathname.split('/').pop() || '';
+    const name = decodeURIComponent(segment).split(/[\\/]/).pop() || '';
+    return /\.(ya?ml|json)$/i.test(name) && !/[\u0000-\u001f]/.test(name) ? name : '';
+  } catch { return ''; }
+}

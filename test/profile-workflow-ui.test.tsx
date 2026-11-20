@@ -11,6 +11,11 @@ vi.mock('../src/core/api', async original => {
   return { ...actual, isTauri: true, api: Object.fromEntries(Object.keys(actual.api).map(key => [key, vi.fn().mockResolvedValue(undefined)])) };
 });
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
+const platform = vi.hoisted(() => ({ android: false }));
+vi.mock('../src/core/platform', async original => ({
+  ...await original<typeof import('../src/core/platform')>(),
+  get isAndroid() { return platform.android; },
+}));
 const initial = useApp.getInitialState();
 let host: HTMLDivElement; let root: Root;
 const activate = vi.fn(async (id: string) => { useApp.setState({ activeId: id }); });
@@ -52,6 +57,7 @@ const input = async (label: string, value: string) => {
 beforeEach(async () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  platform.android = false;
   refresh.mockResolvedValue(true); importUrl.mockResolvedValue(false); importFile.mockResolvedValue(false); vi.mocked(open).mockResolvedValue(null);
   useApp.setState({ ...initial, activeId: 'one', activate, refreshProfile: refresh, updateProfile: update,
     removeProfile: remove, importProfile: importUrl, importProfileFile: importFile,
@@ -68,10 +74,11 @@ it('当前订阅主卡呈现来源、节点、配额和连接状态，每卡有�
   expect(hero!.textContent).toContain('example.test');
   expect(hero!.textContent).toContain('2 个节点');
   expect(hero!.textContent).toContain('剩余');
-  expect(hero!.textContent).toContain('未连接');
+  expect(hero!.querySelector('.sub-current')?.textContent).toContain('使用中');
+  expect(hero!.querySelector('.sub-current')?.getAttribute('title')).toContain('未连接');
   expect(button('更新订阅 Example Air', hero!)).toBeDefined();
   for (const id of ['one', 'two', 'file']) expect(button(editLabel(id), card(id))).toBeDefined();
-  expect(card('two').textContent).toContain('暂无配额信息');
+  expect(card('two').textContent).toContain('未提供用量与到期信息');
   expect(host.querySelectorAll('.sub-profile-symbol')).toHaveLength(0);
   for (const profile of fixtures) {
     expect(card(profile.id).querySelectorAll('.sub-card-actions')).toHaveLength(1);
@@ -312,6 +319,14 @@ it('选择本地文件后先展示来源，确认导入时才添加，取消选�
   expect(document.querySelector('.import-error')).not.toBeNull();
 });
 
+it('Android 文件选择不使用会排除 YAML 的系统 MIME 过滤', async () => {
+  platform.android = true;
+  await click('添加订阅');
+  await click('本地文件');
+  await click('选择配置文件');
+  expect(vi.mocked(open).mock.calls[0]?.[0]?.filters).toBeUndefined();
+});
+
 it('导入进行中锁住输入和来源切换，失败后可在原输入上重试', async () => {
   let finish!: (value: boolean) => void;
   importUrl.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
@@ -328,11 +343,11 @@ it('导入进行中锁住输入和来源切换，失败后可在原输入上重�
   expect(document.querySelector('.import-error')).not.toBeNull();
 });
 
-it('连接失败与运行状态未确认使用不同的状态文案', async () => {
+it('当前订阅标签的提示区分连接失败与运行状态未确认', async () => {
   await act(async () => useApp.setState({ kernelPhase: 'failed', kernelError: '启动被拒绝' }));
-  expect(card('one').textContent).toContain('连接失败');
+  expect(card('one').querySelector('.sub-current')?.getAttribute('title')).toContain('连接失败');
   await act(async () => useApp.setState({ kernelPhase: 'running', kernelError: '运行配置回退未确认' }));
-  expect(card('one').textContent).toContain('运行状态未确认');
+  expect(card('one').querySelector('.sub-current')?.getAttribute('title')).toContain('运行状态未确认');
 });
 
 it('Esc取消编辑丢弃草稿且焦点返回该卡片的编辑按钮', async () => {

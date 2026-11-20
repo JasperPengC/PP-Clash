@@ -1,49 +1,46 @@
 /* 当前订阅主卡与备用卡片流；管理控件仅在编辑时显示。 */
 .profiles-page { display: flex; flex-direction: column; width: 100%; min-height: 0; gap: 16px; }
-.profiles-page .sub-card { position: relative; display: flex; flex-direction: column; min-width: 0; gap: 16px; padding: 16px; border: 0; border-radius: 15px; background: var(--card-surface); box-shadow: none; }
-.profiles-page .sub-card-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.profiles-page .sub-main { flex: 1; min-width: 0; }
-.profiles-page .sub-name { margin: 0; color: var(--text-primary); font-size: var(--type-body); font-weight: var(--weight-semibold); line-height: var(--leading-body); overflow-wrap: anywhere; }
-.profiles-page .sub-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 3px; color: var(--text-secondary); font-size: var(--type-micro); line-height: var(--leading-body); }
+.profiles-page .sub-card { position: relative; display: flex; flex-direction: column; min-width: 0; gap: 6px; padding: 12px 14px 4px; border: 0; border-radius: 16px; background: var(--card-surface); box-shadow: none; }
+.profiles-page .sub-card-heading { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; min-height: 38px; }
+.profiles-page .sub-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.profiles-page .sub-name { min-width: 0; margin: 0; color: var(--text-primary); font-size: calc(var(--type-body) + 1.5px); font-weight: var(--weight-semibold); line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.profiles-page .sub-meta { display: flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--text-secondary); font-size: var(--type-micro); line-height: var(--leading-body); }
 .profiles-page .sub-meta > span:last-child { flex: none; }
-.profiles-page .sub-source { min-width: 0; overflow-wrap: anywhere; }
-.profiles-page .sub-quota { display: flex; flex-direction: column; min-width: 0; gap: 8px; }
-.profiles-page .sub-quota-summary { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-width: 0; font-variant-numeric: tabular-nums; }
-.profiles-page .sub-quota-remaining { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--text-primary); }
-.profiles-page .sub-quota-remaining b { font-size: var(--type-subtitle); line-height: var(--leading-tight); font-weight: 600; }
+.profiles-page .sub-source { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.profiles-page .sub-quota { display: flex; flex-direction: column; justify-content: center; min-width: 0; min-height: 54px; gap: 6px; }
+.profiles-page .sub-quota-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; font-variant-numeric: tabular-nums; }
+.profiles-page .sub-quota-remaining { display: flex; flex: none; align-items: baseline; gap: 5px; color: var(--text-primary); white-space: nowrap; }
+.profiles-page .sub-quota-remaining b { font-size: calc(var(--type-subtitle) + 3px); line-height: var(--leading-tight); font-weight: 600; letter-spacing: -.025em; }
+.profiles-page .sub-quota-remaining small { font-size: .68em; letter-spacing: 0; }
 .profiles-page .sub-quota-remaining > span, .profiles-page .sub-quota-used { font-size: var(--type-micro); font-weight: 400; color: var(--text-secondary); }
+.profiles-page .sub-quota-used { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profiles-page .sub-quota-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 3px 8px; color: var(--text-secondary); font-size: var(--type-micro); line-height: var(--leading-body); font-variant-numeric: tabular-nums; }
 .profiles-page .sub-progress { height: 4px; margin: 0; }
-.profiles-page .sub-empty { display: flex; align-items: center; min-height: 57px; color: var(--text-secondary); font-size: var(--type-meta); }
+.profiles-page .sub-empty { display: flex; align-items: center; min-height: max(54px, calc((var(--type-subtitle) + 3px) * var(--leading-tight) + var(--type-micro) * var(--leading-body) + 16px)); color: var(--text-secondary); font-size: var(--type-meta); }
 .profiles-page .quota-expired { color: var(--danger); }
-.profiles-page .sub-card-actions { display: flex; align-items: center; gap: 3px; margin-top: auto; min-height: 30px; }
-.profiles-page .sub-card-updated { flex: 1; min-width: 0; margin-right: auto; color: var(--text-secondary); font-size: var(--type-micro); line-height: var(--leading-body); }
-.profiles-page .sub-card-actions .icon-btn { flex: none; width: 30px; height: 30px; border-radius: 50%; }
+.profiles-page .sub-card-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; min-height: 26px; }
+.profiles-page .sub-card-updated { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; color: var(--text-secondary); font-size: var(--type-micro); line-height: 1.4; white-space: nowrap; }
+.profiles-page .sub-update-time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.profiles-page .sub-update-interval, .profiles-page .sub-update-separator { flex: none; }
+.profiles-page .sub-update-separator { opacity: .65; }
+.profiles-page .sub-card-tools { display: flex; flex: none; align-items: center; gap: 4px; margin-right: -2px; }
+.profiles-page .sub-card-actions .icon-btn { flex: none; width: 26px; height: 26px; min-width: 26px; min-height: 26px; padding: 0; border-radius: 50%; }
 .profiles-page .sub-switch { color: var(--accent-text); }
-.profiles-page .sub-hero { gap: 16px; padding: 18px 20px; border-radius: 18px; }
-.profiles-page .sub-hero .sub-name { font-size: var(--type-subtitle); }
-.profiles-page .sub-card-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 45%; min-width: 0; text-align: right; }
-.profiles-page .sub-card-status > .pill { font-size: var(--type-micro); }
-.profiles-page .sub-hero .sub-quota-remaining b { font-size: 22px; }
-.profiles-page .sub-chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 10px; color: var(--text-secondary); font-size: var(--type-micro); line-height: var(--leading-body); }
+.profiles-page .sub-hero { gap: 5px; padding: 15px 18px 4px; border-radius: 18px; }
+.profiles-page .sub-hero .sub-name { font-size: calc(var(--type-subtitle) + 1px); }
+.profiles-page .sub-current { display: inline-flex; flex: none; align-items: center; gap: 4px; min-height: 18px; padding: 2px 6px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--success) 10%, transparent); color: var(--success); font-size: calc(var(--type-micro) - 1px); line-height: 1.4; font-weight: var(--weight-medium); white-space: nowrap; }
+.profiles-page .sub-current.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.profiles-page .sub-current.bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.profiles-page .sub-current.neutral { color: var(--text-secondary); background: var(--surface-2); }
+.profiles-page .sub-hero .sub-quota-remaining b { font-size: calc(var(--type-subtitle) + 7px); }
 .profiles-page .sub-list { min-width: 0; }
 .profiles-page .sub-list-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; padding: 0 2px 8px; }
 .profiles-page .sub-list-heading h2 { margin: 0; }
 .profiles-page .sub-list-heading > span { color: var(--text-secondary); font-size: var(--type-meta); }
 .profiles-page .sub-card-flow { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; align-items: stretch; }
 .profiles-page .sub-card-flow .sub-card.editing { grid-column: 1 / -1; }
-.profiles-page .sub-card-flow .sub-card { gap: 8px; padding: 12px; background: var(--card-surface); }
-.profiles-page .sub-card-flow .sub-card-heading { min-height: 0; align-items: flex-start; }
-.profiles-page .sub-card-flow .sub-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.profiles-page .sub-card-flow .sub-quota { display: grid; grid-template-rows: auto 4px auto; gap: 6px; }
-.profiles-page .sub-card-flow .sub-quota-summary { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: calc(var(--type-subtitle) * var(--leading-tight)) calc(var(--type-micro) * var(--leading-body)); gap: 4px; }
-.profiles-page .sub-card-flow .sub-quota-remaining { grid-row: 1; flex-wrap: nowrap; white-space: nowrap; }
-.profiles-page .sub-card-flow .sub-quota-used { grid-row: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--leading-body); }
-.profiles-page .sub-card-flow .sub-progress { grid-row: 2; }
-.profiles-page .sub-card-flow .sub-quota-line { grid-row: 3; flex-wrap: nowrap; white-space: nowrap; }
-.profiles-page .sub-card-flow .sub-meta { flex-wrap: nowrap; }
-.profiles-page .sub-card-flow .sub-source { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.profiles-page .sub-card-flow .sub-empty { min-height: calc(var(--type-subtitle) * var(--leading-tight) + var(--type-micro) * var(--leading-body) * 2 + 20px); }
+.profiles-page .sub-card-flow .sub-card { min-height: 146px; }
+.profiles-page .sub-card-flow .sub-quota-line { flex-wrap: nowrap; white-space: nowrap; }
 .profiles-page .sub-card-flow .sub-card:hover { background: var(--card-surface-hover); }
 .sub-others-empty { margin: 0; padding: 12px 2px; color: var(--text-muted); font-size: var(--type-control); }
 .profiles-page .sub-add-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-width: 0; min-height: 180px; border: 1px dashed var(--border-strong); border-radius: var(--radius-card); background: transparent; box-shadow: none; color: var(--text-secondary); font: inherit; font-size: var(--type-control); cursor: pointer; }
@@ -88,15 +85,10 @@
 .profiles-page .sub-list { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
 .profiles-page .sub-list-heading { flex: none; padding-bottom: 12px; }
 .profiles-page .sub-card-flow { min-height: 0; overflow-y: auto; overflow-x: hidden; align-content: start; padding: 2px 3px 4px 0; }
-.profiles-page .sub-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .9fr); grid-template-areas: 'heading quota' 'actions quota'; gap: 8px 28px; padding: 16px 20px; }
-.profiles-page .sub-hero .sub-card-heading { grid-area: heading; display: flex; gap: 10px; align-items: center; }
-.profiles-page .sub-hero .sub-card-status { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 5px 10px; max-width: none; text-align: left; }
-.profiles-page .sub-hero .sub-chips { justify-content: flex-start; }
-.profiles-page .sub-hero .sub-card-status .pill { min-height: 22px; padding: 2px 8px; }
-.profiles-page .sub-hero .sub-quota, .profiles-page .sub-hero .sub-empty { grid-area: quota; align-self: center; }
-.profiles-page .sub-hero .sub-quota { gap: 10px; }
-.profiles-page .sub-hero .sub-card-actions { grid-area: actions; align-self: end; margin-top: 0; }
-.profiles-page .sub-hero .sub-update-error { grid-column: 1 / -1; }
+.profiles-page .sub-hero .sub-card-heading { flex-direction: row; justify-content: space-between; align-items: center; gap: 20px; min-height: 24px; margin-bottom: 7px; }
+.profiles-page .sub-hero .sub-meta { flex: none; max-width: 45%; }
+.profiles-page .sub-hero .sub-quota { min-height: 60px; gap: 7px; }
+.profiles-page .sub-hero .sub-card-actions { margin-top: 0; }
 .profiles-page .sub-hero .sub-editor-wrap { grid-column: 1 / -1; max-height: 32vh; overflow-y: auto; }
 .sub-page-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary); }
 .sub-page-empty h2 { margin: 0; font-size: var(--type-section); color: var(--text-primary); }
@@ -116,9 +108,8 @@
 .subscription-import .import-foot { color: var(--text-secondary); font-size: var(--type-meta); }
 .subscription-import .import-error { margin: 0; color: var(--danger); font-size: var(--type-meta); line-height: 1.5; }
 @media(max-width:850px) {
-  .profiles-page .sub-hero { grid-template-columns: minmax(0,1fr); grid-template-areas: 'heading' 'quota' 'actions'; gap: 12px; }
-  .profiles-page .sub-hero .sub-card-heading { flex-wrap: wrap; }
-  .profiles-page .sub-hero .sub-card-status { max-width: none; }
+  .profiles-page .sub-hero .sub-card-heading { flex-direction: column; align-items: stretch; gap: 4px; }
+  .profiles-page .sub-hero .sub-meta { max-width: none; }
 }
 
 .modal-card:has(.profile-editor-dialog) { width: min(540px, calc(100vw - 48px)); max-height: calc(100vh - 64px); overflow-y: auto; padding: 24px; }

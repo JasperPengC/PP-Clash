@@ -590,7 +590,8 @@
   left: calc((48px - var(--switch-width) + var(--switch-height) - var(--switch-thumb-size)) / 2);
 }
 .android-shell .sub-card-actions { flex-shrink: 0; }
-.android-shell .sub-card-actions button { min-width: 40px; min-height: 40px; }
+.android-shell .profiles-scroll .sub-card { border: 0; }
+.android-shell .profiles-scroll .sub-card-flow .sub-empty { min-height: max(54px, calc((var(--type-subtitle) + 2px) * var(--leading-tight) + var(--type-micro) * var(--leading-body) + 16px)); }
 .android-shell .profiles-page-header .page-actions { gap: 6px; }
 .android-shell .profiles-page-header .page-actions > .btn {
   justify-content: center;
@@ -610,35 +611,44 @@
   border: 0;
 }
 .android-shell .profiles-scroll .sub-hero {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'heading' 'quota' 'actions';
-  gap: 10px;
-  padding: 14px;
+  gap: 5px;
+  min-height: 164px;
+  padding: 14px 14px 4px;
 }
 .android-shell .profiles-scroll .sub-hero .sub-card-heading {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-height: 38px;
+  margin-bottom: 5px;
 }
-.android-shell .profiles-scroll .sub-hero .sub-card-status { grid-column: 1; }
-.android-shell .profiles-scroll .sub-hero .sub-card-status,
-.android-shell .profiles-scroll .sub-hero .sub-chips { justify-content: flex-start; text-align: left; }
-.android-shell .profiles-scroll .sub-card-flow { align-items: stretch; gap: 8px; }
-.android-shell .profiles-scroll .sub-card-flow .sub-card { gap: 8px; padding: 12px; }
-.android-shell .profiles-scroll .sub-card-flow .sub-card-heading { min-height: 0; }
-.android-shell .profiles-scroll .sub-card-flow .sub-quota { gap: 6px; }
-.android-shell .profiles-scroll .sub-card-flow .sub-card-actions { gap: 3px; }
-.android-shell .profiles-scroll .sub-card-flow .sub-card-updated { font-size: var(--type-micro); }
-.android-shell .profiles-scroll .sub-card-flow .sub-card {
-  min-height: 136px;
-}
+.android-shell .profiles-scroll .sub-hero .sub-name { font-size: var(--type-subtitle); }
+.android-shell .profiles-scroll .sub-hero .sub-meta { max-width: none; }
+.android-shell .profiles-scroll .sub-hero .sub-quota { min-height: 62px; gap: 6px; }
+.android-shell .profiles-scroll .sub-card-flow { align-items: stretch; gap: 9px; }
+.android-shell .profiles-scroll .sub-card-flow .sub-card { min-height: 148px; gap: 6px; padding: 12px 13px 4px; }
+.android-shell .profiles-scroll .sub-card-flow .sub-name { font-size: var(--type-body); }
+.android-shell .profiles-scroll .sub-card-flow .sub-card-heading { min-height: 36px; }
+.android-shell .profiles-scroll .sub-card-flow .sub-quota-remaining b { font-size: calc(var(--type-subtitle) + 2px); }
 .android-shell .profiles-scroll .sub-card-actions {
-  gap: 1px;
-  padding-top: 4px;
-  border-top: 1px solid color-mix(in srgb, var(--border-soft) 70%, transparent);
+  gap: 4px;
+  min-height: 28px;
+  padding-top: 0;
+  border: 0;
 }
-.android-shell .profiles-scroll .sub-card-updated {
-  line-height: 1.15;
+.android-shell .profiles-scroll .sub-card-tools { gap: 12px; margin-right: 0; }
+.android-shell .profiles-scroll .sub-card-actions .icon-btn {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
 }
+/* 视觉行高 28px，独立触摸区域仍为 40px；相邻热区不重叠。 */
+.android-shell .profiles-scroll .sub-card-actions .icon-btn::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; }
+.android-shell .profiles-scroll .sub-card-actions .icon-btn > svg { width: 17px; height: 17px; }
+.android-shell .profiles-scroll .sub-card-updated { gap: 5px; line-height: 1.4; }
+.android-shell .profiles-scroll .profiles-page .sub-card.edit-mode { padding-left: 34px; }
 .android-shell .profiles-scroll .sub-delete-warning { margin: -2px 0 0; font-size: var(--type-meta); }
 .android-shell .proxy-measure-toast { right: var(--android-inset); bottom: calc(88px + var(--android-bottom)); max-width: calc(100vw - 2 * var(--android-inset)); }
 .android-window .modal-backdrop { align-items: end; padding: 0; transition: bottom 220ms cubic-bezier(.2, .8, .2, 1); }
@@ -809,7 +819,7 @@ html.android-window[data-ime-open] .modal-backdrop {
   .android-shell .dp-connections .proc-child .conn-traffic { grid-column: 2; }
   .android-shell .dp-connections .virtual-list .conn-row { padding-block: 9px; }
   .android-shell .profiles-scroll .sub-card-flow { gap: 7px; }
-  .android-shell .profiles-scroll .sub-card-flow .sub-card { gap: 6px; padding: 11px; }
+  .android-shell .profiles-scroll .sub-card-flow .sub-card { gap: 6px; padding: 11px 12px 4px; }
 }
 
 @media (min-width: 600px) {

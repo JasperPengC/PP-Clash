@@ -24,7 +24,7 @@ import { routingPolicy, subscriptionRoutingPolicy, type RoutingPolicy } from '..
 import { DEFAULT_LATENCY_URL, GITHUB_LATENCY_URL, groupLatencyTarget, latencyTestQuery, normalizeLatency, parseTargetLatencies, type TargetLatencies } from '../core/latency';
 import type { DelayTestOptions, LatencyResult } from '../core/latency-batch';
 import { readProxyConfiguration } from '../core/proxy-domain';
-import { normalizeSubscriptionUrl, sameSubscriptionUrl } from '../core/subscription-source';
+import { normalizeSubscriptionUrl, sameSubscriptionUrl, subscriptionFileName } from '../core/subscription-source';
 
 interface AppStore {
   profiles: Profile[];
@@ -77,6 +77,7 @@ interface AppStore {
   busy: boolean;
   /** 正在导入订阅。 */
   importing: boolean;
+  importStage: 'fetching' | 'validating' | 'applying' | null;
   activatingProfile: boolean;
   /** 正在更新哪些订阅。 */
   refreshingIds: string[];
@@ -140,7 +141,7 @@ interface AppStore {
 }
 
 function nameFromPath(path: string): string {
-  const base = path.split(/[\\/]/).pop() || path;
+  const base = subscriptionFileName(path);
   return base.replace(/\.(ya?ml|json)$/i, '') || '本地订阅';
 }
 
@@ -612,6 +613,7 @@ export const useApp = create<AppStore>((set, get) => ({
   toast: null,
   busy: false,
   importing: false,
+  importStage: null,
   activatingProfile: false,
   refreshingIds: [],
   profileRefreshErrors: {},
@@ -939,7 +941,7 @@ export const useApp = create<AppStore>((set, get) => ({
       get().notify('info', '此订阅已添加，请使用已有订阅');
       return false;
     }
-    set({ busy: true, importing: true });
+    set({ busy: true, importing: true, importStage: 'fetching' });
     try {
       const proxyPort =
         useProxy && get().kernelPhase === 'running' ? get().settings.mixedPort : undefined;
@@ -963,6 +965,7 @@ export const useApp = create<AppStore>((set, get) => ({
         useProxy,
         sourceType: 'url',
       };
+      set({ importStage: 'validating' });
       const { audit, stats } = await validateImportedProfile(get(), profile, () => lifecycle.current(token));
       if (!lifecycle.current(token)) throw new Error('操作状态已变化，请重新导入');
       set((s) => {
@@ -973,6 +976,7 @@ export const useApp = create<AppStore>((set, get) => ({
       void persist(get());
       // 新增订阅不打断当前订阅；首次导入才需要生成当前配置。
       if (get().activeId === id && lifecycle.current(token)) {
+        set({ importStage: 'applying' });
         const applied = await get().applyConfig();
         const ready = applied && lifecycle.current(token) && (get().kernelPhase !== 'running' || await get().restartKernel(true, token, true));
         if (!ready) {
@@ -990,7 +994,7 @@ export const useApp = create<AppStore>((set, get) => ({
       get().notify('error', `导入失败：${errorText(e)}`);
       return false;
     } finally {
-      set({ busy: configPending > 0, importing: false });
+      set({ busy: configPending > 0, importing: false, importStage: null });
     }
   },
 
@@ -1007,7 +1011,7 @@ export const useApp = create<AppStore>((set, get) => ({
       get().notify('info', '此文件已添加，请使用已有订阅');
       return false;
     }
-    set({ busy: true, importing: true });
+    set({ busy: true, importing: true, importStage: 'fetching' });
     try {
       const raw = await api.readSubscriptionFile(path);
       if (!lifecycle.current(token)) throw new Error('操作状态已变化，请重新导入');
@@ -1024,6 +1028,7 @@ export const useApp = create<AppStore>((set, get) => ({
         useProxy: false,
         sourceType: 'file',
       };
+      set({ importStage: 'validating' });
       const { audit, stats } = await validateImportedProfile(get(), profile, () => lifecycle.current(token));
       if (!lifecycle.current(token)) throw new Error('操作状态已变化，请重新导入');
       set((s) => {
@@ -1034,6 +1039,7 @@ export const useApp = create<AppStore>((set, get) => ({
       void persist(get());
       // 新增订阅不打断当前订阅；首次导入才需要生成当前配置。
       if (get().activeId === id && lifecycle.current(token)) {
+        set({ importStage: 'applying' });
         const applied = await get().applyConfig();
         const ready = applied && lifecycle.current(token) && (get().kernelPhase !== 'running' || await get().restartKernel(true, token, true));
         if (!ready) {
@@ -1051,7 +1057,7 @@ export const useApp = create<AppStore>((set, get) => ({
       get().notify('error', `导入失败：${errorText(e)}`);
       return false;
     } finally {
-      set({ busy: configPending > 0, importing: false });
+      set({ busy: configPending > 0, importing: false, importStage: null });
     }
   },
 

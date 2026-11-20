@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { isTauri } from '../core/api';
+import { isAndroid } from '../core/platform';
 import { useApp } from '../store/app';
-import { normalizeSubscriptionUrl, sameSubscriptionUrl } from '../core/subscription-source';
+import { normalizeSubscriptionUrl, sameSubscriptionUrl, subscriptionFileName } from '../core/subscription-source';
 import type { Profile } from '../domain/app';
 import { Dialog } from './Dialog';
 import { MiniSwitch, Segmented, Spinner } from './ui';
@@ -22,15 +23,21 @@ export function SubscriptionImport({ visible, busy, profiles, running, onClose, 
   const [picking, setPicking] = useState(false);
   const lock = useRef(false);
   const clearToast = useApp(s => s.clearToast);
+  const importStage = useApp(s => s.importStage);
+  const progress = importStage === 'fetching' ? (source === 'file' ? '读取中' : '下载中')
+    : importStage === 'validating' ? '校验中' : importStage === 'applying' ? '应用中' : '导入中';
   const input = useRef<HTMLInputElement>(null);
   const disabled = busy || pending || picking;
+  const fileLabel = path.startsWith('content://') ? subscriptionFileName(path) || '已选择配置文件' : path;
   useEffect(() => { if (visible && source === 'url') input.current?.focus(); }, [visible, source]);
   const choose = async () => {
     if (disabled || lock.current || !isTauri) return;
     lock.current = true; setPicking(true); setError('');
     try {
+      // Some Android document providers report YAML as binary data. The native reader
+      // validates its filename, UTF-8 content and size after selection.
       const selected = await open({ multiple: false, directory: false,
-        filters: [{ name: 'Clash / mihomo 配置', extensions: ['yaml', 'yml', 'json'] }] });
+        filters: isAndroid ? undefined : [{ name: 'Clash / mihomo 配置', extensions: ['yaml', 'yml', 'json'] }] });
       if (typeof selected === 'string' && selected) setPath(selected);
     } catch { setError('无法选择文件，请重试'); }
     finally { lock.current = false; setPicking(false); }
@@ -78,12 +85,12 @@ export function SubscriptionImport({ visible, busy, profiles, running, onClose, 
         <label className="import-proxy"><span>使用代理</span><MiniSwitch on={proxy} disabled={disabled}
           onChange={setProxy} label="经代理导入订阅" /></label>
       </> : <>
-        <label className="import-field"><span>配置文件</span><input className="input" aria-label="待导入文件" aria-describedby={error ? 'subscription-import-error' : undefined} readOnly value={path} placeholder="选择 Clash / mihomo 配置文件" disabled={disabled} title={path} /></label>
+        <label className="import-field"><span>配置文件</span><input className="input" aria-label="待导入文件" aria-describedby={error ? 'subscription-import-error' : undefined} readOnly value={fileLabel} placeholder="选择 Clash / mihomo 配置文件" disabled={disabled} title={fileLabel} /></label>
         <button type="button" className="btn" disabled={disabled || !isTauri} onClick={() => void choose()}>
           <IconFolder size={13} />{picking ? '选择中…' : path ? '更换文件' : '选择配置文件'}</button>
       </>}
       <button type="submit" className="btn btn-primary import-submit" disabled={disabled || !(source === 'url' ? url.trim() : path)}>
-        {pending ? <Spinner small /> : <IconImport size={13} />}{pending ? '导入中' : source === 'url' ? '导入' : '导入文件'}
+        {pending ? <Spinner small /> : <IconImport size={13} />}<span aria-live="polite">{pending ? progress : source === 'url' ? '导入' : '导入文件'}</span>
       </button>
     </form>
     {error ? <p className="import-error" id="subscription-import-error" role="alert">{error}</p>

@@ -38,13 +38,6 @@
 .android-shell .android-node-info strong { font-size: var(--type-body); line-height: 1.4; }
 .android-shell .android-connection-card { padding: var(--android-card-inset); }
 .android-shell .profiles-scroll .profiles-page { gap: var(--android-section-gap); }
-.android-shell .profiles-scroll .sub-card { padding: var(--android-card-inset); border-radius: 18px; }
-.android-shell .profiles-scroll .sub-card-flow .sub-card { padding: 12px; border-radius: 16px; }
-.android-shell .profiles-scroll .sub-name { font-size: var(--type-body); line-height: 1.4; }
-.android-shell .profiles-scroll .sub-quota-remaining b { font-size: var(--type-metric); }
-.android-shell .profiles-scroll .sub-card-flow .sub-quota-remaining b { font-size: var(--type-subtitle); }
-.android-shell .profiles-scroll .sub-card-actions { padding-top: 4px; min-height: 40px; }
-.android-shell .profiles-scroll .sub-card-updated { font-size: var(--type-micro); line-height: 1.4; }
 .android-shell .profiles-scroll .sub-list-heading { padding-bottom: 8px; }
 .android-shell .profiles-stats { gap: 4px 12px; font-size: var(--type-micro); }
 .android-shell .configuration-page { gap: var(--android-section-gap); }

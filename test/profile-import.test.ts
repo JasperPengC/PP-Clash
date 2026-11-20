@@ -57,6 +57,17 @@ it('重复本地来源不重复读取或追加', async () => {
   expect(api.readSubscriptionFile).not.toHaveBeenCalled();
 });
 
+it.each([
+  ['content://downloads/document/raw%3A%2Fstorage%2Femulated%2F0%2FDownload%2Foffice.yaml', 'office'],
+  ['content://storage/document/primary%3ADownload%2F%E5%85%AC%E5%8F%B8.yml', '公司'],
+  ['content://downloads/document/9321', '本地订阅'],
+  ['content://downloads/document/bad%2', '本地订阅'],
+  ['/Downloads/office%20backup.yaml', 'office%20backup'],
+])('本地订阅使用可读名称，保留原始来源 %s', async (path, name) => {
+  expect(await useApp.getState().importProfileFile(path)).toBe(true);
+  expect(useApp.getState().profiles.at(-1)).toMatchObject({ name, url: path });
+});
+
 it('有效备用订阅经校验后保存，不打断活动配置', async () => {
   useApp.setState({ kernelPhase: 'running' });
   expect(await useApp.getState().importProfile('https://new.invalid/sub')).toBe(true);
@@ -66,6 +77,19 @@ it('有效备用订阅经校验后保存，不打断活动配置', async () => {
   expect(api.discardConfig).toHaveBeenCalledWith('/isolated/candidate.yaml');
   expect(useApp.getState().applyConfig).not.toHaveBeenCalled();
   expect(useApp.getState().restartKernel).not.toHaveBeenCalled();
+});
+
+it.each(['url', 'file'] as const)('%s 导入展示读取与校验阶段，完成后清除进度', async source => {
+  const stages: unknown[] = [];
+  const unsubscribe = useApp.subscribe(state => stages.push(state.importStage));
+  try {
+    const ok = source === 'url' ? await useApp.getState().importProfile('https://new.invalid/sub')
+      : await useApp.getState().importProfileFile('/isolated/local.yaml');
+    expect(ok).toBe(true);
+    expect(stages).toContain('fetching');
+    expect(stages).toContain('validating');
+    expect(useApp.getState().importStage).toBeNull();
+  } finally { unsubscribe(); }
 });
 
 it('导入期间生命周期变化后丢弃迟到结果', async () => {
