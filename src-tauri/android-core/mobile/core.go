@@ -92,6 +92,9 @@ func readConfig(path string) (*config.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureGeodata(dir); err != nil {
+		return nil, fmt.Errorf("无法准备内置规则数据，请检查存储空间或重新安装：%w", err)
+	}
 	return executor.ParseWithBytes(contents)
 }
 

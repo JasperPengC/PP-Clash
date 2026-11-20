@@ -6,7 +6,7 @@ const files = args => execFileSync('git', ['ls-files', '-z', ...args], { encodin
 
 // A forced add must not bypass the repository's private-file exclusions.
 const excluded = files(['--cached', '--ignored', '--exclude-standard']);
-const productDocuments = new Set(['README.md', 'README.zh-CN.md', 'THIRD_PARTY_NOTICES.md']);
+const productDocuments = new Set(['README.md', 'README.zh-CN.md', 'THIRD_PARTY_NOTICES.md', 'scripts/release-notes.md']);
 const documents = files(['--cached', '--others', '--exclude-standard'])
   .filter(file => /\.md$/i.test(file) && !productDocuments.has(file));
 const rejected = [...new Set([...excluded, ...documents])].sort();

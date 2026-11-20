@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const [directory, version, mode] = process.argv.slice(2);
@@ -10,7 +10,12 @@ const sdk = process.env.ANDROID_HOME;
 if (!sdk) throw new Error('ANDROID_HOME is required');
 const buildTools = join(sdk, 'build-tools', '36.0.0');
 const run = (tool, args) => execFileSync(tool, args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+const geodata = readFileSync(new URL('../src-tauri/android-core/mobile/geodata.zip', import.meta.url));
+if (geodata.length < 1024 * 1024) throw new Error('Android offline geodata is missing or invalid');
 const expectedCertificate = process.env.PPCLASH_ANDROID_CERT_SHA256?.replaceAll(':', '').toLowerCase();
+if (mode === 'release' && !/^[a-f0-9]{64}$/.test(expectedCertificate ?? '')) {
+  throw new Error('A valid pinned Android certificate SHA-256 is required for release validation');
+}
 let certificate;
 for (const abi of ['arm64-v8a', 'x86_64']) {
   const apk = join(directory, `ppclash-android-${abi}-v${version}.apk`);
@@ -28,6 +33,9 @@ for (const abi of ['arm64-v8a', 'x86_64']) {
     if (elf.subarray(0, 4).toString('hex') !== '7f454c46' || elf[4] !== 2 || elf[5] !== 1
         || elf.readUInt16LE(18) !== (abi === 'arm64-v8a' ? 183 : 62)) {
       throw new Error(`Native library does not match ${abi}: ${name}`);
+    }
+    if (name.endsWith('/libgojni.so') && !elf.includes(geodata)) {
+      throw new Error(`APK core does not contain the verified offline geodata: ${abi}`);
     }
   }
   if (entries.some(name => /(?:kernel\.zip|\.keystore|\.jks)$/.test(name))) throw new Error('APK contains a desktop kernel or signing material');
@@ -50,6 +58,10 @@ if (mode === 'release') {
   const entries = run('unzip', ['-Z1', aab]).split('\n');
   for (const abi of ['arm64-v8a', 'x86_64']) for (const library of ['libppclash_lib.so', 'libgojni.so']) {
     if (!entries.includes(`base/lib/${abi}/${library}`)) throw new Error(`Bundle is missing ${abi}/${library}`);
+    if (library === 'libgojni.so') {
+      const core = execFileSync('unzip', ['-p', aab, `base/lib/${abi}/${library}`], { maxBuffer: 256 * 1024 * 1024 });
+      if (!core.includes(geodata)) throw new Error(`Bundle core does not contain the verified offline geodata: ${abi}`);
+    }
   }
   const signature = run(join(process.env.JAVA_HOME, 'bin/jarsigner'), ['-J-Duser.language=en', '-J-Duser.country=US', '-verify', aab]);
   if (!signature.includes('jar verified.')) throw new Error('Bundle signature verification failed');

@@ -26,6 +26,8 @@ pub(crate) fn mobile_config(content: &str) -> Result<String, String> {
     config.insert("redir-port".into(), json!(0));
     config.insert("tproxy-port".into(), json!(0));
     config.insert("find-process-mode".into(), json!("off"));
+    // Mobile bootstraps from verified bundled data, even before its first VPN connection.
+    config.insert("geo-auto-update".into(), json!(false));
     for desktop in ["external-controller-tls", "external-controller-unix", "external-controller-pipe",
         "external-doh-server", "external-ui", "external-ui-url", "iptables"] {
         config.remove(desktop);

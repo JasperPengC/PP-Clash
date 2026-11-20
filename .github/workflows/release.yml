@@ -36,17 +36,27 @@ jobs:
           node scripts/check-version.mjs
           VERSION="$(node -p "require('./package.json').version")"
           python3 scripts/validate-release.py ref --version "$VERSION" --ref "$RELEASE_REF" --publish "$PUBLISH_RELEASE"
-      - name: Check Android signing configuration before starting builders
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify Android signing before starting builders
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PPCLASH_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          PPCLASH_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PPCLASH_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PPCLASH_ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
-          for field in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_CERT_SHA256; do
+          set -euo pipefail
+          for field in KEYSTORE_BASE64 PPCLASH_ANDROID_STORE_PASSWORD PPCLASH_ANDROID_KEY_ALIAS PPCLASH_ANDROID_KEY_PASSWORD PPCLASH_ANDROID_CERT_SHA256; do
             if [[ -z "${!field}" ]]; then echo "Missing Android signing secret: $field" >&2; exit 1; fi
           done
+          export PPCLASH_ANDROID_KEYSTORE="$RUNNER_TEMP/android-preflight.jks"
+          trap 'rm -f "$PPCLASH_ANDROID_KEYSTORE"' EXIT
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$PPCLASH_ANDROID_KEYSTORE"
+          node scripts/check-android-signing.mjs
 
   checks:
     needs: preflight

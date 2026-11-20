@@ -57,6 +57,7 @@ legacy/
 .metadata
 src-tauri/resources/kernel.zip
 src-tauri/resources/kernel.zip.sha256
+src-tauri/android-core/mobile/geodata.zip
 *.log
 
 # runtime observability samples

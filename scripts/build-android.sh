@@ -13,11 +13,7 @@ esac
 
 : "${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK directory}"
 if [[ "$mode" == release ]]; then
-  : "${PPCLASH_ANDROID_KEYSTORE:?Set the absolute path of the release signing keystore}"
-  : "${PPCLASH_ANDROID_STORE_PASSWORD:?Set the release signing store password}"
-  : "${PPCLASH_ANDROID_KEY_ALIAS:?Set the release signing key alias}"
-  : "${PPCLASH_ANDROID_KEY_PASSWORD:?Set the release signing key password}"
-  [[ "$PPCLASH_ANDROID_KEYSTORE" == /* && -f "$PPCLASH_ANDROID_KEYSTORE" ]]
+  node scripts/check-android-signing.mjs
 fi
 export NDK_HOME="${NDK_HOME:-$ANDROID_HOME/ndk/28.2.13676358}"
 export ANDROID_NDK_HOME="$NDK_HOME"
@@ -25,10 +21,12 @@ work="$root/.cache/android-build"
 mkdir -p "$work/bin"
 export PATH="$work/bin:$PATH"
 export GOBIN="$work/bin"
+python3 scripts/prepare-android-geodata.py
 mobile="v0.0.0-20261117202452-47699113848a"
 go install "golang.org/x/mobile/cmd/gomobile@$mobile" "golang.org/x/mobile/cmd/gobind@$mobile"
 (
   cd "$root/src-tauri/android-core"
+  go test -tags with_gvisor,cmfa ./mobile -count=1
   mihomo_version="$(go list -m -f '{{.Version}}' github.com/metacubex/mihomo)"
   gomobile bind -target=android/arm64,android/amd64 -androidapi 24 -tags with_gvisor,cmfa \
     -trimpath -ldflags="-s -w -X github.com/metacubex/mihomo/constant.Version=$mihomo_version" -o "$work/mihomo.aar" ./mobile
